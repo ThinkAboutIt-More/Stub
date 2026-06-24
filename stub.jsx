@@ -964,7 +964,6 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
   const [genreFilter, setGenreFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [scanning, setScanning] = useState(false);
-  const [searching, setSearching] = useState(false);
   const [yearFilter, setYearFilter] = useState("all");
 
   const genreOptions = useMemo(() => {
@@ -1016,7 +1015,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
     );
   }
 
-  const showControls = collection.length >= 4 || searching;
+  const showControls = collection.length > 0;
 
   return (
     <div className="view">
@@ -1065,10 +1064,6 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
         <button className="collection-action-btn" onClick={() => setScanning(true)}>
           <Camera size={20} />
           <span>Scan ticket</span>
-        </button>
-        <button className="collection-action-btn" onClick={() => setSearching(true)}>
-          <Search size={20} />
-          <span>Search</span>
         </button>
         {collection.length > 0 && (
           <button className="collection-action-btn" onClick={onShowYIR}>
@@ -1246,7 +1241,6 @@ function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo })
       <div className="swipe-meta">
         <div className="swipe-title">{item.title} {item.year ? `(${item.year})` : ""}</div>
         <div className="swipe-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ") || (item.mediaType === "tv" ? "TV series" : "Film")}</div>
-        <WhyWatch item={item} taste={taste} />
       </div>
       <div className="swipe-buttons">
         <button className="round-btn round-btn-skip" onClick={onSkip} aria-label="Skip">
@@ -1271,6 +1265,8 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   const [infoItem, setInfoItem] = useState(null);
   const [mode, setMode] = useState("swipe");
   const [lastAction, setLastAction] = useState(null);
+  const [skippedPool, setSkippedPool] = useState([]);
+  const [justLogged, setJustLogged] = useState(null);
   const [forYouList, setForYouList] = useState([]);
   const [forYouLoading, setForYouLoading] = useState(false);
   const forYouLoadedRef = useRef(false);
@@ -1371,30 +1367,30 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
 
   function skip(item) {
     recordFeedback("skippedIds", item);
+    setSkippedPool((p) => [...p, item]);
     setLastAction({ type: "skip", item });
     advance();
   }
   function undoLast() {
     if (!lastAction) return;
-    const { type, item } = lastAction;
-    setFeedback((f) => {
-      if (type === "skip") return { ...f, skippedIds: f.skippedIds.filter((s) => !(s.tmdbId === item.tmdbId && s.mediaType === item.mediaType)) };
-      if (type === "want") return { ...f, wantedIds: f.wantedIds.filter((w) => !(w.tmdbId === item.tmdbId && w.mediaType === item.mediaType)) };
-      if (type === "seen") return { ...f, seenIds: f.seenIds.filter((s) => !(s.tmdbId === item.tmdbId && s.mediaType === item.mediaType)) };
-      return f;
-    });
+    const { item } = lastAction;
+    setFeedback((f) => ({ ...f, skippedIds: f.skippedIds.filter((s) => !(s.tmdbId === item.tmdbId && s.mediaType === item.mediaType)) }));
+    setSkippedPool((p) => p.filter((x) => !(x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)));
     setPool((p) => [item, ...p]);
     setLastAction(null);
+  }
+  function replaySkipped() {
+    if (!skippedPool.length) return;
+    setPool((p) => [...skippedPool, ...p]);
+    setFeedback((f) => ({ ...f, skippedIds: [] }));
+    setSkippedPool([]);
   }
   function want(item) {
     recordFeedback("wantedIds", item);
     onAddToWatchlist(item);
-    setLastAction({ type: "want", item });
     advance();
   }
   function seen(item) {
-    recordFeedback("seenIds", item);
-    setLastAction({ type: "seen", item });
     setPendingLog(item);
   }
 
@@ -1431,7 +1427,16 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
           <LogForm
             saveLabel="Add to collection"
             onCancel={() => setPendingLog(null)}
-            onSave={(entry) => { onLogNew(pendingLog, entry); setPendingLog(null); advance(); }}
+            onSave={(entry) => {
+              onLogNew(pendingLog, entry);
+              recordFeedback("seenIds", pendingLog);
+              resolveRedditUrl(pendingLog.title, pendingLog.year).then((url) => {
+                setJustLogged({ title: pendingLog.title, url });
+                setTimeout(() => setJustLogged(null), 7000);
+              });
+              setPendingLog(null);
+              advance();
+            }}
           />
         </Modal>
       )}
@@ -1459,18 +1464,29 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
               />
             </div>
           )}
+          {justLogged && (
+            <div className="logged-toast">
+              <span>Logged!</span>
+              <a href={justLogged.url} target="_blank" rel="noreferrer" onClick={() => setJustLogged(null)}>
+                <ExternalLink size={12} /> Reddit
+              </a>
+              <button className="toast-close" onClick={() => setJustLogged(null)}><X size={12} /></button>
+            </div>
+          )}
           <div className="discover-foot">
             {lastAction && (
               <button className="btn btn-ghost btn-sm" onClick={undoLast}>
-                <Undo2 size={14} /> Undo last swipe
+                <Undo2 size={14} /> Undo skip
               </button>
             )}
             <button className="btn btn-ghost btn-sm" onClick={() => loadPool(false)}>
               <RefreshCw size={14} /> Refresh deck
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => loadPool(true)}>
-              <Undo2 size={14} /> Replay skipped
-            </button>
+            {skippedPool.length > 0 && (
+              <button className="btn btn-ghost btn-sm" onClick={replaySkipped}>
+                <Undo2 size={14} /> Replay skipped ({skippedPool.length})
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1584,8 +1600,6 @@ function SuggestionRow({ item, matchPct, settings, tmdb, taste, onAddToWatchlist
           {matchPct != null && <span className={"match-pill " + (matchPct >= 70 ? "match-high" : matchPct >= 40 ? "match-mid" : "match-low")}>{matchPct}%</span>}
         </div>
         <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
-        {item.aiReason && <div className="why-watch">{item.aiReason}</div>}
-        {taste && !item.aiReason && <WhyWatch item={item} taste={taste} />}
         {providers && (
           <div className="suggest-links">
             {providers.names.map((name) => (
@@ -1744,7 +1758,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
         const [p1, p2] = await Promise.all([tmdb.upcoming(1, region), tmdb.upcoming(2, region)]);
         const raw = [...(p1.results || []), ...(p2.results || [])];
         const sorted = raw
-          .map((r) => ({ ...normalize(r), releaseDate: r.release_date, overview: r.overview }))
+          .map((r) => ({ ...normalize(r), releaseDate: r.release_date }))
           .filter((x) => x.releaseDate)
           .filter((x, i, arr) => arr.findIndex((y) => y.tmdbId === x.tmdbId) === i)
           .sort((a, b) => (a.releaseDate < b.releaseDate ? -1 : 1));
@@ -1954,7 +1968,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
         const raw = [...(p1.results || []), ...(p2.results || [])];
         const dedup = Array.from(new Map(raw.map((r) => [r.id, r])).values());
         const sorted = dedup
-          .map((r) => ({ ...normalize(r), overview: r.overview }))
+          .map((r) => normalize(r))
           .sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
         if (active) setItems(sorted);
       } catch (e) {
@@ -2164,7 +2178,6 @@ function SearchView({ tmdb, taste, onAddToWatchlist, onLogNew }) {
                 <div className="suggest-info">
                   <button className="suggest-title-btn" onClick={() => setDetail(item)}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
                   <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
-                  {item.aiReason && <div className="why-watch">{item.aiReason}</div>}
                 </div>
                 <div className="suggest-actions">
                   <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Want to see"><Bookmark size={16} /></button>
@@ -2608,7 +2621,6 @@ export default function App() {
   const tmdb = useMemo(() => makeTmdb(settings.tmdbKey), [settings.tmdbKey]);
   const taste = useMemo(() => buildTasteProfile(collection, feedback), [collection, feedback]);
   const people = useMemo(() => buildPeopleProfile(collection), [collection]);
-  const [redditPrompt, setRedditPrompt] = useState(null);
   const [burst, setBurst] = useState(null);
 
   function fireBurst(kind) {
@@ -2624,7 +2636,7 @@ export default function App() {
     fireBurst("want");
   }
 
-  async function logNew(item, viewing, credits, extra) {
+  function logNew(item, viewing, credits, extra) {
     const ticket = {
       id: uid(),
       tmdbId: item.tmdbId,
@@ -2643,9 +2655,6 @@ export default function App() {
     setCollection((c) => [...c, ticket]);
     setWatchlist((w) => w.filter((x) => !(x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)));
     fireBurst("collect");
-    // Resolve direct Reddit thread (async, non-blocking)
-    const url = await resolveRedditUrl(item.title, item.year);
-    setRedditPrompt({ title: item.title, year: item.year, url });
   }
 
   function updateTicket(t) {
@@ -2767,27 +2776,6 @@ export default function App() {
       {showYIR && (
         <Modal onClose={() => setShowYIR(false)} wide>
           <YearInReview collection={collection} onClose={() => setShowYIR(false)} />
-        </Modal>
-      )}
-
-      {redditPrompt && (
-        <Modal onClose={() => setRedditPrompt(null)}>
-          <h3 className="modal-title">Logged: {redditPrompt.title}</h3>
-          <p className="sync-note" style={{ marginBottom: 16 }}>
-            Want to see what everyone else thought? Here's the official Reddit discussion thread.
-          </p>
-          <div className="form-actions">
-            <button className="btn btn-ghost" onClick={() => setRedditPrompt(null)}>No thanks</button>
-            <a
-              className="btn btn-primary"
-              href={redditPrompt.url || buildRedditLink(redditPrompt.title, redditPrompt.year)}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => setRedditPrompt(null)}
-            >
-              <ExternalLink size={14} /> Open discussion
-            </a>
-          </div>
         </Modal>
       )}
 
@@ -3134,7 +3122,6 @@ input, textarea { font-family: inherit; }
 .detail-head-info { flex: 1; min-width: 0; }
 .detail-loading { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; padding: 14px 0; }
 .detail-body { margin-bottom: 16px; }
-.detail-overview { font-size: 13.5px; line-height: 1.55; color: var(--cream-text); margin: 0 0 14px; }
 .detail-facts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .detail-facts > div { font-size: 13px; color: var(--cream-text); display: flex; gap: 8px; }
 .detail-facts span { color: var(--muted); min-width: 72px; display: inline-block; }
@@ -3190,12 +3177,15 @@ input, textarea { font-family: inherit; }
 .note-stretch { background: rgba(226,168,54,0.12); color: var(--brass-bright); }
 .note-cool { background: rgba(154,138,138,0.1); color: var(--muted); }
 
-/* why watch this */
-.why-watch {
-  font-size: 11.5px; color: var(--brass-bright); font-style: italic;
-  margin-top: 4px; line-height: 1.35;
+/* logged toast */
+.logged-toast {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.28);
+  border-radius: 10px; padding: 8px 12px; margin: 6px 0;
+  font-size: 13px; color: var(--cream-text);
 }
-.swipe-meta .why-watch { margin-top: 5px; opacity: 0.9; }
+.logged-toast a { color: var(--brass-bright); text-decoration: none; display: flex; align-items: center; gap: 4px; font-weight: 600; }
+.toast-close { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0; display: flex; align-items: center; margin-left: auto; }
 
 /* year in review */
 .yir-wrap { padding: 8px 0 4px; }
