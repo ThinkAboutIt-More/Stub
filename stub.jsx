@@ -2980,17 +2980,17 @@ const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
 
 :root {
-  --curtain: #050505;
-  --velvet: #0d0d0d;
-  --velvet-2: #161616;
-  --brass: #c8c0bc;
-  --brass-bright: #f0ebe8;
-  --marquee-red: #e02020;
+  --curtain: #0f0000;
+  --velvet: #1e0000;
+  --velvet-2: #2e0000;
+  --brass: #e2a836;
+  --brass-bright: #f0c060;
+  --marquee-red: #ff3030;
   --stub-cream: #f3eeec;
-  --ink: #0a0a0a;
-  --cream-text: #f5f0f0;
-  --muted: #888080;
-  --line: rgba(226,32,32,0.18);
+  --ink: #0d0000;
+  --cream-text: #fff5f5;
+  --muted: #b07878;
+  --line: rgba(255,80,80,0.18);
 }
 
 * { box-sizing: border-box; }
@@ -2999,7 +2999,7 @@ button { font-family: inherit; cursor: pointer; }
 input, textarea { font-family: inherit; }
 
 .app {
-  background: radial-gradient(ellipse at 50% 0%, #2a0000 0%, #100000 30%, var(--curtain) 65%);
+  background: radial-gradient(ellipse at 50% -10%, #5a0000 0%, #2a0000 45%, var(--curtain) 80%);
   color: var(--cream-text);
   font-family: 'Inter', system-ui, sans-serif;
   min-height: 100vh;
