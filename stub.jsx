@@ -223,7 +223,9 @@ function normalize(item) {
     year: (item.release_date || item.first_air_date || "").slice(0, 4),
     posterPath: item.poster_path || null,
     backdropPath: item.backdrop_path || null,
-    genreIds: item.genre_ids || []
+    genreIds: item.genre_ids || [],
+    voteAverage: item.vote_average ?? null,
+    voteCount: item.vote_count ?? 0
   };
 }
 
@@ -236,6 +238,7 @@ function normalize(item) {
 
 function buildTasteProfile(collection, feedback) {
   const weights = {};
+  const ratingDeltas = {}; // genreId -> {sum, n} for calibration
   const now = Date.now();
   const TWO_YEARS_MS = 2 * 365 * 24 * 60 * 60 * 1000;
   const bump = (genreIds, amount) => {
@@ -249,11 +252,29 @@ function buildTasteProfile(collection, feedback) {
       const age = now - (v.loggedAt || now);
       const decay = Math.max(0.35, 1 - age / TWO_YEARS_MS);
       bump(t.genreIds, (v.rating - 2.5) * 2 * decay);
+      // track how your ratings compare to TMDB consensus per genre
+      if (t.voteAverage != null && (t.voteCount ?? 0) > 50) {
+        const yourScore = (v.rating / 5) * 10; // 1-5 stars → 0-10 scale
+        const delta = yourScore - t.voteAverage;
+        (t.genreIds || []).forEach((g) => {
+          if (!ratingDeltas[g]) ratingDeltas[g] = { sum: 0, n: 0 };
+          ratingDeltas[g].sum += delta * decay;
+          ratingDeltas[g].n += decay;
+        });
+      }
     });
   });
   (feedback.wantedIds || []).forEach((w) => bump(w.genreIds, 1.5));
   (feedback.skippedIds || []).forEach((s) => bump(s.genreIds, -1.5));
-  return weights;
+  const genreCalibration = {};
+  Object.entries(ratingDeltas).forEach(([g, d]) => {
+    if (d.n > 0) genreCalibration[g] = d.sum / d.n;
+  });
+  return { weights, genreCalibration };
+}
+
+function getWeights(taste) {
+  return (taste && taste.weights) ? taste.weights : (taste || {});
 }
 
 /* builds weighted maps of the people you gravitate toward,
@@ -298,15 +319,43 @@ function scoreItem(item, tasteWeights) {
   return total / item.genreIds.length;
 }
 
-/* 0..100 match percentage, normalized against the strongest
-   genre signal you've got so the number means something */
-function matchPercent(item, tasteWeights) {
-  const keys = Object.keys(tasteWeights);
-  if (!keys.length || !item.genreIds || !item.genreIds.length) return null;
-  const maxAbs = Math.max(...keys.map((k) => Math.abs(tasteWeights[k])), 1);
-  const raw = scoreItem(item, tasteWeights); // roughly -max..+max
-  const norm = (raw / maxAbs + 1) / 2; // 0..1
-  return Math.max(1, Math.min(99, Math.round(norm * 100)));
+/* 0..100 match score blending genre affinity, external quality, and
+   personal calibration so a mediocre film in a liked genre still scores low */
+function matchPercent(item, taste) {
+  const weights = getWeights(taste);
+  const gc = taste?.genreCalibration || {};
+  const keys = Object.keys(weights);
+  if (!keys.length) return null;
+
+  // Factor 1: genre affinity — how well item genres align with your taste (0-100)
+  let genreScore = 50;
+  if (item.genreIds && item.genreIds.length) {
+    const maxAbs = Math.max(...keys.map((k) => Math.abs(weights[k])), 1);
+    const raw = scoreItem(item, weights);
+    genreScore = Math.max(1, Math.min(99, Math.round(((raw / maxAbs + 1) / 2) * 100)));
+  }
+
+  // Factor 2: external quality — TMDB vote_average mapped 4.0-9.0 → 0-100
+  // 5.5 → 30, 6.5 → 50, 7.0 → 60, 7.5 → 70, 8.0 → 80, 8.5 → 90
+  let qualityScore = 65; // neutral when vote data absent/sparse
+  if (item.voteAverage != null && (item.voteCount ?? 0) > 50) {
+    const clamped = Math.max(4.0, Math.min(9.0, item.voteAverage));
+    qualityScore = Math.round(((clamped - 4.0) / 5.0) * 100);
+  }
+
+  // Factor 3: personal calibration — your historical rating delta vs TMDB for this genre
+  // positive = you rate this genre higher than consensus → score bump; negative → penalty
+  let calibBonus = 0;
+  if (item.genreIds && item.genreIds.length) {
+    const deltas = item.genreIds.map((g) => gc[g]).filter((d) => d != null);
+    if (deltas.length) {
+      const avg = deltas.reduce((s, d) => s + d, 0) / deltas.length;
+      calibBonus = Math.max(-15, Math.min(15, avg * 1.5));
+    }
+  }
+
+  const blended = genreScore * 0.40 + qualityScore * 0.55 + calibBonus;
+  return Math.max(1, Math.min(99, Math.round(blended)));
 }
 
 /* enough signal to start trusting the percentages */
@@ -330,9 +379,10 @@ function badgesFor(item, people, tasteWeights) {
     const sharedActor = (item.credits.cast || []).find((c) => actNames.has(c.id));
     if (sharedActor) out.push({ kind: "actor", text: `Stars ${sharedActor.name}` });
   }
-  if (tasteWeights && item.genreIds) {
+  const tw = getWeights(tasteWeights);
+  if (tw && item.genreIds) {
     const topGenre = item.genreIds
-      .map((g) => ({ g, w: tasteWeights[g] || 0 }))
+      .map((g) => ({ g, w: tw[g] || 0 }))
       .sort((a, b) => b.w - a.w)[0];
     if (topGenre && topGenre.w > 4) {
       const name = MOVIE_GENRES[topGenre.g] || TV_GENRES[topGenre.g];
@@ -1286,7 +1336,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
     setLoading(true);
     setError(null);
     try {
-      const topGenres = Object.entries(taste).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g).join(",");
+      const topGenres = Object.entries(getWeights(taste)).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g).join(",");
       const calls = [
         tmdb.trendingWeek(),
         tmdb.popularMovies(1),
@@ -1804,7 +1854,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
 
   const note = (item, pct) => {
     if (pct == null) return null;
-    const topUserGenres = Object.entries(taste).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
+    const topUserGenres = Object.entries(getWeights(taste)).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
     const itemGenres = item.genreIds || [];
     const overlapping = itemGenres.filter((g) => topUserGenres.includes(g));
     const nonOverlapping = itemGenres.filter((g) => !topUserGenres.includes(g));
@@ -1993,7 +2043,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
 
   const note = (item, pct) => {
     if (pct == null) return null;
-    const topUserGenres = Object.entries(taste).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
+    const topUserGenres = Object.entries(getWeights(taste)).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
     const itemGenres = item.genreIds || [];
     const overlapping = itemGenres.filter((g) => topUserGenres.includes(g));
     const nonOverlapping = itemGenres.filter((g) => !topUserGenres.includes(g));
@@ -2349,23 +2399,28 @@ function Onboarding({ onSave }) {
 
 const whyWatchCache = {};
 
-async function getWhyWatch(cacheKey, title, year, genres, tasteGenres, matchPct) {
+async function getWhyWatch(cacheKey, title, year, genres, tasteGenres, matchPct, voteAvg) {
   if (whyWatchCache[cacheKey]) return whyWatchCache[cacheKey];
   const pct = matchPct ?? 50;
+  const qualityLine = voteAvg != null
+    ? `TMDB community score: ${voteAvg}/10.`
+    : "";
   const data = await callProxy({
     model: "claude-haiku-4-5",
     max_tokens: 90,
     messages: [{
       role: "user",
-      content: `You're a trusted movie friend giving a personal opinion. NEVER describe the movie or its plot. ONLY say whether this viewer will like it and why, based on their taste.
+      content: `You're a trusted movie friend giving a personal opinion. NEVER describe the movie or its plot. ONLY say whether this viewer will like it and why, based on their taste AND the movie's quality.
 
 WRONG (describes film): "Witty humor and quirky charm that appeals to everyone"
 WRONG (plot): "A detective comedy following a quirky investigator"
-RIGHT at 82% match: "This is right in your lane — you're gonna like this one"
-RIGHT at 51% match: "Decent but middle of the road for your taste — give it a shot if you have nothing else"
-RIGHT at 30% match: "Probably not your thing, but worth it if you're open to something different"
+RIGHT at 82% match, 7.8/10: "This is right in your lane — you're gonna love it"
+RIGHT at 65% match, 6.2/10: "Decent but nothing special — worth it if you're in the mood"
+RIGHT at 51% match, 5.5/10: "Pretty middle of the road, even for a fan of this genre"
+RIGHT at 30% match, 7.5/10: "Probably not your thing but critically solid — keep an open mind"
+RIGHT at 25% match, 4.8/10: "Skip this one — weak film and outside your lane"
 
-Movie genres: ${genres}. Their top genres: ${tasteGenres}. Match score: ${pct}%.
+Movie genres: ${genres}. ${qualityLine} Their top genres: ${tasteGenres}. Match score: ${pct}%.
 Write ONE frank opinion sentence, max 16 words. No quotation marks.`
     }]
   });
@@ -2380,12 +2435,12 @@ function WhyWatch({ item, taste, matchPct }) {
 
   useEffect(() => {
     if (whyWatchCache[cacheKey]) { setReason(whyWatchCache[cacheKey]); return; }
-    const tasteGenres = Object.entries(taste)
+    const tasteGenres = Object.entries(getWeights(taste))
       .filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 4)
       .map(([g]) => MOVIE_GENRES[g] || TV_GENRES[g]).filter(Boolean);
     if (!tasteGenres.length) return;
     const genres = genreNames(item.genreIds, item.mediaType).slice(0, 2).join(", ");
-    getWhyWatch(cacheKey, item.title, item.year, genres, tasteGenres.join(", "), matchPct)
+    getWhyWatch(cacheKey, item.title, item.year, genres, tasteGenres.join(", "), matchPct, item.voteAverage)
       .then((r) => { if (r) setReason(r); })
       .catch(() => {});
   }, [cacheKey]);
@@ -2706,6 +2761,8 @@ export default function App() {
       year: item.year,
       posterPath: item.posterPath,
       genreIds: item.genreIds,
+      voteAverage: item.voteAverage ?? null,
+      voteCount: item.voteCount ?? 0,
       credits: credits || item.credits || null,
       runtimeMinutes: extra?.runtime || item.runtimeMinutes || null,
       tmdbKeywords: extra?.keywords?.length ? extra.keywords : (item.tmdbKeywords || null),
