@@ -2107,7 +2107,7 @@ function SearchView({ tmdb, taste, onAddToWatchlist, onLogNew }) {
         <Search size={16} />
         <input
           className="search-input"
-          placeholder="Search or ask: "movies like Infinity Pool""
+          placeholder={'Search or ask: "movies like Infinity Pool"'}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
