@@ -466,7 +466,6 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
               {runtime ? <div><span>Runtime</span>{runtime} min</div> : null}
               {director && <div><span>Director</span>{director.name}</div>}
               {producer && <div><span>Producer</span>{producer.name}</div>}
-              {data.vote_average ? <div><span>TMDB</span>{data.vote_average.toFixed(1)} / 10</div> : null}
             </div>
             {slim && slim.cast.length > 0 && (
               <div className="detail-cast">
@@ -966,7 +965,7 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
    COLLECTION TAB
 --------------------------------------------------------- */
 
-function CollectionView({ collection, watchlist, tmdb, taste, settings, people, onUpdateTicket, onDeleteTicket, onLogFromWatchlist, onAddToWatchlist, onLogNew, onRemoveFromWatchlist }) {
+function CollectionView({ collection, watchlist, tmdb, taste, settings, people, onUpdateTicket, onDeleteTicket, onLogFromWatchlist, onAddToWatchlist, onLogNew, onRemoveFromWatchlist, onShowYIR }) {
   const [open, setOpen] = useState(null);
   const [showWatchlist, setShowWatchlist] = useState(false);
   const [showFavorites, setShowFavorites] = useState(false);
@@ -1072,6 +1071,12 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
           <Search size={20} />
           <span>Search</span>
         </button>
+        {collection.length > 0 && (
+          <button className="collection-action-btn" onClick={onShowYIR}>
+            <Sparkles size={20} />
+            <span>{new Date().getFullYear()} Recap</span>
+          </button>
+        )}
       </div>
 
       {!showWatchlist && (
@@ -1173,7 +1178,7 @@ function EmptyState({ icon, title, body }) {
    DISCOVER TAB, swipe deck
 --------------------------------------------------------- */
 
-function SwipeCard({ item, matchPct, onSkip, onWant, onSeen, onSwipeRight, onTapInfo }) {
+function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onSwipeRight, onTapInfo }) {
   const [drag, setDrag] = useState({ x: 0, active: false });
   const startX = useRef(0);
   const moved = useRef(false);
@@ -1233,6 +1238,7 @@ function SwipeCard({ item, matchPct, onSkip, onWant, onSeen, onSwipeRight, onTap
       <div className="swipe-meta">
         <div className="swipe-title">{item.title} {item.year ? `(${item.year})` : ""}</div>
         <div className="swipe-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ") || (item.mediaType === "tv" ? "TV series" : "Film")}</div>
+        <WhyWatch item={item} taste={taste} />
       </div>
       <div className="swipe-buttons">
         <button className="round-btn round-btn-skip" onClick={onSkip} aria-label="Skip">
@@ -1406,6 +1412,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
               <SwipeCard
                 item={current}
                 matchPct={enough ? current._pct : null}
+                taste={taste}
                 onSkip={() => skip(current)}
                 onWant={() => want(current)}
                 onSeen={() => seen(current)}
@@ -1961,25 +1968,35 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
    SEARCH TAB
 --------------------------------------------------------- */
 
-function SearchView({ tmdb, onAddToWatchlist, onLogNew }) {
+function SearchView({ tmdb, taste, onAddToWatchlist, onLogNew }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [logging, setLogging] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [aiMode, setAiMode] = useState(false);
 
   async function runSearch(e) {
     e.preventDefault();
     if (!query.trim()) return;
     setLoading(true);
     setError(null);
+    setAiMode(false);
     try {
-      const data = await tmdb.searchMulti(query.trim());
-      const filtered = (data.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
-      setResults(filtered);
-    } catch (e2) {
-      setError(e2.message);
+      // Try AI smart search first
+      const aiResults = await smartSearch(query.trim(), tmdb);
+      setResults(aiResults);
+      setAiMode(true);
+    } catch {
+      // Fallback to direct TMDB search
+      try {
+        const data = await tmdb.searchMulti(query.trim());
+        const filtered = (data.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
+        setResults(filtered);
+      } catch (e2) {
+        setError(e2.message);
+      }
     }
     setLoading(false);
   }
@@ -2002,37 +2019,45 @@ function SearchView({ tmdb, onAddToWatchlist, onLogNew }) {
         <Search size={16} />
         <input
           className="search-input"
-          placeholder="Search any movie or show"
+          placeholder="Search or ask: "movies like Infinity Pool""
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
       </form>
 
       {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Searching" body="One second." />}
-      {error && <EmptyState icon={<Info size={32} />} title="Search failed" body={`TMDB said: ${error}`} />}
+      {error && <EmptyState icon={<Info size={32} />} title="Search failed" body={error} />}
 
-      {!loading && !error && (
-        <div className="suggest-list">
-          {results.map((item) => (
-            <div className="suggest-row" key={item.tmdbId + item.mediaType}>
-              <button className="suggest-thumb-btn" onClick={() => setDetail(item)} aria-label={`Details for ${item.title}`}>
-                {item.posterPath ? (
-                  <img src={tmdbImg(item.posterPath, "w154")} alt="" className="suggest-thumb" />
-                ) : (
-                  <div className="suggest-thumb suggest-thumb-fallback">{item.mediaType === "tv" ? <Tv size={18} /> : <Film size={18} />}</div>
-                )}
-              </button>
-              <div className="suggest-info">
-                <button className="suggest-title-btn" onClick={() => setDetail(item)}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
-                <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
-              </div>
-              <div className="suggest-actions">
-                <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Want to see"><Eye size={16} /></button>
-                <button className="icon-btn" onClick={() => setLogging(item)} aria-label="Seen it"><Check size={16} /></button>
-              </div>
+      {!loading && !error && results.length > 0 && (
+        <>
+          {aiMode && (
+            <div className="hint-banner" style={{ marginBottom: 12 }}>
+              <Sparkles size={14} /> AI-powered results
             </div>
-          ))}
-        </div>
+          )}
+          <div className="suggest-list">
+            {results.map((item) => (
+              <div className="suggest-row" key={item.tmdbId + item.mediaType}>
+                <button className="suggest-thumb-btn" onClick={() => setDetail(item)} aria-label={`Details for ${item.title}`}>
+                  {item.posterPath ? (
+                    <img src={tmdbImg(item.posterPath, "w154")} alt="" className="suggest-thumb" />
+                  ) : (
+                    <div className="suggest-thumb suggest-thumb-fallback">{item.mediaType === "tv" ? <Tv size={18} /> : <Film size={18} />}</div>
+                  )}
+                </button>
+                <div className="suggest-info">
+                  <button className="suggest-title-btn" onClick={() => setDetail(item)}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
+                  <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
+                  {item.aiReason && <div className="why-watch">{item.aiReason}</div>}
+                </div>
+                <div className="suggest-actions">
+                  <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Want to see"><Bookmark size={16} /></button>
+                  <button className="icon-btn" onClick={() => setLogging(item)} aria-label="Seen it"><Check size={16} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {logging && (
@@ -2139,6 +2164,232 @@ function Onboarding({ onSave }) {
 }
 
 /* ---------------------------------------------------------
+   WHY WATCH THIS  — AI hint per card, cached by movie ID
+--------------------------------------------------------- */
+
+const whyWatchCache = {};
+
+async function getWhyWatch(cacheKey, title, year, genres, tasteGenres) {
+  if (whyWatchCache[cacheKey]) return whyWatchCache[cacheKey];
+  const data = await callProxy({
+    model: "claude-haiku-4-5",
+    max_tokens: 60,
+    messages: [{
+      role: "user",
+      content: `Movie: "${title}" (${year || ""}), genre: ${genres}. This viewer's top genres: ${tasteGenres}. Write ONE short phrase (8–12 words) hinting why they'd enjoy it. Lead with the specific quality or vibe — not "You'll enjoy" or "A must-watch". No plot spoilers. No quotation marks.`
+    }]
+  });
+  const text = data.content?.[0]?.text?.trim().replace(/^["']|["']$/g, "") || null;
+  if (text) whyWatchCache[cacheKey] = text;
+  return text;
+}
+
+function WhyWatch({ item, taste }) {
+  const [reason, setReason] = useState(null);
+  const cacheKey = item.tmdbId + item.mediaType;
+
+  useEffect(() => {
+    if (whyWatchCache[cacheKey]) { setReason(whyWatchCache[cacheKey]); return; }
+    const tasteGenres = Object.entries(taste)
+      .filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 4)
+      .map(([g]) => MOVIE_GENRES[g] || TV_GENRES[g]).filter(Boolean);
+    if (!tasteGenres.length) return;
+    const genres = genreNames(item.genreIds, item.mediaType).slice(0, 2).join(", ");
+    getWhyWatch(cacheKey, item.title, item.year, genres, tasteGenres.join(", "))
+      .then((r) => { if (r) setReason(r); })
+      .catch(() => {});
+  }, [cacheKey]);
+
+  if (!reason) return null;
+  return <div className="why-watch">{reason}</div>;
+}
+
+/* ---------------------------------------------------------
+   REDDIT  — try to resolve actual official thread first
+--------------------------------------------------------- */
+
+const redditCache = {};
+
+async function resolveRedditUrl(title, year) {
+  const key = title + year;
+  if (redditCache[key]) return redditCache[key];
+  const q = encodeURIComponent(`${title}${year ? " " + year : ""} official discussion`);
+  try {
+    const res = await fetch(
+      `https://www.reddit.com/r/movies/search.json?q=${q}&restrict_sr=1&sort=relevance&limit=1`,
+      { headers: { Accept: "application/json" } }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const post = data?.data?.children?.[0]?.data;
+      if (post?.permalink) {
+        const url = `https://www.reddit.com${post.permalink}`;
+        redditCache[key] = url;
+        return url;
+      }
+    }
+  } catch { /* fall through */ }
+  const fallback = buildRedditLink(title, year);
+  redditCache[key] = fallback;
+  return fallback;
+}
+
+/* ---------------------------------------------------------
+   SMART SEARCH  — natural language via Claude Sonnet
+--------------------------------------------------------- */
+
+async function smartSearch(query, tmdb) {
+  const data = await callProxy({
+    model: "claude-sonnet-4-6",
+    max_tokens: 500,
+    messages: [{
+      role: "user",
+      content: `The user searched for: "${query}". Return 5 movie or TV show recommendations that best match this query. For each, provide the exact title, approximate year, and a one-sentence reason (max 15 words) why someone who asked this would enjoy it. Reply ONLY with a valid JSON array, no other text: [{"title":"...","year":"YYYY","reason":"..."}]`
+    }]
+  });
+  const text = data.content?.[0]?.text?.trim() || "";
+  const match = text.match(/\[[\s\S]*\]/);
+  if (!match) throw new Error("No results parsed");
+  const suggestions = JSON.parse(match[0]);
+  const hydrated = await Promise.all(
+    suggestions.map(async (s) => {
+      try {
+        const res = await tmdb.searchMulti(`${s.title} ${s.year || ""}`.trim());
+        const hit = (res.results || []).find((r) => r.media_type === "movie" || r.media_type === "tv");
+        if (hit) return { ...normalize(hit), aiReason: s.reason };
+      } catch { /* skip */ }
+      return null;
+    })
+  );
+  return hydrated.filter(Boolean);
+}
+
+/* ---------------------------------------------------------
+   YEAR IN REVIEW
+--------------------------------------------------------- */
+
+function YearInReview({ collection, onClose }) {
+  const year = new Date().getFullYear();
+  const [step, setStep] = useState(0);
+
+  const thisYear = useMemo(() => {
+    return collection.filter((t) =>
+      t.viewings.some((v) => v.date && v.date.startsWith(String(year)))
+    );
+  }, [collection, year]);
+
+  const totalWatched = thisYear.length;
+
+  const genreCounts = useMemo(() => {
+    const counts = {};
+    thisYear.forEach((t) => (t.genreIds || []).forEach((g) => { counts[g] = (counts[g] || 0) + 1; }));
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([g, n]) => ({ name: MOVIE_GENRES[g] || TV_GENRES[g] || "Unknown", count: n }))
+      .filter((x) => x.name !== "Unknown");
+  }, [thisYear]);
+
+  const topRated = useMemo(() =>
+    [...thisYear].sort((a, b) => {
+      const ra = Math.max(...a.viewings.map((v) => v.rating || 0));
+      const rb = Math.max(...b.viewings.map((v) => v.rating || 0));
+      return rb - ra;
+    })[0], [thisYear]);
+
+  const mostRewatched = useMemo(() =>
+    [...thisYear].sort((a, b) => b.viewings.length - a.viewings.length)[0],
+    [thisYear]);
+
+  const busiestMonth = useMemo(() => {
+    const months = {};
+    thisYear.forEach((t) =>
+      t.viewings.filter((v) => v.date?.startsWith(String(year))).forEach((v) => {
+        const m = v.date.slice(0, 7);
+        months[m] = (months[m] || 0) + 1;
+      })
+    );
+    const top = Object.entries(months).sort((a, b) => b[1] - a[1])[0];
+    if (!top) return null;
+    const d = new Date(top[0] + "-01");
+    return { name: d.toLocaleDateString(undefined, { month: "long" }), count: top[1] };
+  }, [thisYear]);
+
+  const cards = [
+    {
+      key: "total",
+      label: `${year} in Film`,
+      big: String(totalWatched),
+      sub: totalWatched === 1 ? "film watched" : "films watched",
+      color: "var(--marquee-red)"
+    },
+    genreCounts.length > 0 && {
+      key: "genres",
+      label: "Top genres",
+      big: genreCounts[0]?.name,
+      sub: genreCounts.slice(1).map((g) => g.name).join(" · ") || "",
+      color: "var(--brass)"
+    },
+    topRated && {
+      key: "top",
+      label: "Highest rated",
+      big: topRated.title,
+      sub: topRated.year || "",
+      poster: topRated.posterPath,
+      color: "#5fd99a"
+    },
+    mostRewatched && mostRewatched.viewings.length > 1 && {
+      key: "rewatch",
+      label: "Most rewatched",
+      big: mostRewatched.title,
+      sub: `${mostRewatched.viewings.length}× this year`,
+      poster: mostRewatched.posterPath,
+      color: "var(--brass-bright)"
+    },
+    busiestMonth && {
+      key: "month",
+      label: "Busiest month",
+      big: busiestMonth.name,
+      sub: `${busiestMonth.count} film${busiestMonth.count !== 1 ? "s" : ""}`,
+      color: "#ff8080"
+    }
+  ].filter(Boolean);
+
+  if (totalWatched === 0) {
+    return (
+      <div className="yir-wrap">
+        <EmptyState icon={<Sparkles size={32} />} title={`Nothing logged in ${year} yet`} body="Log a film and come back." />
+      </div>
+    );
+  }
+
+  const card = cards[step];
+
+  return (
+    <div className="yir-wrap">
+      <div className="yir-card" style={{ borderColor: card.color }}>
+        <div className="yir-label" style={{ color: card.color }}>{card.label}</div>
+        {card.poster && (
+          <img src={tmdbImg(card.poster, "w342")} alt="" className="yir-poster" />
+        )}
+        <div className="yir-big" style={{ color: card.color }}>{card.big}</div>
+        {card.sub && <div className="yir-sub">{card.sub}</div>}
+      </div>
+      <div className="yir-dots">
+        {cards.map((c, i) => (
+          <button key={c.key} className={"yir-dot" + (i === step ? " yir-dot-active" : "")} onClick={() => setStep(i)} />
+        ))}
+      </div>
+      <div className="yir-nav">
+        {step > 0 && <button className="btn btn-ghost btn-sm" onClick={() => setStep((s) => s - 1)}><ChevronLeft size={14} /> Back</button>}
+        {step < cards.length - 1
+          ? <button className="btn btn-primary btn-sm" onClick={() => setStep((s) => s + 1)}>Next <ChevronRight size={14} /></button>
+          : <button className="btn btn-primary btn-sm" onClick={onClose}>Done</button>
+        }
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
    APP SHELL
 --------------------------------------------------------- */
 
@@ -2158,7 +2409,15 @@ export default function App() {
   const [watchlist, setWatchlist] = useState([]);
   const [feedback, setFeedback] = useState({ skippedIds: [], wantedIds: [], seenIds: [] });
   const [tab, setTab] = useState("collection");
+  // mountedTabs: once a tab is visited it stays mounted (CSS display:none) so state isn't lost on switch
+  const [mountedTabs, setMountedTabs] = useState(() => new Set(["collection"]));
   const [showSettings, setShowSettings] = useState(false);
+  const [showYIR, setShowYIR] = useState(false);
+
+  function switchTab(id) {
+    setTab(id);
+    setMountedTabs((m) => { const n = new Set(m); n.add(id); return n; });
+  }
 
   useEffect(() => {
     async function load() {
@@ -2207,7 +2466,7 @@ export default function App() {
     fireBurst("want");
   }
 
-  function logNew(item, viewing, credits) {
+  async function logNew(item, viewing, credits) {
     const ticket = {
       id: uid(),
       tmdbId: item.tmdbId,
@@ -2223,8 +2482,10 @@ export default function App() {
     };
     setCollection((c) => [...c, ticket]);
     setWatchlist((w) => w.filter((x) => !(x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)));
-    setRedditPrompt({ title: item.title, year: item.year });
     fireBurst("collect");
+    // Resolve direct Reddit thread (async, non-blocking)
+    const url = await resolveRedditUrl(item.title, item.year);
+    setRedditPrompt({ title: item.title, year: item.year, url });
   }
 
   function updateTicket(t) {
@@ -2275,7 +2536,7 @@ export default function App() {
       </header>
 
       <main className="app-main">
-        {tab === "collection" && (
+        <div style={{ display: tab === "collection" ? "" : "none" }}>
           <CollectionView
             collection={collection}
             watchlist={watchlist}
@@ -2289,48 +2550,65 @@ export default function App() {
             onAddToWatchlist={addToWatchlist}
             onLogNew={logNew}
             onRemoveFromWatchlist={removeFromWatchlist}
+            onShowYIR={() => setShowYIR(true)}
           />
+        </div>
+        {mountedTabs.has("discover") && (
+          <div style={{ display: tab === "discover" ? "" : "none" }}>
+            <DiscoverView
+              tmdb={tmdb}
+              feedback={feedback}
+              setFeedback={setFeedback}
+              taste={taste}
+              people={people}
+              settings={settings}
+              collection={collection}
+              watchlist={watchlist}
+              onAddToWatchlist={addToWatchlist}
+              onLogNew={logNew}
+            />
+          </div>
         )}
-        {tab === "discover" && (
-          <DiscoverView
-            tmdb={tmdb}
-            feedback={feedback}
-            setFeedback={setFeedback}
-            taste={taste}
-            people={people}
-            settings={settings}
-            collection={collection}
-            watchlist={watchlist}
-            onAddToWatchlist={addToWatchlist}
-            onLogNew={logNew}
-          />
+        {mountedTabs.has("outnow") && (
+          <div style={{ display: tab === "outnow" ? "" : "none" }}>
+            <OutNowView
+              tmdb={tmdb}
+              settings={settings}
+              taste={taste}
+              people={people}
+              collection={collection}
+              feedback={feedback}
+              onAddToWatchlist={addToWatchlist}
+              onLogNew={logNew}
+            />
+          </div>
         )}
-        {tab === "outnow" && (
-          <OutNowView
-            tmdb={tmdb}
-            settings={settings}
-            taste={taste}
-            people={people}
-            collection={collection}
-            feedback={feedback}
-            onAddToWatchlist={addToWatchlist}
-            onLogNew={logNew}
-          />
+        {mountedTabs.has("soon") && (
+          <div style={{ display: tab === "soon" ? "" : "none" }}>
+            <ComingSoonView
+              tmdb={tmdb}
+              settings={settings}
+              taste={taste}
+              people={people}
+              collection={collection}
+              feedback={feedback}
+              onAddToWatchlist={addToWatchlist}
+              onLogNew={logNew}
+            />
+          </div>
         )}
-        {tab === "soon" && (
-          <ComingSoonView
-            tmdb={tmdb}
-            settings={settings}
-            taste={taste}
-            people={people}
-            collection={collection}
-            feedback={feedback}
-            onAddToWatchlist={addToWatchlist}
-            onLogNew={logNew}
-          />
+        {mountedTabs.has("search") && (
+          <div style={{ display: tab === "search" ? "" : "none" }}>
+            <SearchView tmdb={tmdb} taste={taste} onAddToWatchlist={addToWatchlist} onLogNew={logNew} />
+          </div>
         )}
-        {tab === "search" && <SearchView tmdb={tmdb} onAddToWatchlist={addToWatchlist} onLogNew={logNew} />}
       </main>
+
+      {showYIR && (
+        <Modal onClose={() => setShowYIR(false)} wide>
+          <YearInReview collection={collection} onClose={() => setShowYIR(false)} />
+        </Modal>
+      )}
 
       {redditPrompt && (
         <Modal onClose={() => setRedditPrompt(null)}>
@@ -2342,7 +2620,7 @@ export default function App() {
             <button className="btn btn-ghost" onClick={() => setRedditPrompt(null)}>No thanks</button>
             <a
               className="btn btn-primary"
-              href={buildRedditLink(redditPrompt.title, redditPrompt.year)}
+              href={redditPrompt.url || buildRedditLink(redditPrompt.title, redditPrompt.year)}
               target="_blank"
               rel="noreferrer"
               onClick={() => setRedditPrompt(null)}
@@ -2357,7 +2635,7 @@ export default function App() {
         {TABS.map((t) => {
           const Icon = t.icon;
           return (
-            <button key={t.id} className={"tab-btn" + (tab === t.id ? " active" : "")} onClick={() => setTab(t.id)}>
+            <button key={t.id} className={"tab-btn" + (tab === t.id ? " active" : "")} onClick={() => switchTab(t.id)}>
               <Icon size={19} />
               <span>{t.label}</span>
             </button>
@@ -2447,7 +2725,7 @@ input, textarea { font-family: inherit; }
 }
 .wordmark-dot { color: var(--marquee-red); }
 
-.app-main { flex: 1; padding: 4px 16px 90px; }
+.app-main { flex: 1; padding: 2px 14px 86px; }
 
 .tab-bar {
   position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
@@ -2465,8 +2743,8 @@ input, textarea { font-family: inherit; }
 }
 .tab-btn.active { color: #ff6b6b; background: rgba(226,54,54,0.14); }
 
-.view { padding-top: 6px; }
-.view-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
+.view { padding-top: 4px; }
+.view-toggle { display: flex; gap: 8px; margin-bottom: 12px; }
 .toggle-pill {
   flex: 1; background: var(--velvet); border: 1px solid var(--line); color: var(--muted);
   padding: 9px 0; border-radius: 999px; font-size: 13px; font-weight: 600;
@@ -2622,10 +2900,10 @@ input, textarea { font-family: inherit; }
 }
 .swipe-poster { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; }
 .swipe-poster-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); background: var(--velvet-2); }
-.swipe-meta { padding: 14px 14px 6px; }
+.swipe-meta { padding: 10px 12px 4px; }
 .swipe-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
 .swipe-genres { color: var(--muted); font-size: 12px; }
-.swipe-buttons { display: flex; justify-content: center; gap: 16px; padding: 14px 0 18px; }
+.swipe-buttons { display: flex; justify-content: center; align-items: center; gap: 20px; padding: 10px 0 14px; }
 .round-btn { width: 50px; height: 50px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; transition: transform 0.12s; }
 .round-btn:active { transform: scale(0.88); }
 .round-btn-skip { background: #2a1818; border: 1px solid rgba(226,54,54,0.3); color: #e2685f; }
@@ -2751,6 +3029,30 @@ input, textarea { font-family: inherit; }
 .note-hot { background: rgba(47,184,107,0.12); color: #5fd99a; }
 .note-stretch { background: rgba(226,168,54,0.12); color: var(--brass-bright); }
 .note-cool { background: rgba(154,138,138,0.1); color: var(--muted); }
+
+/* why watch this */
+.why-watch {
+  font-size: 11.5px; color: var(--brass-bright); font-style: italic;
+  margin-top: 4px; line-height: 1.35;
+}
+.swipe-meta .why-watch { margin-top: 5px; opacity: 0.9; }
+
+/* year in review */
+.yir-wrap { padding: 8px 0 4px; }
+.yir-card {
+  background: var(--curtain); border: 2px solid var(--line); border-radius: 20px;
+  padding: 32px 24px; text-align: center; margin-bottom: 20px; min-height: 220px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+}
+.yir-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.7; }
+.yir-big { font-family: 'Bebas Neue', sans-serif; font-size: 42px; letter-spacing: 0.03em; line-height: 1; }
+.yir-sub { font-size: 14px; color: var(--muted); }
+.yir-poster { width: 80px; border-radius: 8px; }
+.yir-dots { display: flex; justify-content: center; gap: 8px; margin-bottom: 16px; }
+.yir-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--velvet); border: 1px solid var(--line); padding: 0; }
+.yir-dot-active { background: var(--marquee-red); border-color: var(--marquee-red); }
+.yir-nav { display: flex; justify-content: space-between; gap: 10px; }
+.yir-nav .btn { flex: 1; }
 
 /* where presets */
 .where-presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
