@@ -4,7 +4,7 @@ import {
   Ticket, Search, Sparkles, CalendarDays, Settings, X, Star, Pencil,
   Undo2, Trash2, Plus, Check, Heart, ChevronLeft, ChevronRight, Eye,
   Clapperboard, MapPin, Tv, Film, RefreshCw, ExternalLink, Info,
-  Bookmark, SkipForward, Camera
+  Bookmark, Camera
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -173,9 +173,6 @@ function buildBelcourtLink(title) {
   return `https://www.belcourt.org/?s=${encodeURIComponent(title)}`;
 }
 
-function buildBalthazarLink(title) {
-  return `https://www.google.com/search?q=${encodeURIComponent("Hero Balthazar " + title + " showtimes")}`;
-}
 
 function buildRedditLink(title, year) {
   const q = `${title}${year ? " " + year : ""} official discussion`;
@@ -452,7 +449,6 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
             <div className="detail-genres">
               {genreNames(item.genreIds, item.mediaType).join(" · ") || (item.mediaType === "tv" ? "TV" : "Film")}
             </div>
-            {imdb && <div className="detail-imdb"><span className="imdb-badge">{imdb} IMDb</span></div>}
             {badges && badges.length > 0 && (
               <div className="badge-row">
                 {badges.map((b, i) => (
@@ -468,7 +464,6 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
 
         {data && (
           <div className="detail-body">
-            {data.overview && <p className="detail-overview">{data.overview}</p>}
             <div className="detail-facts">
               {release && <div><span>Release</span>{formatDate(release.slice(0, 10)) || release}</div>}
               {runtime ? <div><span>Runtime</span>{runtime} min</div> : null}
@@ -622,12 +617,14 @@ function TicketStub({ ticket, onOpen }) {
           </div>
         )}
         <div className="stub-perf" />
-        {ticket.viewings.length > 1 && (
-          <div className="stub-rewatch-badge">{ticket.viewings.length}×</div>
-        )}
       </div>
       <div className="stub-tab">
-        <div className="stub-title">{ticket.title}</div>
+        <div className="stub-tab-top">
+          <div className="stub-title">{ticket.title}</div>
+          {ticket.viewings.length > 1 && (
+            <div className="stub-rewatch-inline">{ticket.viewings.length}×</div>
+          )}
+        </div>
         <Stars value={last.rating} size={13} />
       </div>
       <span className="stub-shine" />
@@ -640,14 +637,13 @@ function TicketStub({ ticket, onOpen }) {
 --------------------------------------------------------- */
 
 function TicketDetail({ ticket, onClose, onUpdate, onDelete }) {
-  const [flipped, setFlipped] = useState(true);
+  const [showPoster, setShowPoster] = useState(false);
   const [editingViewingId, setEditingViewingId] = useState(null);
   const [logging, setLogging] = useState(false);
 
   function pushHistory(t) {
     const snap = JSON.parse(JSON.stringify({ viewings: t.viewings, log: t.log }));
-    const history = [...(t.history || []), snap].slice(-8);
-    return history;
+    return [...(t.history || []), snap].slice(-8);
   }
 
   function withLog(t, text) {
@@ -689,13 +685,11 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete }) {
     onUpdate(t);
   }
 
-  const editingViewing = editingViewingId ? ticket.viewings.find((v) => v.id === editingViewingId) : null;
-
   return (
     <Modal onClose={onClose} wide>
       <div className="ticket-detail">
-        <div className={"flip-stage" + (flipped ? " is-flipped" : "")}>
-          <div className="flip-front">
+        {showPoster ? (
+          <div className="td-poster-view">
             {ticket.posterPath ? (
               <img src={tmdbImg(ticket.posterPath, "w500")} alt="" className="detail-poster" />
             ) : (
@@ -703,33 +697,42 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete }) {
                 {ticket.mediaType === "tv" ? <Tv size={48} /> : <Film size={48} />}
               </div>
             )}
-            <button className="btn btn-ghost flip-hint" onClick={() => setFlipped(true)}>
-              Back to details <ChevronRight size={14} />
+            <button className="btn btn-ghost flip-hint" onClick={() => setShowPoster(false)}>
+              <ChevronLeft size={14} /> Back to details
             </button>
           </div>
-          <div className="flip-back">
-            <button className="btn btn-ghost flip-hint flip-hint-back" onClick={() => setFlipped(false)}>
-              <ChevronLeft size={14} /> View poster
-            </button>
-
-            <h2 className="detail-title">{ticket.title}</h2>
-            <div className="detail-genres">
-              {genreNames(ticket.genreIds, ticket.mediaType).join(" · ") || (ticket.mediaType === "tv" ? "TV" : "Film")}
+        ) : (
+          <div className="td-back">
+            <div className="td-back-header">
+              <button className="td-thumb-btn" onClick={() => setShowPoster(true)} aria-label="View poster">
+                {ticket.posterPath ? (
+                  <img src={tmdbImg(ticket.posterPath, "w185")} alt="" className="td-back-thumb" />
+                ) : (
+                  <div className="td-back-thumb td-thumb-fallback">
+                    {ticket.mediaType === "tv" ? <Tv size={22} /> : <Film size={22} />}
+                  </div>
+                )}
+              </button>
+              <div className="td-back-meta">
+                <h2 className="td-back-title">{ticket.title}</h2>
+                <div className="td-back-genres">
+                  {genreNames(ticket.genreIds, ticket.mediaType).join(" · ") || (ticket.mediaType === "tv" ? "TV" : "Film")}
+                </div>
+                {ticket.viewings.length > 1 && (
+                  <div className="td-rewatch-count"><RefreshCw size={12} /> Watched {ticket.viewings.length}×</div>
+                )}
+              </div>
             </div>
 
-            <div className="detail-toolbar">
-              <button
-                className="btn btn-outline btn-sm"
-                disabled={!ticket.history || !ticket.history.length}
-                onClick={handleUndo}
-              >
-                <Undo2 size={14} /> Undo last change
+            <div className="td-toolbar">
+              <button className="td-tool-btn" disabled={!ticket.history || !ticket.history.length} onClick={handleUndo}>
+                <Undo2 size={14} /><span>Undo</span>
               </button>
-              <button className="btn btn-outline btn-sm" onClick={() => setLogging(true)}>
-                <Plus size={14} /> Log a rewatch
+              <button className="td-tool-btn" onClick={() => setLogging(true)}>
+                <Plus size={14} /><span>Rewatch</span>
               </button>
-              <button className="btn btn-outline btn-sm btn-danger" onClick={() => onDelete(ticket.id)}>
-                <Trash2 size={14} /> Remove ticket
+              <button className="td-tool-btn td-tool-danger" onClick={() => onDelete(ticket.id)}>
+                <Trash2 size={14} /><span>Remove</span>
               </button>
             </div>
 
@@ -749,13 +752,11 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete }) {
                     ) : (
                       <>
                         <div className="viewing-top">
-                          <div className="viewing-date">{formatDate(v.date)}</div>
+                          <div className="viewing-date"><CalendarDays size={12} /> {formatDate(v.date)}</div>
                           <Stars value={v.rating} size={14} />
                         </div>
                         {v.location && (
-                          <div className="viewing-loc">
-                            <MapPin size={12} /> {v.location}
-                          </div>
+                          <div className="viewing-loc"><MapPin size={12} /> {v.location}</div>
                         )}
                         {v.notes && <div className="viewing-notes">{v.notes}</div>}
                         <div className="viewing-actions">
@@ -763,11 +764,7 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete }) {
                             <Pencil size={13} />
                           </button>
                           {ticket.viewings.length > 1 && (
-                            <button
-                              className="icon-btn"
-                              onClick={() => handleRemoveViewing(v.id)}
-                              aria-label="Remove this entry"
-                            >
+                            <button className="icon-btn" onClick={() => handleRemoveViewing(v.id)} aria-label="Remove this entry">
                               <Trash2 size={13} />
                             </button>
                           )}
@@ -784,23 +781,8 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete }) {
                 </div>
               )}
             </div>
-
-            {!!(ticket.log && ticket.log.length) && (
-              <details className="edit-log">
-                <summary>Edit history ({ticket.log.length})</summary>
-                {ticket.log
-                  .slice()
-                  .reverse()
-                  .map((l, i) => (
-                    <div className="edit-log-row" key={i}>
-                      <span>{l.text}</span>
-                      <span className="edit-log-time">{new Date(l.at).toLocaleString()}</span>
-                    </div>
-                  ))}
-              </details>
-            )}
           </div>
-        </div>
+        )}
       </div>
     </Modal>
   );
@@ -843,7 +825,7 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
           role: "user",
           content: [
             { type: "image", source: { type: "base64", media_type: mimeType, data: base64 } },
-            { type: "text", text: 'This is a movie ticket or purchase confirmation. Extract the movie title and the date of the screening or purchase. Reply with only valid JSON: {"title": "movie title here", "date": "YYYY-MM-DD"}. Use null if you cannot find the field.' }
+            { type: "text", text: 'Look at this theater ticket or purchase confirmation. Find ONLY the movie or show title being purchased. Ignore seat numbers, food orders, prices, theater names, confirmation numbers, and showtimes. The movie title is usually the largest or most prominent text, or appears next to words like "Ticket", "Movie", or a seat row label. Reply with ONLY valid JSON: {"title": "exact movie title", "date": "YYYY-MM-DD or null"}. If you cannot confidently identify the movie title, set title to null.' }
           ]
         }]
       });
@@ -1021,7 +1003,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
       return 0;
     });
     return list;
-  }, [collection, query, genreFilter, sort]);
+  }, [collection, query, genreFilter, sort, yearFilter]);
 
   if (open) {
     return (
@@ -1204,7 +1186,7 @@ function EmptyState({ icon, title, body }) {
    DISCOVER TAB, swipe deck
 --------------------------------------------------------- */
 
-function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onSwipeRight, onTapInfo }) {
+function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo }) {
   const [drag, setDrag] = useState({ x: 0, active: false });
   const startX = useRef(0);
   const moved = useRef(false);
@@ -1221,7 +1203,7 @@ function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onSwipeRight
     setDrag({ x, active: true });
   }
   function up() {
-    if (drag.x > 100) onSwipeRight();
+    if (drag.x > 100) onWant();
     else if (drag.x < -100) onSkip();
     setDrag({ x: 0, active: false });
   }
@@ -1268,7 +1250,7 @@ function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onSwipeRight
       </div>
       <div className="swipe-buttons">
         <button className="round-btn round-btn-skip" onClick={onSkip} aria-label="Skip">
-          <SkipForward size={20} />
+          <X size={22} />
         </button>
         <button className="round-btn round-btn-seen" onClick={onSeen} aria-label="Already seen it">
           <Eye size={26} />
@@ -1287,9 +1269,8 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   const [error, setError] = useState(null);
   const [pendingLog, setPendingLog] = useState(null);
   const [infoItem, setInfoItem] = useState(null);
-  const [swipeChoice, setSwipeChoice] = useState(null);
   const [mode, setMode] = useState("swipe");
-  const [lastSkipped, setLastSkipped] = useState(null);
+  const [lastAction, setLastAction] = useState(null);
   const [forYouList, setForYouList] = useState([]);
   const [forYouLoading, setForYouLoading] = useState(false);
   const forYouLoadedRef = useRef(false);
@@ -1328,12 +1309,12 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
       const fresh = all.filter((a) => !skipSet.has(a.tmdbId + a.mediaType) && !ownedSet.has(a.tmdbId + a.mediaType));
       const dedup = Array.from(new Map(fresh.map((f) => [f.tmdbId + f.mediaType, f])).values());
       const scored = dedup.map((x) => ({ ...x, _pct: matchPercent(x, taste) }));
-      // Shuffle with mild bias toward high match — avoids showing same movie on every refresh
-      const shuffled = scored.sort((a, b) => {
-        const bias = ((b._pct || 50) - (a._pct || 50)) * 0.3;
-        return bias + (Math.random() - 0.5) * 100;
-      });
-      setPool(shuffled);
+      // Fisher-Yates shuffle — truly random deck every load
+      for (let i = scored.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [scored[i], scored[j]] = [scored[j], scored[i]];
+      }
+      setPool(scored);
     } catch (e) {
       setError(e.message);
     }
@@ -1390,25 +1371,30 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
 
   function skip(item) {
     recordFeedback("skippedIds", item);
-    setLastSkipped(item);
+    setLastAction({ type: "skip", item });
     advance();
   }
-  function undoSkip() {
-    if (!lastSkipped) return;
-    setFeedback((f) => ({
-      ...f,
-      skippedIds: f.skippedIds.filter((s) => !(s.tmdbId === lastSkipped.tmdbId && s.mediaType === lastSkipped.mediaType))
-    }));
-    setPool((p) => [lastSkipped, ...p]);
-    setLastSkipped(null);
+  function undoLast() {
+    if (!lastAction) return;
+    const { type, item } = lastAction;
+    setFeedback((f) => {
+      if (type === "skip") return { ...f, skippedIds: f.skippedIds.filter((s) => !(s.tmdbId === item.tmdbId && s.mediaType === item.mediaType)) };
+      if (type === "want") return { ...f, wantedIds: f.wantedIds.filter((w) => !(w.tmdbId === item.tmdbId && w.mediaType === item.mediaType)) };
+      if (type === "seen") return { ...f, seenIds: f.seenIds.filter((s) => !(s.tmdbId === item.tmdbId && s.mediaType === item.mediaType)) };
+      return f;
+    });
+    setPool((p) => [item, ...p]);
+    setLastAction(null);
   }
   function want(item) {
     recordFeedback("wantedIds", item);
     onAddToWatchlist(item);
+    setLastAction({ type: "want", item });
     advance();
   }
   function seen(item) {
     recordFeedback("seenIds", item);
+    setLastAction({ type: "seen", item });
     setPendingLog(item);
   }
 
@@ -1438,20 +1424,6 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
         />
       )}
 
-      {swipeChoice && (
-        <Modal onClose={() => setSwipeChoice(null)}>
-          <h3 className="modal-title">{swipeChoice.title}</h3>
-          <p className="sync-note" style={{ marginBottom: 18 }}>Have you already seen this, or do you want to watch it?</p>
-          <div className="choice-grid">
-            <button className="btn btn-outline" onClick={() => { want(swipeChoice); setSwipeChoice(null); }}>
-              <Eye size={16} /> Want to watch
-            </button>
-            <button className="btn btn-primary" onClick={() => { const it = swipeChoice; setSwipeChoice(null); seen(it); }}>
-              <Check size={16} /> Already seen it
-            </button>
-          </div>
-        </Modal>
-      )}
 
       {pendingLog && (
         <Modal onClose={() => setPendingLog(null)}>
@@ -1482,15 +1454,15 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
                 onSkip={() => skip(current)}
                 onWant={() => want(current)}
                 onSeen={() => seen(current)}
-                onSwipeRight={() => setSwipeChoice(current)}
+  
                 onTapInfo={() => setInfoItem(current)}
               />
             </div>
           )}
           <div className="discover-foot">
-            {lastSkipped && (
-              <button className="btn btn-ghost btn-sm" onClick={undoSkip}>
-                <Undo2 size={14} /> Bring back last skip
+            {lastAction && (
+              <button className="btn btn-ghost btn-sm" onClick={undoLast}>
+                <Undo2 size={14} /> Undo last swipe
               </button>
             )}
             <button className="btn btn-ghost btn-sm" onClick={() => loadPool(false)}>
@@ -1609,7 +1581,6 @@ function SuggestionRow({ item, matchPct, settings, tmdb, taste, onAddToWatchlist
       <div className="suggest-info">
         <div className="suggest-title-row">
           <button className="suggest-title-btn" onClick={onInfo}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
-          {imdb && <span className="imdb-badge">{imdb} IMDb</span>}
           {matchPct != null && <span className={"match-pill " + (matchPct >= 70 ? "match-high" : matchPct >= 40 ? "match-mid" : "match-low")}>{matchPct}%</span>}
         </div>
         <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
@@ -1820,17 +1791,37 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
     const overlapping = itemGenres.filter((g) => topUserGenres.includes(g));
     const nonOverlapping = itemGenres.filter((g) => !topUserGenres.includes(g));
     const gName = (id) => MOVIE_GENRES[id] || TV_GENRES[id];
+    const pick = (arr, seed) => arr[seed % arr.length];
+    const seed = item.tmdbId % 7;
     if (pct >= 70) {
-      const strongId = overlapping.find((g) => gName(g));
-      return { tone: "hot", text: strongId ? `Strong ${gName(strongId)} match` : "Right in your lane" };
+      const g = overlapping.find((id) => gName(id));
+      const opts = g ? [
+        `Strong ${gName(g)} match`, `Right in your ${gName(g)} lane`,
+        `Exactly the ${gName(g)} energy you love`, `Hits hard on ${gName(g)}`
+      ] : ["Right in your lane", "Locks into your taste", "High confidence pick"];
+      return { tone: "hot", text: pick(opts, seed) };
+    }
+    if (overlapping.length && pct >= 45) {
+      const g = gName(overlapping[0]);
+      const opts = g ? [`Solid ${g} match`, `Your kind of ${g}`, `${g} that fits your profile`]
+        : ["Decent match for your taste", "Fits your usual pattern"];
+      return { tone: "hot", text: pick(opts, seed) };
     }
     if (!overlapping.length && pct >= 35) {
-      const stretchId = nonOverlapping.find((g) => gName(g));
-      return { tone: "stretch", text: stretchId ? `A ${gName(stretchId)} you don't usually watch` : "A stretch from your usual taste" };
+      const g = nonOverlapping.find((id) => gName(id));
+      const opts = g ? [
+        `New territory — ${gName(g)}`, `A ${gName(g)} stretch worth considering`,
+        `Outside your usual, but worth it`
+      ] : ["A stretch from your usual picks", "Not your usual territory"];
+      return { tone: "stretch", text: pick(opts, seed) };
     }
-    if (pct < 30) {
-      const topId = topUserGenres.find((g) => gName(g));
-      return { tone: "cool", text: topId ? `Far from your ${gName(topId)} comfort zone` : "A departure from what you usually rate highly" };
+    if (pct < 28) {
+      const g = topUserGenres.find((id) => gName(id));
+      const opts = g ? [
+        `Far from your ${gName(g)} comfort zone`, `Not your typical ${gName(g)} territory`,
+        `Well outside your usual taste`
+      ] : ["Probably not your style", "A real departure"];
+      return { tone: "cool", text: pick(opts, seed) };
     }
     return null;
   };
@@ -1982,6 +1973,38 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
     [items, taste]
   );
 
+  const note = (item, pct) => {
+    if (pct == null) return null;
+    const topUserGenres = Object.entries(taste).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
+    const itemGenres = item.genreIds || [];
+    const overlapping = itemGenres.filter((g) => topUserGenres.includes(g));
+    const nonOverlapping = itemGenres.filter((g) => !topUserGenres.includes(g));
+    const gName = (id) => MOVIE_GENRES[id] || TV_GENRES[id];
+    const pick = (arr, seed) => arr[seed % arr.length];
+    const seed = item.tmdbId % 7;
+    if (pct >= 70) {
+      const g = overlapping.find((id) => gName(id));
+      const opts = g ? [`Strong ${gName(g)} match`, `Right in your ${gName(g)} lane`, `Hits hard on ${gName(g)}`]
+        : ["Right in your lane", "High confidence pick", "Locks into your taste"];
+      return { tone: "hot", text: pick(opts, seed) };
+    }
+    if (overlapping.length && pct >= 45) {
+      const g = gName(overlapping[0]);
+      return g ? { tone: "hot", text: pick([`Solid ${g} match`, `Your kind of ${g}`], seed) } : null;
+    }
+    if (!overlapping.length && pct >= 35) {
+      const g = nonOverlapping.find((id) => gName(id));
+      const opts = g ? [`New territory — ${gName(g)}`, `A ${gName(g)} stretch worth it`]
+        : ["Outside your usual, worth considering"];
+      return { tone: "stretch", text: pick(opts, seed) };
+    }
+    if (pct < 28) {
+      const g = topUserGenres.find((id) => gName(id));
+      return g ? { tone: "cool", text: `Far from your ${gName(g)} comfort zone` } : null;
+    }
+    return null;
+  };
+
   const ownedSet = useMemo(
     () => new Set([...collection.map((c) => c.tmdbId + c.mediaType), ...[]]),
     [collection]
@@ -2011,6 +2034,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
         <div className="coming-list">
           {processed.map((item) => {
             const badges = badgesFor(item, people, taste);
+            const n = enough ? note(item, item._pct) : null;
             const isOwned = ownedSet.has(item.tmdbId + item.mediaType);
             return (
               <div className="coming-row" key={item.tmdbId}>
@@ -2034,6 +2058,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
                       {badges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
                     </div>
                   )}
+                  {n && <div className={"proactive-note note-" + n.tone}>{n.text}</div>}
                   <div className="suggest-links">
                     <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
                     <a className="link-pill" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
@@ -2919,11 +2944,6 @@ input, textarea { font-family: inherit; }
   transition: transform 0.15s;
 }
 .stub:active { transform: scale(0.97); }
-.stub-num {
-  position: absolute; top: 6px; right: 8px; z-index: 2;
-  font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 0.03em;
-  color: var(--brass); background: rgba(21,12,20,0.55); padding: 2px 6px; border-radius: 4px;
-}
 .stub-poster { position: relative; aspect-ratio: 2/3; background: var(--velvet); }
 .stub-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .stub-poster-fallback { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--brass); }
@@ -2934,13 +2954,10 @@ input, textarea { font-family: inherit; }
   background-color: var(--stub-cream);
 }
 .stub-tab { padding: 9px 10px 11px; color: var(--ink); }
-.stub-title { font-size: 12.5px; font-weight: 700; line-height: 1.25; margin-bottom: 4px;
+.stub-tab-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; margin-bottom: 4px; }
+.stub-title { font-size: 12.5px; font-weight: 700; line-height: 1.25;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.stub-rewatch-badge {
-  position: absolute; bottom: 14px; left: 6px; z-index: 2;
-  font-family: 'Space Mono', monospace; font-size: 9px; font-weight: 700;
-  color: #fff; background: var(--marquee-red); padding: 2px 7px; border-radius: 999px;
-}
+.stub-rewatch-inline { font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; color: var(--marquee-red); flex-shrink: 0; padding-top: 1px; }
 .stub-shine {
   position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
   background: linear-gradient(115deg, transparent, rgba(255,255,255,0.5), transparent);
@@ -2993,17 +3010,25 @@ input, textarea { font-family: inherit; }
 .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 .settings-link { color: var(--brass-bright); font-size: 12px; display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; text-decoration: none; }
 
-/* ticket detail / flip */
-.ticket-detail { perspective: 1600px; }
-.flip-stage { position: relative; transform-style: preserve-3d; transition: transform 0.55s cubic-bezier(.4,.2,.2,1); }
-.flip-front, .flip-back { backface-visibility: hidden; }
-.flip-front { }
-.flip-back { position: absolute; top: 0; left: 0; width: 100%; transform: rotateY(180deg); }
-.flip-stage.is-flipped { transform: rotateY(180deg); }
-.flip-stage:not(.is-flipped) .flip-back { visibility: hidden; }
-.flip-stage.is-flipped .flip-front { visibility: hidden; }
+/* ticket detail */
+.ticket-detail { }
+.td-poster-view { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .detail-poster { width: 100%; border-radius: 14px; aspect-ratio: 2/3; object-fit: cover; background: var(--curtain); }
 .detail-poster-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); }
+.td-back-header { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
+.td-thumb-btn { flex-shrink: 0; background: none; border: none; padding: 0; cursor: pointer; border-radius: 8px; overflow: hidden; }
+.td-back-thumb { width: 72px; border-radius: 8px; aspect-ratio: 2/3; object-fit: cover; display: block; }
+.td-thumb-fallback { width: 72px; aspect-ratio: 2/3; background: var(--velvet-2); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--brass); }
+.td-back-meta { flex: 1; min-width: 0; }
+.td-back-title { font-size: 18px; font-weight: 700; color: var(--cream-text); margin: 0 0 4px; line-height: 1.25; }
+.td-back-genres { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.td-rewatch-count { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--brass-bright); font-weight: 600; }
+.td-toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.td-tool-btn { display: flex; align-items: center; gap: 6px; background: var(--velvet); border: 1px solid var(--line); color: var(--cream-text); border-radius: 20px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+.td-tool-btn:hover { background: var(--velvet-2); }
+.td-tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.td-tool-danger { color: var(--marquee-red); border-color: rgba(226,54,54,0.35); }
+.td-tool-danger:hover { background: rgba(226,54,54,0.12); }
 .flip-hint { margin-top: 12px; width: 100%; }
 .flip-hint-back { margin-top: 0; margin-bottom: 10px; }
 .detail-title { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 0.02em; margin: 0 0 4px; }
