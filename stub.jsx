@@ -222,6 +222,7 @@ function normalize(item) {
     title: item.title || item.name || "Untitled",
     year: (item.release_date || item.first_air_date || "").slice(0, 4),
     posterPath: item.poster_path || null,
+    backdropPath: item.backdrop_path || null,
     genreIds: item.genre_ids || []
   };
 }
@@ -1840,7 +1841,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
       ] : ["Probably not your style", "A real departure"];
       return { tone: "cool", text: pick(opts, seed) };
     }
-    return null;
+    return { tone: "stretch", text: pick(["Decent bet if you're curious", "A bit outside your usual lane", "Could surprise you"], seed) };
   };
 
   const processed = useMemo(() => {
@@ -2019,7 +2020,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
       const g = topUserGenres.find((id) => gName(id));
       return g ? { tone: "cool", text: `Far from your ${gName(g)} comfort zone` } : null;
     }
-    return null;
+    return { tone: "stretch", text: pick(["Decent bet if you're curious", "A bit outside your usual lane", "Could surprise you"], seed) };
   };
 
   const ownedSet = useMemo(
@@ -2047,52 +2048,98 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
         <EmptyState icon={<Clapperboard size={32} />} title="Nothing found" body="No current releases found for your region." />
       )}
 
-      {!loading && !error && (
-        <div className="coming-list">
-          {processed.map((item) => {
-            const badges = badgesFor(item, people, taste);
-            const n = enough ? note(item, item._pct) : null;
-            const isOwned = ownedSet.has(item.tmdbId + item.mediaType);
-            return (
-              <div className="coming-row" key={item.tmdbId}>
-                <button className="coming-thumb-btn" onClick={() => setInfoItem(item)} aria-label={`Details for ${item.title}`}>
-                  {item.posterPath ? (
-                    <img src={tmdbImg(item.posterPath, "w154")} alt="" className="coming-thumb" />
-                  ) : (
-                    <div className="coming-thumb coming-thumb-fallback"><Film size={18} /></div>
+      {!loading && !error && processed.length > 0 && (() => {
+        const hero = enough
+          ? [...processed].sort((a, b) => (b._pct || 0) - (a._pct || 0))[0]
+          : processed[0];
+        const rest = processed.filter((x) => x.tmdbId !== hero.tmdbId);
+        const heroNote = enough ? note(hero, hero._pct) : null;
+        const heroBadges = badgesFor(hero, people, taste);
+        const heroOwned = ownedSet.has(hero.tmdbId + hero.mediaType);
+        return (
+          <>
+            <div className="outnow-hero" onClick={() => setInfoItem(hero)}>
+              {hero.backdropPath ? (
+                <img src={tmdbImg(hero.backdropPath, "w780")} alt="" className="outnow-hero-img" />
+              ) : hero.posterPath ? (
+                <img src={tmdbImg(hero.posterPath, "w500")} alt="" className="outnow-hero-img outnow-hero-poster" />
+              ) : (
+                <div className="outnow-hero-img outnow-hero-blank"><Film size={48} /></div>
+              )}
+              <div className="outnow-hero-overlay">
+                <div className="outnow-hero-top">
+                  {enough && hero._pct != null && (
+                    <span className={"match-pill " + (hero._pct >= 70 ? "match-high" : hero._pct >= 40 ? "match-mid" : "match-low")}>{hero._pct}% match</span>
                   )}
-                </button>
-                <div className="coming-info">
-                  <div className="suggest-title-row">
-                    <button className="suggest-title-btn" onClick={() => setInfoItem(item)}>{item.title}</button>
-                    {enough && item._pct != null && (
-                      <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
-                    )}
-                  </div>
-                  <div className="coming-date" style={{ color: "var(--brass-bright)" }}>In theaters now</div>
-                  {badges.length > 0 && (
-                    <div className="badge-row">
-                      {badges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
-                    </div>
-                  )}
-                  {n && <div className={"proactive-note note-" + n.tone}>{n.text}</div>}
-                  <div className="suggest-links">
-                    <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
-                    <a className="link-pill" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
-                  </div>
+                  {heroNote && <span className={"proactive-note note-" + heroNote.tone} style={{ margin: 0 }}>{heroNote.text}</span>}
                 </div>
-                <button
-                  className={"icon-btn" + (added[item.tmdbId] || isOwned ? " icon-btn-active" : "")}
-                  onClick={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
-                  aria-label="Want to see"
-                >
-                  <Bookmark size={16} />
-                </button>
+                <div className="outnow-hero-title">{hero.title}</div>
+                <div className="outnow-hero-genres">{genreNames(hero.genreIds, hero.mediaType).slice(0, 3).join(" · ")}</div>
+                {heroBadges.length > 0 && (
+                  <div className="badge-row" style={{ marginBottom: 10 }}>
+                    {heroBadges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
+                  </div>
+                )}
+                <div className="outnow-hero-btns">
+                  <a className="hero-btn" href={buildAmcLink(hero.title, settings.zip)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>AMC</a>
+                  <a className="hero-btn hero-btn-ghost" href={buildRegalLink(hero.title, settings.zip)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>Regal</a>
+                  <a className="hero-btn hero-btn-ghost" href={buildRedditLink(hero.title, hero.year)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}><ExternalLink size={12} /> Reddit</a>
+                  <button
+                    className={"hero-btn hero-btn-icon" + (added[hero.tmdbId] || heroOwned ? " hero-btn-active" : "")}
+                    onClick={(e) => { e.stopPropagation(); onAddToWatchlist(hero); setAdded((a) => ({ ...a, [hero.tmdbId]: true })); }}
+                    aria-label="Save to watchlist"
+                  ><Bookmark size={14} /></button>
+                </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+            </div>
+
+            {rest.length > 0 && <div className="outnow-section-head">Also in theaters</div>}
+            <div className="coming-list">
+              {rest.map((item) => {
+                const badges = badgesFor(item, people, taste);
+                const n = enough ? note(item, item._pct) : null;
+                const isOwned = ownedSet.has(item.tmdbId + item.mediaType);
+                return (
+                  <div className="coming-row" key={item.tmdbId}>
+                    <button className="coming-thumb-btn" onClick={() => setInfoItem(item)} aria-label={`Details for ${item.title}`}>
+                      {item.posterPath ? (
+                        <img src={tmdbImg(item.posterPath, "w154")} alt="" className="coming-thumb" />
+                      ) : (
+                        <div className="coming-thumb coming-thumb-fallback"><Film size={18} /></div>
+                      )}
+                    </button>
+                    <div className="coming-info">
+                      <div className="suggest-title-row">
+                        <button className="suggest-title-btn" onClick={() => setInfoItem(item)}>{item.title}</button>
+                        {enough && item._pct != null && (
+                          <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
+                        )}
+                      </div>
+                      {badges.length > 0 && (
+                        <div className="badge-row">
+                          {badges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
+                        </div>
+                      )}
+                      {n && <div className={"proactive-note note-" + n.tone}>{n.text}</div>}
+                      <div className="suggest-links">
+                        <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
+                        <a className="link-pill" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
+                      </div>
+                    </div>
+                    <button
+                      className={"icon-btn" + (added[item.tmdbId] || isOwned ? " icon-btn-active" : "")}
+                      onClick={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
+                      aria-label="Want to see"
+                    >
+                      <Bookmark size={16} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
@@ -2305,19 +2352,21 @@ const whyWatchCache = {};
 async function getWhyWatch(cacheKey, title, year, genres, tasteGenres, matchPct) {
   if (whyWatchCache[cacheKey]) return whyWatchCache[cacheKey];
   const pct = matchPct ?? 50;
-  const toneGuide = pct >= 72
-    ? "Be direct and enthusiastic — like 'You're gonna like this one' or 'Right in your lane.'"
-    : pct >= 50
-    ? "Be honest — it's decent but not a slam dunk. Like 'Solid but middle of the road' or 'Worth it if you're in the mood.'"
-    : pct >= 35
-    ? "Be candid that it's not really their thing but give one honest reason to try it anyway. Like 'Not quite your style, but...' or 'A stretch, but give it a shot if...'"
-    : "Be straightforward that this is pretty far from their taste. Keep it brief.";
   const data = await callProxy({
     model: "claude-haiku-4-5",
-    max_tokens: 80,
+    max_tokens: 90,
     messages: [{
       role: "user",
-      content: `You're a blunt, trustworthy movie friend — not a marketer. Movie: "${title}" (${year || ""}), genres: ${genres}. Their top genres: ${tasteGenres}. Match score: ${pct}%. ${toneGuide} Write ONE frank sentence, 10-18 words. No plot description. No quotation marks in output.`
+      content: `You're a trusted movie friend giving a personal opinion. NEVER describe the movie or its plot. ONLY say whether this viewer will like it and why, based on their taste.
+
+WRONG (describes film): "Witty humor and quirky charm that appeals to everyone"
+WRONG (plot): "A detective comedy following a quirky investigator"
+RIGHT at 82% match: "This is right in your lane — you're gonna like this one"
+RIGHT at 51% match: "Decent but middle of the road for your taste — give it a shot if you have nothing else"
+RIGHT at 30% match: "Probably not your thing, but worth it if you're open to something different"
+
+Movie genres: ${genres}. Their top genres: ${tasteGenres}. Match score: ${pct}%.
+Write ONE frank opinion sentence, max 16 words. No quotation marks.`
     }]
   });
   const text = data.content?.[0]?.text?.trim().replace(/^["']|["']$/g, "") || null;
@@ -3073,6 +3122,22 @@ input, textarea { font-family: inherit; }
 .swipe-flag-want { left: 16px; border: 3px solid #6fbf73; color: #6fbf73; }
 .swipe-flag-skip { right: 16px; border: 3px solid #e9695f; color: #e9695f; transform: rotate(8deg); }
 .refresh-btn { margin-top: 18px; }
+
+/* out now hero */
+.outnow-hero { position: relative; border-radius: 16px; overflow: hidden; margin-bottom: 6px; cursor: pointer; }
+.outnow-hero-img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; background: var(--velvet-2); }
+.outnow-hero-poster { aspect-ratio: 2/3; max-height: 280px; }
+.outnow-hero-blank { display: flex; align-items: center; justify-content: center; background: var(--velvet-2); color: var(--brass); aspect-ratio: 16/9; }
+.outnow-hero-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 48px 14px 14px; background: linear-gradient(to top, rgba(10,5,9,0.97) 50%, transparent); }
+.outnow-hero-top { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 7px; }
+.outnow-hero-title { font-size: 22px; font-weight: 800; color: var(--cream-text); line-height: 1.2; margin-bottom: 4px; }
+.outnow-hero-genres { font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 10px; }
+.outnow-hero-btns { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.hero-btn { padding: 8px 16px; border-radius: 20px; font-size: 12.5px; font-weight: 700; background: var(--marquee-red); color: #fff; border: none; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
+.hero-btn-ghost { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18); }
+.hero-btn-icon { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18); padding: 8px 10px; }
+.hero-btn-active { background: rgba(226,54,54,0.7) !important; border-color: var(--marquee-red) !important; }
+.outnow-section-head { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; padding: 14px 2px 6px; }
 
 /* suggestions / search / coming soon shared rows */
 .suggest-list, .coming-list { display: flex; flex-direction: column; gap: 10px; }
