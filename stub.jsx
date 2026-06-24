@@ -2162,9 +2162,9 @@ input, textarea { font-family: inherit; }
 
 .app-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 18px 18px 14px;
+  padding: calc(18px + env(safe-area-inset-top)) 18px 14px;
   position: sticky; top: 0; z-index: 5;
-  background: linear-gradient(180deg, var(--curtain) 70%, transparent);
+  background: linear-gradient(180deg, var(--curtain) 78%, transparent);
 }
 .header-right { display: flex; align-items: center; gap: 10px; }
 .sync-pill {
