@@ -1920,7 +1920,6 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
                   <div className="suggest-links">
                     <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
                     <a className="link-pill" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
-                    <a className="link-pill" href={buildBelcourtLink(item.title)} target="_blank" rel="noreferrer">Belcourt</a>
                   </div>
                 </div>
                 <button
