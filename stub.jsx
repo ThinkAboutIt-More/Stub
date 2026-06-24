@@ -1241,6 +1241,7 @@ function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo })
       <div className="swipe-meta">
         <div className="swipe-title">{item.title} {item.year ? `(${item.year})` : ""}</div>
         <div className="swipe-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ") || (item.mediaType === "tv" ? "TV series" : "Film")}</div>
+        <WhyWatch item={item} taste={taste} matchPct={matchPct} />
       </div>
       <div className="swipe-buttons">
         <button className="round-btn round-btn-skip" onClick={onSkip} aria-label="Skip">
@@ -1600,6 +1601,8 @@ function SuggestionRow({ item, matchPct, settings, tmdb, taste, onAddToWatchlist
           {matchPct != null && <span className={"match-pill " + (matchPct >= 70 ? "match-high" : matchPct >= 40 ? "match-mid" : "match-low")}>{matchPct}%</span>}
         </div>
         <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
+        {item.aiReason && <div className="why-watch">{item.aiReason}</div>}
+        {taste && !item.aiReason && <WhyWatch item={item} taste={taste} matchPct={matchPct} />}
         {providers && (
           <div className="suggest-links">
             {providers.names.map((name) => (
@@ -2178,6 +2181,7 @@ function SearchView({ tmdb, taste, onAddToWatchlist, onLogNew }) {
                 <div className="suggest-info">
                   <button className="suggest-title-btn" onClick={() => setDetail(item)}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
                   <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
+                  {item.aiReason && <div className="why-watch">{item.aiReason}</div>}
                 </div>
                 <div className="suggest-actions">
                   <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Want to see"><Bookmark size={16} /></button>
@@ -2298,14 +2302,22 @@ function Onboarding({ onSave }) {
 
 const whyWatchCache = {};
 
-async function getWhyWatch(cacheKey, title, year, genres, tasteGenres) {
+async function getWhyWatch(cacheKey, title, year, genres, tasteGenres, matchPct) {
   if (whyWatchCache[cacheKey]) return whyWatchCache[cacheKey];
+  const pct = matchPct ?? 50;
+  const toneGuide = pct >= 72
+    ? "Be direct and enthusiastic — like 'You're gonna like this one' or 'Right in your lane.'"
+    : pct >= 50
+    ? "Be honest — it's decent but not a slam dunk. Like 'Solid but middle of the road' or 'Worth it if you're in the mood.'"
+    : pct >= 35
+    ? "Be candid that it's not really their thing but give one honest reason to try it anyway. Like 'Not quite your style, but...' or 'A stretch, but give it a shot if...'"
+    : "Be straightforward that this is pretty far from their taste. Keep it brief.";
   const data = await callProxy({
     model: "claude-haiku-4-5",
-    max_tokens: 60,
+    max_tokens: 80,
     messages: [{
       role: "user",
-      content: `Movie: "${title}" (${year || ""}), genre: ${genres}. This viewer's top genres: ${tasteGenres}. Write ONE short phrase (8–12 words) hinting why they'd enjoy it. Lead with the specific quality or vibe — not "You'll enjoy" or "A must-watch". No plot spoilers. No quotation marks.`
+      content: `You're a blunt, trustworthy movie friend — not a marketer. Movie: "${title}" (${year || ""}), genres: ${genres}. Their top genres: ${tasteGenres}. Match score: ${pct}%. ${toneGuide} Write ONE frank sentence, 10-18 words. No plot description. No quotation marks in output.`
     }]
   });
   const text = data.content?.[0]?.text?.trim().replace(/^["']|["']$/g, "") || null;
@@ -2313,9 +2325,9 @@ async function getWhyWatch(cacheKey, title, year, genres, tasteGenres) {
   return text;
 }
 
-function WhyWatch({ item, taste }) {
+function WhyWatch({ item, taste, matchPct }) {
   const [reason, setReason] = useState(null);
-  const cacheKey = item.tmdbId + item.mediaType;
+  const cacheKey = item.tmdbId + item.mediaType + (matchPct ?? "");
 
   useEffect(() => {
     if (whyWatchCache[cacheKey]) { setReason(whyWatchCache[cacheKey]); return; }
@@ -2324,7 +2336,7 @@ function WhyWatch({ item, taste }) {
       .map(([g]) => MOVIE_GENRES[g] || TV_GENRES[g]).filter(Boolean);
     if (!tasteGenres.length) return;
     const genres = genreNames(item.genreIds, item.mediaType).slice(0, 2).join(", ");
-    getWhyWatch(cacheKey, item.title, item.year, genres, tasteGenres.join(", "))
+    getWhyWatch(cacheKey, item.title, item.year, genres, tasteGenres.join(", "), matchPct)
       .then((r) => { if (r) setReason(r); })
       .catch(() => {});
   }, [cacheKey]);
@@ -3176,6 +3188,12 @@ input, textarea { font-family: inherit; }
 .note-hot { background: rgba(47,184,107,0.12); color: #5fd99a; }
 .note-stretch { background: rgba(226,168,54,0.12); color: var(--brass-bright); }
 .note-cool { background: rgba(154,138,138,0.1); color: var(--muted); }
+
+/* why watch this */
+.why-watch {
+  font-size: 12px; color: var(--brass-bright); font-style: italic;
+  margin-top: 5px; line-height: 1.4;
+}
 
 /* logged toast */
 .logged-toast {
