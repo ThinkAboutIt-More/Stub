@@ -188,8 +188,8 @@ function makeTmdb(apiKey) {
     popularTv: (page = 1) => call("/tv/popular", { page }),
     topRatedMovies: (page = 1) => call("/movie/top_rated", { page }),
     topRatedTv: (page = 1) => call("/tv/top_rated", { page }),
-    nowPlaying: (page = 1) => call("/movie/now_playing", { page, region: "US" }),
-    upcoming: (page = 1) => call("/movie/upcoming", { page, region: "US" }),
+    nowPlaying: (page = 1, region = "US") => call("/movie/now_playing", { page, region }),
+    upcoming: (page = 1, region = "US") => call("/movie/upcoming", { page, region }),
     onTheAir: (page = 1) => call("/tv/on_the_air", { page }),
     discoverMovie: (params) => call("/discover/movie", params),
     discoverTv: (params) => call("/discover/tv", params),
@@ -391,6 +391,7 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [logging, setLogging] = useState(false);
+  const { imdb, providers } = useExtraInfo(item, settings || {}, tmdb);
 
   useEffect(() => {
     let active = true;
@@ -429,6 +430,7 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
             <div className="detail-genres">
               {genreNames(item.genreIds, item.mediaType).join(" · ") || (item.mediaType === "tv" ? "TV" : "Film")}
             </div>
+            {imdb && <div className="detail-imdb"><span className="imdb-badge">{imdb} IMDb</span></div>}
             {badges && badges.length > 0 && (
               <div className="badge-row">
                 {badges.map((b, i) => (
@@ -458,6 +460,16 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
                 <div className="detail-cast-list">
                   {slim.cast.slice(0, 6).map((c) => (
                     <span key={c.id} className="cast-chip">{c.name}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {providers && (
+              <div className="detail-cast">
+                <div className="detail-cast-label">Where to watch</div>
+                <div className="suggest-links">
+                  {providers.names.map((name) => (
+                    <a key={name} className="link-pill link-pill-stream" href={providers.link} target="_blank" rel="noreferrer">{name}</a>
                   ))}
                 </div>
               </div>
@@ -1370,6 +1382,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
                   item={item}
                   matchPct={enough ? item._pct : null}
                   settings={settings}
+                  tmdb={tmdb}
                   onAddToWatchlist={want}
                   onLogNew={onLogNew}
                   onInfo={() => setInfoItem(item)}
@@ -1387,8 +1400,53 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
    FOR YOU TAB
 --------------------------------------------------------- */
 
-function SuggestionRow({ item, matchPct, settings, onAddToWatchlist, onLogNew, onInfo }) {
+/* ---------------------------------------------------------
+   EXTRA INFO
+   IMDb rating (via OMDb if a key is set) + real streaming
+   availability (via TMDB watch/providers) for one title.
+   Fails silently: these are nice to have, a missing key or
+   an API miss should never block or clutter the row.
+--------------------------------------------------------- */
+
+function useExtraInfo(item, settings, tmdb) {
+  const [imdb, setImdb] = useState(null);
+  const [providers, setProviders] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+
+    if (settings.omdbKey) {
+      const url = `https://www.omdbapi.com/?apikey=${encodeURIComponent(settings.omdbKey)}&t=${encodeURIComponent(item.title)}${item.year ? `&y=${item.year}` : ""}`;
+      fetch(url)
+        .then((r) => r.json())
+        .then((d) => {
+          if (active && d && d.imdbRating && d.imdbRating !== "N/A") setImdb(d.imdbRating);
+        })
+        .catch(() => {});
+    }
+
+    tmdb
+      .watchProviders(item.mediaType, item.tmdbId)
+      .then((d) => {
+        if (!active) return;
+        const region = (settings.country || "US").toUpperCase();
+        const entry = d.results && d.results[region];
+        if (entry && entry.flatrate && entry.flatrate.length) {
+          setProviders({ names: entry.flatrate.slice(0, 3).map((p) => p.provider_name), link: entry.link });
+        }
+      })
+      .catch(() => {});
+
+    return () => { active = false; };
+    // eslint-disable-next-line
+  }, [item.tmdbId, item.mediaType, settings.omdbKey, settings.country]);
+
+  return { imdb, providers };
+}
+
+function SuggestionRow({ item, matchPct, settings, tmdb, onAddToWatchlist, onLogNew, onInfo }) {
   const [logging, setLogging] = useState(false);
+  const { imdb, providers } = useExtraInfo(item, settings, tmdb);
 
   return (
     <div className="suggest-row">
@@ -1402,9 +1460,17 @@ function SuggestionRow({ item, matchPct, settings, onAddToWatchlist, onLogNew, o
       <div className="suggest-info">
         <div className="suggest-title-row">
           <button className="suggest-title-btn" onClick={onInfo}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
+          {imdb && <span className="imdb-badge">{imdb} IMDb</span>}
           {matchPct != null && <span className={"match-pill " + (matchPct >= 70 ? "match-high" : matchPct >= 40 ? "match-mid" : "match-low")}>{matchPct}%</span>}
         </div>
         <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
+        {providers && (
+          <div className="suggest-links">
+            {providers.names.map((name) => (
+              <a key={name} className="link-pill link-pill-stream" href={providers.link} target="_blank" rel="noreferrer">{name}</a>
+            ))}
+          </div>
+        )}
         <div className="suggest-links">
           <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
           <a className="link-pill" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
@@ -1552,7 +1618,8 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
       setLoading(true);
       setError(null);
       try {
-        const [p1, p2] = await Promise.all([tmdb.upcoming(1), tmdb.upcoming(2)]);
+        const region = (settings.country || "US").toUpperCase();
+        const [p1, p2] = await Promise.all([tmdb.upcoming(1, region), tmdb.upcoming(2, region)]);
         const raw = [...(p1.results || []), ...(p2.results || [])];
         const sorted = raw
           .map((r) => ({ ...normalize(r), releaseDate: r.release_date, overview: r.overview }))
@@ -1567,7 +1634,8 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
     }
     run();
     return () => { active = false; };
-  }, []);
+    // eslint-disable-next-line
+  }, [settings.country]);
 
   function daysOut(dateStr) {
     const diff = Math.ceil((new Date(dateStr) - new Date()) / 86400000);
@@ -1808,6 +1876,7 @@ function SettingsPanel({ settings, conn, onSave, onClose, onSaveConnection }) {
   const [tmdbKey, setTmdbKey] = useState(settings.tmdbKey);
   const [omdbKey, setOmdbKey] = useState(settings.omdbKey);
   const [zip, setZip] = useState(settings.zip);
+  const [country, setCountry] = useState(settings.country || "US");
   const [supabaseUrl, setSupabaseUrl] = useState(conn.supabaseUrl);
   const [supabaseKey, setSupabaseKey] = useState(conn.supabaseKey);
 
@@ -1827,6 +1896,15 @@ function SettingsPanel({ settings, conn, onSave, onClose, onSaveConnection }) {
         Get a free key <ExternalLink size={12} />
       </a>
 
+      <label className="field-label" style={{ marginTop: 14 }}>Country, for release dates where you actually are</label>
+      <input
+        className="field-input"
+        value={country}
+        onChange={(e) => setCountry(e.target.value.toUpperCase().slice(0, 2))}
+        placeholder="US, GB, IE, etc"
+      />
+      <p className="sync-note">Two letter code. Changes which Coming Soon dates and streaming options you see. Doesn't affect AMC/Regal links below, those use zip.</p>
+
       <label className="field-label" style={{ marginTop: 14 }}>Zip or city, for ticket links</label>
       <input className="field-input" value={zip} onChange={(e) => setZip(e.target.value)} placeholder="e.g. 37064 or wherever you are" />
 
@@ -1843,7 +1921,7 @@ function SettingsPanel({ settings, conn, onSave, onClose, onSaveConnection }) {
         <button
           className="btn btn-primary"
           onClick={() => {
-            onSave({ tmdbKey, omdbKey, zip, country: settings.country });
+            onSave({ tmdbKey, omdbKey, zip, country: country || "US" });
             onSaveConnection({ supabaseUrl: supabaseUrl.trim(), supabaseKey: supabaseKey.trim() });
           }}
         >
@@ -1860,7 +1938,7 @@ function Onboarding({ onSave }) {
     <div className="onboarding">
       <div className="onboarding-card">
         <Ticket size={36} className="onboarding-icon" />
-        <h1 className="onboarding-title">Welcome to Watchtime</h1>
+        <h1 className="onboarding-title">Welcome to Watchlist</h1>
         <p className="onboarding-body">
           One free key from TMDB powers everything here: posters, release dates, and where to watch.
           Takes about a minute to grab.
@@ -2010,7 +2088,7 @@ export default function App() {
         </div>
       )}
       <header className="app-header">
-        <div className="wordmark">WATCH<span className="wordmark-dot">TIME</span></div>
+        <div className="wordmark">WATCH<span className="wordmark-dot">LIST</span></div>
         <div className="header-right">
           <span className={"sync-pill" + (hasCloud(conn) ? " sync-on" : "")}>
             {hasCloud(conn) ? "Synced" : "This device only"}
@@ -2382,6 +2460,11 @@ input, textarea { font-family: inherit; }
 .onboarding-body { font-size: 13.5px; color: var(--muted); line-height: 1.5; margin-bottom: 10px; }
 
 /* ---- new feature styles ---- */
+
+/* imdb rating + streaming providers */
+.imdb-badge { font-size: 9.5px; font-weight: 700; color: #f5c518; border: 1px solid rgba(245,197,24,0.5); padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+.link-pill-stream { background: var(--marquee-red); color: #fff; border-color: var(--marquee-red); }
+.detail-imdb { margin: 6px 0; }
 
 /* compact collection grid: smaller posters, 3 across */
 .stub-grid-compact { grid-template-columns: repeat(3, 1fr); gap: 10px; }
