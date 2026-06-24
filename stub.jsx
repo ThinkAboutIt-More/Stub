@@ -1178,6 +1178,9 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
                 <button className="btn btn-primary btn-sm" onClick={() => onLogFromWatchlist(w)}>
                   <Check size={14} /> Watched
                 </button>
+                <button className="icon-btn" onClick={() => onRemoveFromWatchlist(w)} aria-label="Remove from watchlist" style={{ marginLeft: 4 }}>
+                  <X size={16} />
+                </button>
               </div>
             ))}
           </div>
