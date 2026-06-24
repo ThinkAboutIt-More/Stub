@@ -547,7 +547,7 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
         <div className="detail-actions">
           {onAddToWatchlist && (
             <button className="btn btn-outline btn-sm" onClick={() => { onAddToWatchlist(item); onClose(); }}>
-              <Eye size={14} /> Want to see
+              <Eye size={14} /> Wishlist
             </button>
           )}
           {onLogNew && (
@@ -687,10 +687,23 @@ function TicketStub({ ticket, onOpen }) {
    TICKET DETAIL, flip card with history, edit, undo
 --------------------------------------------------------- */
 
-function TicketDetail({ ticket, onClose, onUpdate, onDelete }) {
+function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb }) {
   const [showPoster, setShowPoster] = useState(false);
   const [editingViewingId, setEditingViewingId] = useState(null);
   const [logging, setLogging] = useState(false);
+  const [tmdbData, setTmdbData] = useState(null);
+
+  useEffect(() => {
+    if (!tmdb || !ticket.tmdbId) return;
+    let active = true;
+    tmdb.detailsFull(ticket.mediaType, ticket.tmdbId)
+      .then((d) => { if (active) setTmdbData(d); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [ticket.tmdbId]);
+
+  const overview = tmdbData?.overview || null;
+  const backdrop = ticket.backdropPath || (tmdbData?.backdrop_path ? tmdbData.backdrop_path : null);
 
   function pushHistory(t) {
     const snap = JSON.parse(JSON.stringify({ viewings: t.viewings, log: t.log }));
@@ -754,26 +767,41 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete }) {
           </div>
         ) : (
           <div className="td-back">
-            <div className="td-back-header">
-              <button className="td-thumb-btn" onClick={() => setShowPoster(true)} aria-label="View poster">
-                {ticket.posterPath ? (
-                  <img src={tmdbImg(ticket.posterPath, "w185")} alt="" className="td-back-thumb" />
-                ) : (
-                  <div className="td-back-thumb td-thumb-fallback">
-                    {ticket.mediaType === "tv" ? <Tv size={22} /> : <Film size={22} />}
+            {backdrop ? (
+              <div className="td-hero" onClick={() => setShowPoster(true)}>
+                <img src={tmdbImg(backdrop, "w780")} alt="" className="td-hero-img" />
+                <div className="td-hero-overlay">
+                  <div className="td-hero-title">{ticket.title}</div>
+                  <div className="td-hero-genres">{genreNames(ticket.genreIds, ticket.mediaType).slice(0, 3).join(" · ")}</div>
+                </div>
+              </div>
+            ) : null}
+            <div className="td-back-header" style={backdrop ? { marginTop: 12 } : {}}>
+              {!backdrop && (
+                <button className="td-thumb-btn" onClick={() => setShowPoster(true)} aria-label="View poster">
+                  {ticket.posterPath ? (
+                    <img src={tmdbImg(ticket.posterPath, "w185")} alt="" className="td-back-thumb" />
+                  ) : (
+                    <div className="td-back-thumb td-thumb-fallback">
+                      {ticket.mediaType === "tv" ? <Tv size={22} /> : <Film size={22} />}
+                    </div>
+                  )}
+                </button>
+              )}
+              <div className="td-back-meta">
+                {!backdrop && <h2 className="td-back-title">{ticket.title}</h2>}
+                {!backdrop && (
+                  <div className="td-back-genres">
+                    {genreNames(ticket.genreIds, ticket.mediaType).join(" · ") || (ticket.mediaType === "tv" ? "TV" : "Film")}
                   </div>
                 )}
-              </button>
-              <div className="td-back-meta">
-                <h2 className="td-back-title">{ticket.title}</h2>
-                <div className="td-back-genres">
-                  {genreNames(ticket.genreIds, ticket.mediaType).join(" · ") || (ticket.mediaType === "tv" ? "TV" : "Film")}
-                </div>
                 {ticket.viewings.length > 1 && (
                   <div className="td-rewatch-count"><RefreshCw size={12} /> Watched {ticket.viewings.length}×</div>
                 )}
               </div>
             </div>
+
+            {overview && <p className="td-overview">{overview}</p>}
 
             <div className="td-toolbar">
               <button className="td-tool-btn" disabled={!ticket.history || !ticket.history.length} onClick={handleUndo}>
@@ -1059,6 +1087,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
     return (
       <TicketDetail
         ticket={open}
+        tmdb={tmdb}
         onClose={() => setOpen(null)}
         onUpdate={(t) => { onUpdateTicket(t); setOpen(t); }}
         onDelete={(id) => { onDeleteTicket(id); setOpen(null); }}
@@ -1097,31 +1126,30 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
         </Modal>
       )}
 
-      <div className="collection-header-row">
-        <div className="view-toggle" style={{ flex: 1, margin: 0 }}>
-          <button className={!showWatchlist ? "toggle-pill active" : "toggle-pill"} onClick={() => setShowWatchlist(false)}>
-            Collected ({collection.length})
-          </button>
-          <button className={showWatchlist ? "toggle-pill active" : "toggle-pill"} onClick={() => setShowWatchlist(true)}>
-            Want to see ({watchlist.length})
-          </button>
-        </div>
-        <button className="icon-btn" onClick={() => setShowFavorites(true)} aria-label="Favorites">
+      <div className="collection-top-strip">
+        <button className="cta-icon-btn" onClick={() => setShowFavorites(true)}>
           <Heart size={17} />
+          <span>Favorites</span>
         </button>
-      </div>
-
-      <div className="collection-actions">
-        <button className="collection-action-btn" onClick={() => setScanning(true)}>
-          <Camera size={20} />
+        <button className="cta-icon-btn" onClick={() => setScanning(true)}>
+          <Camera size={17} />
           <span>Scan ticket</span>
         </button>
         {collection.length > 0 && (
-          <button className="collection-action-btn" onClick={onShowYIR}>
-            <Sparkles size={20} />
+          <button className="cta-icon-btn" onClick={onShowYIR}>
+            <Sparkles size={17} />
             <span>{new Date().getFullYear()} Recap</span>
           </button>
         )}
+      </div>
+
+      <div className="view-toggle">
+        <button className={!showWatchlist ? "toggle-pill active" : "toggle-pill"} onClick={() => setShowWatchlist(false)}>
+          Collected ({collection.length})
+        </button>
+        <button className={showWatchlist ? "toggle-pill active" : "toggle-pill"} onClick={() => setShowWatchlist(true)}>
+          Wishlist ({watchlist.length})
+        </button>
       </div>
 
       {!showWatchlist && (
@@ -1183,8 +1211,8 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
         watchlist.length === 0 ? (
           <EmptyState
             icon={<Heart size={32} />}
-            title="Nothing saved yet"
-            body="Swipe right on something in Discover, or add it from Search, and it'll wait here until you've watched it."
+            title="Wishlist is empty"
+            body="Swipe right on something in Discover, or save it from Search, and it'll wait here until you've watched it."
           />
         ) : (
           <div className="watchlist-rows">
@@ -1456,7 +1484,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
           Swipe
         </button>
         <button className={mode === "list" ? "toggle-pill active" : "toggle-pill"} onClick={() => setMode("list")}>
-          For you list
+          For You
         </button>
       </div>
 
@@ -1570,6 +1598,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
                   item={item}
                   matchPct={enough ? item._pct : null}
                   taste={taste}
+                  people={people}
                   settings={settings}
                   tmdb={tmdb}
                   onAddToWatchlist={want}
@@ -1633,13 +1662,15 @@ function useExtraInfo(item, settings, tmdb) {
   return { imdb, providers };
 }
 
-function SuggestionRow({ item, matchPct, settings, tmdb, taste, onAddToWatchlist, onLogNew, onInfo }) {
+function SuggestionRow({ item, matchPct, settings, tmdb, taste, people, onAddToWatchlist, onLogNew, onInfo }) {
   const [logging, setLogging] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const { imdb, providers } = useExtraInfo(item, settings, tmdb);
+  const badges = people ? badgesFor(item, people, taste) : [];
 
   return (
-    <div className="suggest-row">
-      <button className="suggest-thumb-btn" onClick={onInfo} aria-label={`Details for ${item.title}`}>
+    <div className="suggest-row" onClick={() => setExpanded((x) => !x)}>
+      <button className="suggest-thumb-btn" onClick={(e) => { e.stopPropagation(); onInfo(); }} aria-label={`Details for ${item.title}`}>
         {item.posterPath ? (
           <img src={tmdbImg(item.posterPath, "w154")} alt="" className="suggest-thumb" />
         ) : (
@@ -1648,27 +1679,30 @@ function SuggestionRow({ item, matchPct, settings, tmdb, taste, onAddToWatchlist
       </button>
       <div className="suggest-info">
         <div className="suggest-title-row">
-          <button className="suggest-title-btn" onClick={onInfo}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
+          <button className="suggest-title-btn" onClick={(e) => { e.stopPropagation(); onInfo(); }}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
           {matchPct != null && <span className={"match-pill " + (matchPct >= 70 ? "match-high" : matchPct >= 40 ? "match-mid" : "match-low")}>{matchPct}%</span>}
         </div>
         <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
-        {item.aiReason && <div className="why-watch">{item.aiReason}</div>}
-        {taste && !item.aiReason && <WhyWatch item={item} taste={taste} matchPct={matchPct} />}
-        {providers && (
-          <div className="suggest-links">
-            {providers.names.map((name) => (
-              <a key={name} className="link-pill link-pill-stream" href={providers.link} target="_blank" rel="noreferrer">{name}</a>
-            ))}
+        {badges.length > 0 && (
+          <div className="badge-row">
+            {badges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
           </div>
         )}
-        <div className="suggest-links">
-          <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
-          <a className="link-pill" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
-          <a className="link-pill" href={buildRedditLink(item.title, item.year)} target="_blank" rel="noreferrer">Reddit</a>
-        </div>
+        {item.aiReason && <div className="why-watch">{item.aiReason}</div>}
+        {taste && !item.aiReason && <WhyWatch item={item} taste={taste} matchPct={matchPct} />}
+        {expanded && (
+          <div className="suggest-links" onClick={(e) => e.stopPropagation()}>
+            {providers && providers.names.map((name) => (
+              <a key={name} className="link-pill link-pill-stream" href={providers.link} target="_blank" rel="noreferrer">{name}</a>
+            ))}
+            <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
+            <a className="link-pill" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
+            <a className="link-pill" href={buildRedditLink(item.title, item.year)} target="_blank" rel="noreferrer">Reddit</a>
+          </div>
+        )}
       </div>
-      <div className="suggest-actions">
-        <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Want to see"><Eye size={16} /></button>
+      <div className="suggest-actions" onClick={(e) => e.stopPropagation()}>
+        <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Add to wishlist"><Eye size={16} /></button>
         <button className="icon-btn" onClick={() => setLogging(true)} aria-label="Seen it"><Check size={16} /></button>
       </div>
       {logging && (
@@ -1793,6 +1827,50 @@ function FavoritesView({ collection, people, tmdb, onUpdateTicket }) {
    COMING SOON TAB
 --------------------------------------------------------- */
 
+function ComingRow({ item, badges, note, enough, added, settings, onInfo, onSave, daysOutText }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="coming-row" onClick={() => setExpanded((x) => !x)}>
+      <button className="coming-thumb-btn" onClick={(e) => { e.stopPropagation(); onInfo(); }} aria-label={`Details for ${item.title}`}>
+        {item.posterPath ? (
+          <img src={tmdbImg(item.posterPath, "w154")} alt="" className="coming-thumb" />
+        ) : (
+          <div className="coming-thumb coming-thumb-fallback"><Film size={18} /></div>
+        )}
+      </button>
+      <div className="coming-info">
+        <div className="suggest-title-row">
+          <button className="suggest-title-btn" onClick={(e) => { e.stopPropagation(); onInfo(); }}>{item.title}</button>
+          {enough && item._pct != null && (
+            <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
+          )}
+        </div>
+        <div className="coming-date">{daysOutText}</div>
+        {badges.length > 0 && (
+          <div className="badge-row">
+            {badges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
+          </div>
+        )}
+        {note && <div className={"proactive-note note-" + note.tone}>{note.text}</div>}
+        {expanded && (
+          <div className="suggest-links" onClick={(e) => e.stopPropagation()}>
+            <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
+            <a className="link-pill" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
+            <a className="link-pill" href={buildRedditLink(item.title, item.year)} target="_blank" rel="noreferrer">Reddit</a>
+          </div>
+        )}
+      </div>
+      <button
+        className={"icon-btn" + (added ? " icon-btn-active" : "")}
+        onClick={(e) => { e.stopPropagation(); onSave(); }}
+        aria-label="Add to wishlist"
+      >
+        <Eye size={16} />
+      </button>
+    </div>
+  );
+}
+
 function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, onAddToWatchlist, onLogNew }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1808,9 +1886,17 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
       setLoading(true);
       setError(null);
       try {
-        const region = (settings.country || "US").toUpperCase();
-        const [p1, p2] = await Promise.all([tmdb.upcoming(1, region), tmdb.upcoming(2, region)]);
-        const raw = [...(p1.results || []), ...(p2.results || [])];
+        const today = new Date().toISOString().slice(0, 10);
+        const endDate = `${new Date().getFullYear() + 1}-12-31`;
+        const pages = await Promise.all([1, 2, 3, 4].map((page) =>
+          tmdb.discoverMovie({
+            "primary_release_date.gte": today,
+            "primary_release_date.lte": endDate,
+            sort_by: "popularity.desc",
+            page
+          })
+        ));
+        const raw = pages.flatMap((p) => p.results || []);
         const sorted = raw
           .map((r) => ({ ...normalize(r), releaseDate: r.release_date }))
           .filter((x) => x.releaseDate)
@@ -1905,12 +1991,11 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
   }, [items, window, sort, taste]);
 
   const WINDOWS = [
-    { id: "all", label: "All" },
-    { id: "week", label: "This week" },
-    { id: "nextweek", label: "Next week" },
+    { id: "all", label: "All upcoming" },
+    { id: "thisyear", label: `${new Date().getFullYear()}` },
+    { id: "nextyear", label: `${new Date().getFullYear() + 1}` },
     { id: "month", label: "This month" },
-    { id: "thisyear", label: "This year" },
-    { id: "nextyear", label: "Next year" }
+    { id: "week", label: "This week" }
   ];
 
   return (
@@ -1957,41 +2042,18 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
             const badges = badgesFor(item, people, taste);
             const n = enough ? note(item, item._pct) : null;
             return (
-              <div className="coming-row" key={item.tmdbId}>
-                <button className="coming-thumb-btn" onClick={() => setInfoItem(item)} aria-label={`Details for ${item.title}`}>
-                  {item.posterPath ? (
-                    <img src={tmdbImg(item.posterPath, "w154")} alt="" className="coming-thumb" />
-                  ) : (
-                    <div className="coming-thumb coming-thumb-fallback"><Film size={18} /></div>
-                  )}
-                </button>
-                <div className="coming-info">
-                  <div className="suggest-title-row">
-                    <button className="suggest-title-btn" onClick={() => setInfoItem(item)}>{item.title}</button>
-                    {enough && item._pct != null && (
-                      <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
-                    )}
-                  </div>
-                  <div className="coming-date">{daysOut(item.releaseDate)}</div>
-                  {badges.length > 0 && (
-                    <div className="badge-row">
-                      {badges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
-                    </div>
-                  )}
-                  {n && <div className={"proactive-note note-" + n.tone}>{n.text}</div>}
-                  <div className="suggest-links">
-                    <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
-                    <a className="link-pill" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
-                  </div>
-                </div>
-                <button
-                  className={"icon-btn" + (added[item.tmdbId] ? " icon-btn-active" : "")}
-                  onClick={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
-                  aria-label="Want to see"
-                >
-                  <Eye size={16} />
-                </button>
-              </div>
+              <ComingRow
+                key={item.tmdbId}
+                item={item}
+                badges={badges}
+                note={n}
+                enough={enough}
+                added={added[item.tmdbId]}
+                settings={settings}
+                onInfo={() => setInfoItem(item)}
+                onSave={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
+                daysOutText={daysOut(item.releaseDate)}
+              />
             );
           })}
         </div>
@@ -2003,6 +2065,47 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
 /* ---------------------------------------------------------
    OUT NOW TAB  — movies currently in theaters
 --------------------------------------------------------- */
+
+function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, settings, onInfo, onSave }) {
+  const [linksOpen, setLinksOpen] = useState(false);
+  return (
+    <div className={"outnow-hero" + (idx > 0 ? " outnow-hero-secondary" : "")} onClick={() => setLinksOpen((x) => !x)}>
+      {item.backdropPath ? (
+        <img src={tmdbImg(item.backdropPath, "w780")} alt="" className="outnow-hero-img" />
+      ) : item.posterPath ? (
+        <img src={tmdbImg(item.posterPath, "w500")} alt="" className="outnow-hero-img outnow-hero-poster" />
+      ) : (
+        <div className="outnow-hero-img outnow-hero-blank"><Film size={36} /></div>
+      )}
+      <div className="outnow-hero-overlay">
+        <div className="outnow-hero-top">
+          {enough && item._pct != null && (
+            <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}% match</span>
+          )}
+          {itemNote && <span className={"proactive-note note-" + itemNote.tone} style={{ margin: 0 }}>{itemNote.text}</span>}
+        </div>
+        <div className={"outnow-hero-title" + (idx > 0 ? " outnow-hero-title-sm" : "")}>{item.title}</div>
+        <div className="outnow-hero-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
+        {itemBadges.length > 0 && (
+          <div className="badge-row" style={{ marginBottom: 8 }}>
+            {itemBadges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
+          </div>
+        )}
+        {linksOpen ? (
+          <div className="outnow-hero-btns" onClick={(e) => e.stopPropagation()}>
+            <a className="hero-btn" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
+            <a className="hero-btn hero-btn-ghost" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
+            <a className="hero-btn hero-btn-ghost" href={buildRedditLink(item.title, item.year)} target="_blank" rel="noreferrer"><ExternalLink size={12} /> Reddit</a>
+            <button className={"hero-btn hero-btn-icon" + (isOwned ? " hero-btn-active" : "")} onClick={onSave} aria-label="Save to wishlist"><Bookmark size={14} /></button>
+            <button className="hero-btn hero-btn-ghost hero-btn-icon" onClick={(e) => { e.stopPropagation(); onInfo(); }} aria-label="Details"><Info size={14} /></button>
+          </div>
+        ) : (
+          <div className="outnow-tap-hint">Tap for showtimes &amp; details</div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAddToWatchlist, onLogNew }) {
   const [items, setItems] = useState([]);
@@ -2092,6 +2195,12 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
         />
       )}
 
+      <div className="outnow-zip-note">
+        {settings.zip
+          ? <><MapPin size={11} /> Showtimes linked for zip <strong>{settings.zip}</strong> · set in Settings</>
+          : <><MapPin size={11} /> Add your zip in <strong>Settings</strong> for accurate showtime links</>}
+      </div>
+
       {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Loading theaters" body="Pulling what's playing right now." />}
       {!loading && error && <EmptyState icon={<Info size={32} />} title="Couldn't load" body={`TMDB said: ${error}`} />}
       {!loading && !error && processed.length === 0 && (
@@ -2099,95 +2208,31 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
       )}
 
       {!loading && !error && processed.length > 0 && (() => {
-        const hero = enough
-          ? [...processed].sort((a, b) => (b._pct || 0) - (a._pct || 0))[0]
-          : processed[0];
-        const rest = processed.filter((x) => x.tmdbId !== hero.tmdbId);
-        const heroNote = enough ? note(hero, hero._pct) : null;
-        const heroBadges = badgesFor(hero, people, taste);
-        const heroOwned = ownedSet.has(hero.tmdbId + hero.mediaType);
+        const sorted = enough
+          ? [...processed].sort((a, b) => (b._pct || 0) - (a._pct || 0))
+          : processed;
         return (
-          <>
-            <div className="outnow-hero" onClick={() => setInfoItem(hero)}>
-              {hero.backdropPath ? (
-                <img src={tmdbImg(hero.backdropPath, "w780")} alt="" className="outnow-hero-img" />
-              ) : hero.posterPath ? (
-                <img src={tmdbImg(hero.posterPath, "w500")} alt="" className="outnow-hero-img outnow-hero-poster" />
-              ) : (
-                <div className="outnow-hero-img outnow-hero-blank"><Film size={48} /></div>
-              )}
-              <div className="outnow-hero-overlay">
-                <div className="outnow-hero-top">
-                  {enough && hero._pct != null && (
-                    <span className={"match-pill " + (hero._pct >= 70 ? "match-high" : hero._pct >= 40 ? "match-mid" : "match-low")}>{hero._pct}% match</span>
-                  )}
-                  {heroNote && <span className={"proactive-note note-" + heroNote.tone} style={{ margin: 0 }}>{heroNote.text}</span>}
-                </div>
-                <div className="outnow-hero-title">{hero.title}</div>
-                <div className="outnow-hero-genres">{genreNames(hero.genreIds, hero.mediaType).slice(0, 3).join(" · ")}</div>
-                {heroBadges.length > 0 && (
-                  <div className="badge-row" style={{ marginBottom: 10 }}>
-                    {heroBadges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
-                  </div>
-                )}
-                <div className="outnow-hero-btns">
-                  <a className="hero-btn" href={buildAmcLink(hero.title, settings.zip)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>AMC</a>
-                  <a className="hero-btn hero-btn-ghost" href={buildRegalLink(hero.title, settings.zip)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>Regal</a>
-                  <a className="hero-btn hero-btn-ghost" href={buildRedditLink(hero.title, hero.year)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}><ExternalLink size={12} /> Reddit</a>
-                  <button
-                    className={"hero-btn hero-btn-icon" + (added[hero.tmdbId] || heroOwned ? " hero-btn-active" : "")}
-                    onClick={(e) => { e.stopPropagation(); onAddToWatchlist(hero); setAdded((a) => ({ ...a, [hero.tmdbId]: true })); }}
-                    aria-label="Save to watchlist"
-                  ><Bookmark size={14} /></button>
-                </div>
-              </div>
-            </div>
-
-            {rest.length > 0 && <div className="outnow-section-head">Also in theaters</div>}
-            <div className="coming-list">
-              {rest.map((item) => {
-                const badges = badgesFor(item, people, taste);
-                const n = enough ? note(item, item._pct) : null;
-                const isOwned = ownedSet.has(item.tmdbId + item.mediaType);
-                return (
-                  <div className="coming-row" key={item.tmdbId}>
-                    <button className="coming-thumb-btn" onClick={() => setInfoItem(item)} aria-label={`Details for ${item.title}`}>
-                      {item.posterPath ? (
-                        <img src={tmdbImg(item.posterPath, "w154")} alt="" className="coming-thumb" />
-                      ) : (
-                        <div className="coming-thumb coming-thumb-fallback"><Film size={18} /></div>
-                      )}
-                    </button>
-                    <div className="coming-info">
-                      <div className="suggest-title-row">
-                        <button className="suggest-title-btn" onClick={() => setInfoItem(item)}>{item.title}</button>
-                        {enough && item._pct != null && (
-                          <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
-                        )}
-                      </div>
-                      {badges.length > 0 && (
-                        <div className="badge-row">
-                          {badges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
-                        </div>
-                      )}
-                      {n && <div className={"proactive-note note-" + n.tone}>{n.text}</div>}
-                      <div className="suggest-links">
-                        <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
-                        <a className="link-pill" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
-                      </div>
-                    </div>
-                    <button
-                      className={"icon-btn" + (added[item.tmdbId] || isOwned ? " icon-btn-active" : "")}
-                      onClick={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
-                      aria-label="Want to see"
-                    >
-                      <Bookmark size={16} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </>
+          <div className="outnow-all-heroes">
+            {sorted.map((item, idx) => {
+              const itemNote = enough ? note(item, item._pct) : null;
+              const itemBadges = badgesFor(item, people, taste);
+              const isOwned = ownedSet.has(item.tmdbId + item.mediaType);
+              return (
+                <OutNowHeroCard
+                  key={item.tmdbId}
+                  item={item}
+                  idx={idx}
+                  enough={enough}
+                  itemNote={itemNote}
+                  itemBadges={itemBadges}
+                  isOwned={isOwned || added[item.tmdbId]}
+                  settings={settings}
+                  onInfo={() => setInfoItem(item)}
+                  onSave={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
+                />
+              );
+            })}
+          </div>
         );
       })()}
     </div>
@@ -2763,6 +2808,7 @@ export default function App() {
       genreIds: item.genreIds,
       voteAverage: item.voteAverage ?? null,
       voteCount: item.voteCount ?? 0,
+      backdropPath: item.backdropPath ?? null,
       credits: credits || item.credits || null,
       runtimeMinutes: extra?.runtime || item.runtimeMinutes || null,
       tmdbKeywords: extra?.keywords?.length ? extra.keywords : (item.tmdbKeywords || null),
@@ -2934,17 +2980,17 @@ const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
 
 :root {
-  --curtain: #0a0708;
-  --velvet: #15100f;
-  --velvet-2: #221615;
-  --brass: #e2a836;
-  --brass-bright: #f0c668;
-  --marquee-red: #e23636;
+  --curtain: #060000;
+  --velvet: #110202;
+  --velvet-2: #1c0303;
+  --brass: #e23636;
+  --brass-bright: #ff6b6b;
+  --marquee-red: #c41a1a;
   --stub-cream: #f3eeec;
-  --ink: #1a1210;
-  --cream-text: #f5f0f0;
-  --muted: #9a8a8a;
-  --line: rgba(226,54,54,0.16);
+  --ink: #1a0000;
+  --cream-text: #f8f2f2;
+  --muted: #9a7878;
+  --line: rgba(226,54,54,0.22);
 }
 
 * { box-sizing: border-box; }
@@ -2953,7 +2999,7 @@ button { font-family: inherit; cursor: pointer; }
 input, textarea { font-family: inherit; }
 
 .app {
-  background: radial-gradient(circle at 50% -10%, #1a0606 0%, var(--curtain) 55%);
+  background: radial-gradient(circle at 50% -10%, #2a0000 0%, var(--curtain) 55%);
   color: var(--cream-text);
   font-family: 'Inter', system-ui, sans-serif;
   min-height: 100vh;
@@ -3030,14 +3076,9 @@ input, textarea { font-family: inherit; }
 }
 
 /* ---- collection header ---- */
-.collection-header-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-.collection-actions { display: flex; gap: 10px; margin-bottom: 16px; }
-.collection-action-btn {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;
-  background: rgba(226,54,54,0.08); border: 1px solid rgba(226,54,54,0.25);
-  color: #ff6b6b; padding: 14px 0; border-radius: 14px; font-size: 11.5px; font-weight: 600;
-}
-.collection-action-btn:active { opacity: 0.7; }
+.collection-top-strip { display: flex; gap: 20px; justify-content: flex-end; margin-bottom: 12px; }
+.cta-icon-btn { background: none; border: none; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; letter-spacing: 0.02em; cursor: pointer; padding: 0; }
+.cta-icon-btn:active { color: var(--brass); }
 
 /* ---- ticket stub grid ---- */
 .stub-grid {
@@ -3194,11 +3235,24 @@ input, textarea { font-family: inherit; }
 .hero-btn-ghost { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18); }
 .hero-btn-icon { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18); padding: 8px 10px; }
 .hero-btn-active { background: rgba(226,54,54,0.7) !important; border-color: var(--marquee-red) !important; }
-.outnow-section-head { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; padding: 14px 2px 6px; }
+.outnow-all-heroes { display: flex; flex-direction: column; gap: 10px; }
+.outnow-hero-secondary .outnow-hero-img { aspect-ratio: 16/9; }
+.outnow-hero-title-sm { font-size: 17px; }
+.outnow-tap-hint { font-size: 11px; color: rgba(255,255,255,0.5); font-style: italic; margin-top: 4px; }
+.outnow-zip-note { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 5px; margin-bottom: 12px; }
+.outnow-zip-note strong { color: var(--cream-text); }
+
+/* ticket detail hero */
+.td-hero { position: relative; border-radius: 14px; overflow: hidden; margin-bottom: 0; cursor: pointer; }
+.td-hero-img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
+.td-hero-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 32px 14px 14px; background: linear-gradient(to top, rgba(10,5,9,0.95) 40%, transparent); }
+.td-hero-title { font-size: 20px; font-weight: 800; color: var(--cream-text); line-height: 1.2; margin-bottom: 3px; }
+.td-hero-genres { font-size: 12px; color: rgba(255,255,255,0.55); }
+.td-overview { font-size: 13px; color: var(--muted); line-height: 1.55; margin: 12px 0 4px; }
 
 /* suggestions / search / coming soon shared rows */
 .suggest-list, .coming-list { display: flex; flex-direction: column; gap: 10px; }
-.suggest-row, .coming-row { display: flex; gap: 12px; background: var(--velvet); border-radius: 12px; padding: 10px 12px; position: relative; }
+.suggest-row, .coming-row { display: flex; gap: 12px; background: var(--velvet); border-radius: 12px; padding: 10px 12px; position: relative; cursor: pointer; }
 .suggest-thumb, .coming-thumb { width: 46px; height: 69px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: var(--velvet-2); }
 .suggest-thumb-fallback, .coming-thumb-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); }
 .suggest-info, .coming-info { flex: 1; min-width: 0; }
