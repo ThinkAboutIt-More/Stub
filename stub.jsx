@@ -211,7 +211,9 @@ function makeTmdb(apiKey) {
     watchProviders: (mediaType, id) => call(`/${mediaType}/${id}/watch/providers`),
     details: (mediaType, id) => call(`/${mediaType}/${id}`),
     detailsFull: (mediaType, id) =>
-      call(`/${mediaType}/${id}`, { append_to_response: "credits" })
+      call(`/${mediaType}/${id}`, { append_to_response: "credits,keywords" }),
+    recommendations: (mediaType, id) => call(`/${mediaType}/${id}/recommendations`),
+    keywords: (mediaType, id) => call(`/${mediaType}/${id}/keywords`)
   };
 }
 
@@ -236,15 +238,20 @@ function normalize(item) {
 
 function buildTasteProfile(collection, feedback) {
   const weights = {};
+  const now = Date.now();
+  const TWO_YEARS_MS = 2 * 365 * 24 * 60 * 60 * 1000;
   const bump = (genreIds, amount) => {
     (genreIds || []).forEach((g) => {
       weights[g] = (weights[g] || 0) + amount;
     });
   };
   collection.forEach((t) => {
-    const lastRating = t.viewings.length ? t.viewings[t.viewings.length - 1].rating : 0;
-    const amount = (lastRating - 2.5) * 2; // -5..+5
-    bump(t.genreIds, amount);
+    t.viewings.forEach((v) => {
+      if (!v.rating) return;
+      const age = now - (v.loggedAt || now);
+      const decay = Math.max(0.35, 1 - age / TWO_YEARS_MS);
+      bump(t.genreIds, (v.rating - 2.5) * 2 * decay);
+    });
   });
   (feedback.wantedIds || []).forEach((w) => bump(w.genreIds, 1.5));
   (feedback.skippedIds || []).forEach((s) => bump(s.genreIds, -1.5));
@@ -427,6 +434,7 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
   const producer = slim && slim.producers[0];
   const release = data ? (data.release_date || data.first_air_date || "") : item.year;
   const runtime = data ? (data.runtime || (data.episode_run_time && data.episode_run_time[0])) : null;
+  const keywords = data ? (data.keywords?.keywords || data.keywords?.results || []) : [];
 
   return (
     <Modal onClose={onClose} wide>
@@ -513,7 +521,7 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
               saveLabel="Add to collection"
               onCancel={() => setLogging(false)}
               onSave={(entry) => {
-                onLogNew(item, entry, slim);
+                onLogNew(item, entry, slim, { runtime, keywords });
                 setLogging(false);
                 onClose();
               }}
@@ -975,6 +983,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
   const [query, setQuery] = useState("");
   const [scanning, setScanning] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [yearFilter, setYearFilter] = useState("all");
 
   const genreOptions = useMemo(() => {
     const ids = new Set();
@@ -985,6 +994,11 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [collection]);
 
+  const yearOptions = useMemo(() => {
+    const years = new Set(collection.map((c) => c.year).filter(Boolean));
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [collection]);
+
   const visibleCollection = useMemo(() => {
     let list = collection.slice();
     if (query.trim()) {
@@ -993,6 +1007,9 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
     }
     if (genreFilter !== "all") {
       list = list.filter((c) => (c.genreIds || []).includes(Number(genreFilter)));
+    }
+    if (yearFilter !== "all") {
+      list = list.filter((c) => c.year === yearFilter);
     }
     const lastDate = (t) => t.viewings[t.viewings.length - 1].date;
     const lastRating = (t) => t.viewings[t.viewings.length - 1].rating || 0;
@@ -1110,6 +1127,12 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
                     <option value="all">All genres</option>
                     {genreOptions.map((g) => (
                       <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                  <select className="filter-select" value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}>
+                    <option value="all">All years</option>
+                    {yearOptions.map((y) => (
+                      <option key={y} value={y}>{y}</option>
                     ))}
                   </select>
                 </div>
@@ -1264,6 +1287,9 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   const [swipeChoice, setSwipeChoice] = useState(null);
   const [mode, setMode] = useState("swipe");
   const [lastSkipped, setLastSkipped] = useState(null);
+  const [forYouList, setForYouList] = useState([]);
+  const [forYouLoading, setForYouLoading] = useState(false);
+  const forYouLoadedRef = useRef(false);
 
   const seenIdSet = useMemo(
     () => new Set([...feedback.skippedIds, ...feedback.wantedIds, ...feedback.seenIds].map((x) => x.tmdbId + x.mediaType)),
@@ -1315,6 +1341,43 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
     loadPool();
     // eslint-disable-next-line
   }, []);
+
+  const loadForYouList = useCallback(async () => {
+    setForYouLoading(true);
+    try {
+      const topRated = [...collection]
+        .filter((t) => t.viewings.some((v) => (v.rating || 0) >= 3.5))
+        .sort((a, b) => {
+          const ra = Math.max(...a.viewings.map((v) => v.rating || 0));
+          const rb = Math.max(...b.viewings.map((v) => v.rating || 0));
+          return rb - ra;
+        })
+        .slice(0, 6);
+      if (!topRated.length) {
+        setForYouList([]);
+      } else {
+        const pages = await Promise.all(
+          topRated.map((t) => tmdb.recommendations(t.mediaType, t.tmdbId).catch(() => ({ results: [] })))
+        );
+        const all = pages.flatMap((p) => (p.results || []).map(normalize));
+        const dedup = Array.from(new Map(all.map((f) => [f.tmdbId + f.mediaType, f])).values());
+        const fresh = dedup.filter((x) => !ownedSet.has(x.tmdbId + x.mediaType) && !seenIdSet.has(x.tmdbId + x.mediaType));
+        const scored = fresh.map((x) => ({ ...x, _pct: matchPercent(x, taste) }));
+        scored.sort((a, b) => (b._pct || 50) - (a._pct || 50));
+        setForYouList(scored.slice(0, 30));
+      }
+    } catch {
+      setForYouList([]);
+    }
+    setForYouLoading(false);
+  }, [collection, tmdb, ownedSet, seenIdSet, taste]);
+
+  useEffect(() => {
+    if (mode === "list" && !forYouLoadedRef.current) {
+      forYouLoadedRef.current = true;
+      loadForYouList();
+    }
+  }, [mode, loadForYouList]);
 
   function recordFeedback(bucket, item) {
     setFeedback((f) => ({ ...f, [bucket]: [...f[bucket], { tmdbId: item.tmdbId, mediaType: item.mediaType, genreIds: item.genreIds }] }));
@@ -1444,14 +1507,26 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
               <Sparkles size={14} /> Rate a few films or swipe through and these match scores sharpen up.
             </div>
           )}
-          {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Reading your taste" body="Ranking titles against what you've rated." />}
-          {!loading && !error && (
+          <div className="discover-foot" style={{ justifyContent: "flex-end", marginTop: 0, marginBottom: 10 }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => { forYouLoadedRef.current = false; loadForYouList(); }}>
+              <RefreshCw size={14} /> Refresh list
+            </button>
+          </div>
+          {forYouLoading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Building your list" body="Finding titles based on what you've rated." />}
+          {!forYouLoading && forYouList.length === 0 && collection.length === 0 && (
+            <EmptyState icon={<Heart size={32} />} title="Nothing yet" body="Rate a few films in your collection and this list will fill up." />
+          )}
+          {!forYouLoading && forYouList.length === 0 && collection.length > 0 && (
+            <EmptyState icon={<Sparkles size={32} />} title="No recommendations yet" body="Rate a few films 3.5 stars or higher and we'll find you similar ones." />
+          )}
+          {!forYouLoading && forYouList.length > 0 && (
             <div className="suggest-list">
-              {pool.slice(0, 25).map((item) => (
+              {forYouList.map((item) => (
                 <SuggestionRow
                   key={item.tmdbId + item.mediaType}
                   item={item}
                   matchPct={enough ? item._pct : null}
+                  taste={taste}
                   settings={settings}
                   tmdb={tmdb}
                   onAddToWatchlist={want}
@@ -1515,7 +1590,7 @@ function useExtraInfo(item, settings, tmdb) {
   return { imdb, providers };
 }
 
-function SuggestionRow({ item, matchPct, settings, tmdb, onAddToWatchlist, onLogNew, onInfo }) {
+function SuggestionRow({ item, matchPct, settings, tmdb, taste, onAddToWatchlist, onLogNew, onInfo }) {
   const [logging, setLogging] = useState(false);
   const { imdb, providers } = useExtraInfo(item, settings, tmdb);
 
@@ -1535,6 +1610,8 @@ function SuggestionRow({ item, matchPct, settings, tmdb, onAddToWatchlist, onLog
           {matchPct != null && <span className={"match-pill " + (matchPct >= 70 ? "match-high" : matchPct >= 40 ? "match-mid" : "match-low")}>{matchPct}%</span>}
         </div>
         <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
+        {item.aiReason && <div className="why-watch">{item.aiReason}</div>}
+        {taste && !item.aiReason && <WhyWatch item={item} taste={taste} />}
         {providers && (
           <div className="suggest-links">
             {providers.names.map((name) => (
@@ -1736,10 +1813,22 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
   const note = (item, pct) => {
     if (pct == null) return null;
     const topUserGenres = Object.entries(taste).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
-    const overlaps = (item.genreIds || []).some((g) => topUserGenres.includes(g));
-    if (pct >= 70) return { tone: "hot", text: "Right in your lane" };
-    if (!overlaps && pct >= 35) return { tone: "stretch", text: "Outside your usual genres, might be worth the stretch" };
-    if (pct < 30) return { tone: "cool", text: "A departure from what you usually rate highly" };
+    const itemGenres = item.genreIds || [];
+    const overlapping = itemGenres.filter((g) => topUserGenres.includes(g));
+    const nonOverlapping = itemGenres.filter((g) => !topUserGenres.includes(g));
+    const gName = (id) => MOVIE_GENRES[id] || TV_GENRES[id];
+    if (pct >= 70) {
+      const strongId = overlapping.find((g) => gName(g));
+      return { tone: "hot", text: strongId ? `Strong ${gName(strongId)} match` : "Right in your lane" };
+    }
+    if (!overlapping.length && pct >= 35) {
+      const stretchId = nonOverlapping.find((g) => gName(g));
+      return { tone: "stretch", text: stretchId ? `A ${gName(stretchId)} you don't usually watch` : "A stretch from your usual taste" };
+    }
+    if (pct < 30) {
+      const topId = topUserGenres.find((g) => gName(g));
+      return { tone: "cool", text: topId ? `Far from your ${gName(topId)} comfort zone` : "A departure from what you usually rate highly" };
+    }
     return null;
   };
 
@@ -2313,6 +2402,27 @@ function YearInReview({ collection, onClose }) {
     return { name: d.toLocaleDateString(undefined, { month: "long" }), count: top[1] };
   }, [thisYear]);
 
+  const totalHours = useMemo(() => {
+    const mins = thisYear.reduce((sum, t) => sum + (t.runtimeMinutes || 0), 0);
+    return mins > 0 ? (mins / 60).toFixed(1) : null;
+  }, [thisYear]);
+
+  const topDirectors = useMemo(() => {
+    const counts = {};
+    thisYear.forEach((t) => {
+      (t.credits?.directors || []).forEach((d) => { counts[d.name] = (counts[d.name] || 0) + 1; });
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count }));
+  }, [thisYear]);
+
+  const topActors = useMemo(() => {
+    const counts = {};
+    thisYear.forEach((t) => {
+      (t.credits?.cast || []).slice(0, 3).forEach((a) => { counts[a.name] = (counts[a.name] || 0) + 1; });
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count }));
+  }, [thisYear]);
+
   const cards = [
     {
       key: "total",
@@ -2349,6 +2459,27 @@ function YearInReview({ collection, onClose }) {
       label: "Busiest month",
       big: busiestMonth.name,
       sub: `${busiestMonth.count} film${busiestMonth.count !== 1 ? "s" : ""}`,
+      color: "#ff8080"
+    },
+    totalHours && {
+      key: "hours",
+      label: "Time well spent",
+      big: `${totalHours}h`,
+      sub: "of film this year",
+      color: "var(--brass-bright)"
+    },
+    topDirectors.length > 1 && {
+      key: "directors",
+      label: "Your most-watched directors",
+      big: topDirectors[0].name,
+      sub: topDirectors.slice(1).map((d) => d.name).join(" · "),
+      color: "var(--marquee-red)"
+    },
+    topActors.length > 1 && {
+      key: "actors",
+      label: "On your screen the most",
+      big: topActors[0].name,
+      sub: topActors.slice(1).map((a) => a.name).join(" · "),
       color: "#ff8080"
     }
   ].filter(Boolean);
@@ -2466,7 +2597,7 @@ export default function App() {
     fireBurst("want");
   }
 
-  async function logNew(item, viewing, credits) {
+  async function logNew(item, viewing, credits, extra) {
     const ticket = {
       id: uid(),
       tmdbId: item.tmdbId,
@@ -2476,6 +2607,8 @@ export default function App() {
       posterPath: item.posterPath,
       genreIds: item.genreIds,
       credits: credits || item.credits || null,
+      runtimeMinutes: extra?.runtime || item.runtimeMinutes || null,
+      tmdbKeywords: extra?.keywords?.length ? extra.keywords : (item.tmdbKeywords || null),
       viewings: [viewing],
       log: [{ at: Date.now(), text: "Added to your collection" }],
       history: []
