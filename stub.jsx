@@ -594,7 +594,7 @@ function LogForm({ initial, onSave, onCancel, saveLabel }) {
   const [location, setLocation] = useState(initLoc);
   const [selectedPreset, setSelectedPreset] = useState(isPreset ? initLoc : (initLoc ? "Other" : ""));
   const [customLoc, setCustomLoc] = useState(!isPreset ? initLoc : "");
-  const [rating, setRating] = useState(initial?.rating ?? 4);
+  const [rating, setRating] = useState(initial?.rating ?? 0);
   const [notes, setNotes] = useState(initial?.notes || "");
 
   function pickPreset(p) {
@@ -1328,32 +1328,50 @@ function SwipeButtons({ onSkip, onSeen, onWant }) {
 
 function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo }) {
   const [drag, setDrag] = useState({ x: 0, active: false });
+  const [flying, setFlying] = useState(null);
   const startX = useRef(0);
   const moved = useRef(false);
+  const pendingAction = useRef(null);
+
+  function fly(dir, action) {
+    pendingAction.current = action;
+    setFlying(dir);
+    setDrag({ x: 0, active: false });
+  }
+
+  function handleAnimEnd() {
+    const action = pendingAction.current;
+    pendingAction.current = null;
+    setFlying(null);
+    if (action) action();
+  }
 
   function down(e) {
+    if (flying) return;
     startX.current = e.touches ? e.touches[0].clientX : e.clientX;
     moved.current = false;
     setDrag({ x: 0, active: true });
   }
   function move(e) {
-    if (!drag.active) return;
+    if (!drag.active || flying) return;
     const x = (e.touches ? e.touches[0].clientX : e.clientX) - startX.current;
     if (Math.abs(x) > 6) moved.current = true;
     setDrag({ x, active: true });
   }
   function up() {
-    if (drag.x > 100) onWant();
-    else if (drag.x < -100) onSkip();
+    if (drag.x > 100) { fly("right", onWant); return; }
+    else if (drag.x < -100) { fly("left", onSkip); return; }
     setDrag({ x: 0, active: false });
   }
 
   const rotate = drag.x / 18;
+  const flyClass = flying ? ` swipe-fly-${flying}` : "";
 
   return (
     <div
-      className="swipe-card"
-      style={{ transform: `translateX(${drag.x}px) rotate(${rotate}deg)` }}
+      className={"swipe-card" + flyClass}
+      style={flying ? undefined : { transform: `translateX(${drag.x}px) rotate(${rotate}deg)` }}
+      onAnimationEnd={flying ? handleAnimEnd : undefined}
       onMouseDown={down}
       onMouseMove={move}
       onMouseUp={up}
@@ -1388,7 +1406,11 @@ function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo })
         <div className="swipe-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ") || (item.mediaType === "tv" ? "TV series" : "Film")}</div>
         <WhyWatch item={item} taste={taste} matchPct={matchPct} />
       </div>
-      <SwipeButtons onSkip={onSkip} onSeen={onSeen} onWant={onWant} />
+      <SwipeButtons
+        onSkip={() => fly("left", onSkip)}
+        onSeen={() => fly("up", onSeen)}
+        onWant={() => fly("right", onWant)}
+      />
     </div>
   );
 }
@@ -1657,8 +1679,10 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
                   people={people}
                   settings={settings}
                   tmdb={tmdb}
-                  onAddToWatchlist={want}
-                  onLogNew={onLogNew}
+                  onAddToWatchlist={(it) => {
+                    want(it);
+                    setForYouList((l) => l.filter((x) => !(x.tmdbId === it.tmdbId && x.mediaType === it.mediaType)));
+                  }}
                   onInfo={() => setInfoItem(item)}
                 />
               ))}
@@ -1718,8 +1742,7 @@ function useExtraInfo(item, settings, tmdb) {
   return { imdb, providers };
 }
 
-function SuggestionRow({ item, matchPct, settings, tmdb, taste, people, onAddToWatchlist, onLogNew, onInfo }) {
-  const [logging, setLogging] = useState(false);
+function SuggestionRow({ item, matchPct, settings, tmdb, taste, people, onAddToWatchlist, onInfo }) {
   const [expanded, setExpanded] = useState(false);
   const { imdb, providers } = useExtraInfo(item, settings, tmdb);
   const badges = people ? badgesFor(item, people, taste) : [];
@@ -1758,15 +1781,8 @@ function SuggestionRow({ item, matchPct, settings, tmdb, taste, people, onAddToW
         )}
       </div>
       <div className="suggest-actions" onClick={(e) => e.stopPropagation()}>
-        <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Add to wishlist"><Eye size={16} /></button>
-        <button className="icon-btn" onClick={() => setLogging(true)} aria-label="Seen it"><Check size={16} /></button>
+        <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Save to watchlist"><Bookmark size={16} /></button>
       </div>
-      {logging && (
-        <Modal onClose={() => setLogging(false)}>
-          <h3 className="modal-title">{item.title}</h3>
-          <LogForm saveLabel="Add to collection" onCancel={() => setLogging(false)} onSave={(entry) => { onLogNew(item, entry); setLogging(false); }} />
-        </Modal>
-      )}
     </div>
   );
 }
@@ -3317,6 +3333,21 @@ input, textarea { font-family: inherit; }
 .swipe-flag { position: absolute; top: 20px; font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 0.05em; padding: 6px 14px; border-radius: 6px; z-index: 3; transform: rotate(-8deg); }
 .swipe-flag-want { left: 16px; border: 3px solid #6fbf73; color: #6fbf73; }
 .swipe-flag-skip { right: 16px; border: 3px solid #e9695f; color: #e9695f; transform: rotate(8deg); }
+@keyframes swipe-fly-left {
+  0%   { transform: translateX(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateX(-130vw) rotate(-28deg); opacity: 0; }
+}
+@keyframes swipe-fly-right {
+  0%   { transform: translateX(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateX(130vw) rotate(28deg); opacity: 0; }
+}
+@keyframes swipe-fly-up {
+  0%   { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-90vh) scale(0.65); opacity: 0; }
+}
+.swipe-fly-left  { animation: swipe-fly-left  0.38s cubic-bezier(0.4,0,1,1) forwards; pointer-events: none; }
+.swipe-fly-right { animation: swipe-fly-right 0.38s cubic-bezier(0.4,0,1,1) forwards; pointer-events: none; }
+.swipe-fly-up    { animation: swipe-fly-up    0.32s cubic-bezier(0.4,0,1,1) forwards; pointer-events: none; }
 .refresh-btn { margin-top: 18px; }
 
 /* out now hero */
