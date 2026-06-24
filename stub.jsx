@@ -555,6 +555,8 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
               <Check size={14} /> Seen it
             </button>
           )}
+          <a className="btn btn-outline btn-sm" href={buildAmcLink(item.title, settings?.zip || "")} target="_blank" rel="noreferrer">AMC</a>
+          <a className="btn btn-outline btn-sm" href={buildRegalLink(item.title, settings?.zip || "")} target="_blank" rel="noreferrer">Regal</a>
           <a className="btn btn-outline btn-sm" href={buildRedditLink(item.title, item.year)} target="_blank" rel="noreferrer">
             <ExternalLink size={14} /> Reddit
           </a>
@@ -687,11 +689,12 @@ function TicketStub({ ticket, onOpen }) {
    TICKET DETAIL, flip card with history, edit, undo
 --------------------------------------------------------- */
 
-function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb }) {
+function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
   const [showPoster, setShowPoster] = useState(false);
   const [editingViewingId, setEditingViewingId] = useState(null);
   const [logging, setLogging] = useState(false);
   const [tmdbData, setTmdbData] = useState(null);
+  const [omdbData, setOmdbData] = useState(null);
 
   useEffect(() => {
     if (!tmdb || !ticket.tmdbId) return;
@@ -702,8 +705,24 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb }) {
     return () => { active = false; };
   }, [ticket.tmdbId]);
 
+  useEffect(() => {
+    if (!settings?.omdbKey || !ticket.title) return;
+    let active = true;
+    const url = `https://www.omdbapi.com/?apikey=${encodeURIComponent(settings.omdbKey)}&t=${encodeURIComponent(ticket.title)}${ticket.year ? `&y=${ticket.year}` : ""}`;
+    fetch(url).then((r) => r.json()).then((d) => {
+      if (active && d && d.Response === "True") setOmdbData(d);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [ticket.tmdbId, settings?.omdbKey]);
+
   const overview = tmdbData?.overview || null;
   const backdrop = ticket.backdropPath || (tmdbData?.backdrop_path ? tmdbData.backdrop_path : null);
+  const tdCast = tmdbData?.credits?.cast?.slice(0, 8) || [];
+  const tdDirector = tmdbData?.credits?.crew?.find((c) => c.job === "Director");
+  const tdRelease = tmdbData ? (tmdbData.release_date || tmdbData.first_air_date || "") : "";
+  const tdRuntime = tmdbData?.runtime || (tmdbData?.episode_run_time && tmdbData.episode_run_time[0]);
+  const tdBoxOffice = omdbData?.BoxOffice;
+  const tdImdb = omdbData?.imdbRating;
 
   function pushHistory(t) {
     const snap = JSON.parse(JSON.stringify({ viewings: t.viewings, log: t.log }));
@@ -772,7 +791,7 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb }) {
                 <img src={tmdbImg(backdrop, "w780")} alt="" className="td-hero-img" />
                 <div className="td-hero-overlay">
                   <div className="td-hero-title">{ticket.title}</div>
-                  <div className="td-hero-genres">{genreNames(ticket.genreIds, ticket.mediaType).slice(0, 3).join(" · ")}</div>
+                  <div className="td-hero-genres">{genreNames(ticket.genreIds, ticket.mediaType).slice(0, 1).join(" · ")}</div>
                 </div>
               </div>
             ) : null}
@@ -802,6 +821,30 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb }) {
             </div>
 
             {overview && <p className="td-overview">{overview}</p>}
+
+            {(tdRelease || tdRuntime || tdDirector || tdImdb || tdBoxOffice || ticket.voteAverage > 0) && (
+              <div className="td-stats">
+                {tdRelease && <div className="td-stat"><span>Released</span>{formatDate(tdRelease.slice(0, 10)) || tdRelease}</div>}
+                {tdRuntime && <div className="td-stat"><span>Runtime</span>{tdRuntime} min</div>}
+                {tdDirector && <div className="td-stat"><span>Director</span>{tdDirector.name}</div>}
+                {tdImdb && tdImdb !== "N/A" && <div className="td-stat"><span>IMDb</span>{tdImdb}/10</div>}
+                {ticket.voteAverage > 0 && <div className="td-stat"><span>TMDB</span>{ticket.voteAverage.toFixed(1)}/10</div>}
+                {tdBoxOffice && tdBoxOffice !== "N/A" && <div className="td-stat"><span>Box Office</span>{tdBoxOffice}</div>}
+              </div>
+            )}
+
+            {tdCast.length > 0 && (
+              <div className="td-cast-section">
+                <div className="td-cast-label">Cast</div>
+                <div className="td-cast-list">
+                  {tdCast.map((c) => <span key={c.id} className="cast-chip">{c.name}</span>)}
+                </div>
+              </div>
+            )}
+
+            <a className="btn btn-outline btn-sm td-reddit-btn" href={buildRedditLink(ticket.title, ticket.year)} target="_blank" rel="noreferrer">
+              <ExternalLink size={13} /> Reddit discussion
+            </a>
 
             <div className="td-toolbar">
               <button className="td-tool-btn" disabled={!ticket.history || !ticket.history.length} onClick={handleUndo}>
@@ -1088,6 +1131,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
       <TicketDetail
         ticket={open}
         tmdb={tmdb}
+        settings={settings}
         onClose={() => setOpen(null)}
         onUpdate={(t) => { onUpdateTicket(t); setOpen(t); }}
         onDelete={(id) => { onDeleteTicket(id); setOpen(null); }}
@@ -1125,23 +1169,6 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
           <FavoritesView collection={collection} people={people} tmdb={tmdb} onUpdateTicket={onUpdateTicket} />
         </Modal>
       )}
-
-      <div className="collection-top-strip">
-        <button className="cta-icon-btn" onClick={() => setShowFavorites(true)}>
-          <Heart size={17} />
-          <span>Favorites</span>
-        </button>
-        <button className="cta-icon-btn" onClick={() => setScanning(true)}>
-          <Camera size={17} />
-          <span>Scan ticket</span>
-        </button>
-        {collection.length > 0 && (
-          <button className="cta-icon-btn" onClick={onShowYIR}>
-            <Sparkles size={17} />
-            <span>{new Date().getFullYear()} Recap</span>
-          </button>
-        )}
-      </div>
 
       <div className="view-toggle">
         <button className={!showWatchlist ? "toggle-pill active" : "toggle-pill"} onClick={() => setShowWatchlist(false)}>
@@ -1242,6 +1269,23 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
           </div>
         )
       )}
+
+      <div className="collection-footer-strip">
+        <button className="cta-icon-btn" onClick={() => setShowFavorites(true)}>
+          <Heart size={17} />
+          <span>Favorites</span>
+        </button>
+        <button className="cta-icon-btn" onClick={() => setScanning(true)}>
+          <Camera size={17} />
+          <span>Scan ticket</span>
+        </button>
+        {collection.length > 0 && (
+          <button className="cta-icon-btn" onClick={onShowYIR}>
+            <Sparkles size={17} />
+            <span>{new Date().getFullYear()} Recap</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -1259,6 +1303,28 @@ function EmptyState({ icon, title, body }) {
 /* ---------------------------------------------------------
    DISCOVER TAB, swipe deck
 --------------------------------------------------------- */
+
+function SwipeButtons({ onSkip, onSeen, onWant }) {
+  const [burst, setBurst] = useState(null);
+  function fire(kind, fn) {
+    setBurst(kind);
+    setTimeout(() => setBurst(null), 480);
+    fn();
+  }
+  return (
+    <div className="swipe-buttons">
+      <button className={"round-btn round-btn-skip" + (burst === "skip" ? " round-btn-burst" : "")} onClick={() => fire("skip", onSkip)} aria-label="Skip">
+        <X size={22} />
+      </button>
+      <button className={"round-btn round-btn-seen" + (burst === "seen" ? " round-btn-burst" : "")} onClick={() => fire("seen", onSeen)} aria-label="Already seen it">
+        <Eye size={26} />
+      </button>
+      <button className={"round-btn round-btn-want" + (burst === "want" ? " round-btn-burst" : "")} onClick={() => fire("want", onWant)} aria-label="Save to want-to-see">
+        <Bookmark size={20} />
+      </button>
+    </div>
+  );
+}
 
 function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo }) {
   const [drag, setDrag] = useState({ x: 0, active: false });
@@ -1319,20 +1385,10 @@ function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo })
       </button>
       <div className="swipe-meta">
         <div className="swipe-title">{item.title} {item.year ? `(${item.year})` : ""}</div>
-        <div className="swipe-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ") || (item.mediaType === "tv" ? "TV series" : "Film")}</div>
+        <div className="swipe-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ") || (item.mediaType === "tv" ? "TV series" : "Film")}</div>
         <WhyWatch item={item} taste={taste} matchPct={matchPct} />
       </div>
-      <div className="swipe-buttons">
-        <button className="round-btn round-btn-skip" onClick={onSkip} aria-label="Skip">
-          <X size={22} />
-        </button>
-        <button className="round-btn round-btn-seen" onClick={onSeen} aria-label="Already seen it">
-          <Eye size={26} />
-        </button>
-        <button className="round-btn round-btn-want" onClick={onWant} aria-label="Save to want-to-see">
-          <Bookmark size={20} />
-        </button>
-      </div>
+      <SwipeButtons onSkip={onSkip} onSeen={onSeen} onWant={onWant} />
     </div>
   );
 }
@@ -1682,7 +1738,7 @@ function SuggestionRow({ item, matchPct, settings, tmdb, taste, people, onAddToW
           <button className="suggest-title-btn" onClick={(e) => { e.stopPropagation(); onInfo(); }}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
           {matchPct != null && <span className={"match-pill " + (matchPct >= 70 ? "match-high" : matchPct >= 40 ? "match-mid" : "match-low")}>{matchPct}%</span>}
         </div>
-        <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
+        <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ")}</div>
         {badges.length > 0 && (
           <div className="badge-row">
             {badges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
@@ -1887,8 +1943,8 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
       setError(null);
       try {
         const today = new Date().toISOString().slice(0, 10);
-        const endDate = `${new Date().getFullYear() + 1}-12-31`;
-        const pages = await Promise.all([1, 2, 3, 4].map((page) =>
+        const endDate = `${new Date().getFullYear() + 6}-12-31`;
+        const pages = await Promise.all([1, 2, 3, 4, 5, 6].map((page) =>
           tmdb.discoverMovie({
             "primary_release_date.gte": today,
             "primary_release_date.lte": endDate,
@@ -1929,10 +1985,10 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
     const yr = d.getFullYear();
     if (window === "all") return true;
     if (window === "week") return days >= 0 && days <= 7;
-    if (window === "nextweek") return days > 7 && days <= 14;
     if (window === "month") return days >= 0 && days <= 31;
     if (window === "thisyear") return yr === thisYear;
     if (window === "nextyear") return yr === thisYear + 1;
+    if (window === "beyond") return yr > thisYear + 1;
     return true;
   }
 
@@ -1990,12 +2046,14 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
     return list;
   }, [items, window, sort, taste]);
 
+  const thisYr = new Date().getFullYear();
   const WINDOWS = [
-    { id: "all", label: "All upcoming" },
-    { id: "thisyear", label: `${new Date().getFullYear()}` },
-    { id: "nextyear", label: `${new Date().getFullYear() + 1}` },
+    { id: "week", label: "This week" },
     { id: "month", label: "This month" },
-    { id: "week", label: "This week" }
+    { id: "thisyear", label: `${thisYr}` },
+    { id: "nextyear", label: `${thisYr + 1}` },
+    { id: "beyond", label: "Beyond" },
+    { id: "all", label: "All" },
   ];
 
   return (
@@ -2067,9 +2125,8 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
 --------------------------------------------------------- */
 
 function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, settings, onInfo, onSave }) {
-  const [linksOpen, setLinksOpen] = useState(false);
   return (
-    <div className={"outnow-hero" + (idx > 0 ? " outnow-hero-secondary" : "")} onClick={() => setLinksOpen((x) => !x)}>
+    <div className={"outnow-hero" + (idx > 0 ? " outnow-hero-secondary" : "")} onClick={onInfo} style={{ cursor: "pointer" }}>
       {item.backdropPath ? (
         <img src={tmdbImg(item.backdropPath, "w780")} alt="" className="outnow-hero-img" />
       ) : item.posterPath ? (
@@ -2085,34 +2142,34 @@ function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, sett
           {itemNote && <span className={"proactive-note note-" + itemNote.tone} style={{ margin: 0 }}>{itemNote.text}</span>}
         </div>
         <div className={"outnow-hero-title" + (idx > 0 ? " outnow-hero-title-sm" : "")}>{item.title}</div>
-        <div className="outnow-hero-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
+        <div className="outnow-hero-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ")}</div>
         {itemBadges.length > 0 && (
           <div className="badge-row" style={{ marginBottom: 8 }}>
             {itemBadges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
           </div>
         )}
-        {linksOpen ? (
-          <div className="outnow-hero-btns" onClick={(e) => e.stopPropagation()}>
-            <a className="hero-btn" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
-            <a className="hero-btn hero-btn-ghost" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
-            <a className="hero-btn hero-btn-ghost" href={buildRedditLink(item.title, item.year)} target="_blank" rel="noreferrer"><ExternalLink size={12} /> Reddit</a>
-            <button className={"hero-btn hero-btn-icon" + (isOwned ? " hero-btn-active" : "")} onClick={onSave} aria-label="Save to wishlist"><Bookmark size={14} /></button>
-            <button className="hero-btn hero-btn-ghost hero-btn-icon" onClick={(e) => { e.stopPropagation(); onInfo(); }} aria-label="Details"><Info size={14} /></button>
-          </div>
-        ) : (
-          <div className="outnow-tap-hint">Tap for showtimes &amp; details</div>
-        )}
+        <div className="outnow-hero-btns" onClick={(e) => e.stopPropagation()}>
+          <button className={"hero-btn hero-btn-icon" + (isOwned ? " hero-btn-active" : "")} onClick={onSave} aria-label="Save to wishlist"><Bookmark size={14} /></button>
+        </div>
       </div>
     </div>
   );
 }
 
-function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAddToWatchlist, onLogNew }) {
+function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAddToWatchlist, onLogNew, onSaveSettings }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [added, setAdded] = useState({});
   const [infoItem, setInfoItem] = useState(null);
+  const [sort, setSort] = useState("match");
+  const [editingZip, setEditingZip] = useState(false);
+  const [localZip, setLocalZip] = useState(settings.zip || "");
+
+  function saveZip() {
+    if (onSaveSettings) onSaveSettings({ ...settings, zip: localZip.trim() });
+    setEditingZip(false);
+  }
 
   useEffect(() => {
     let active = true;
@@ -2139,10 +2196,17 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
 
   const enough = hasEnoughTaste(collection, feedback);
 
-  const processed = useMemo(
-    () => items.map((x) => ({ ...x, _pct: matchPercent(x, taste) })),
-    [items, taste]
-  );
+  const processed = useMemo(() => {
+    let list = items.map((x) => ({ ...x, _pct: matchPercent(x, taste) }));
+    if (sort === "match") list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
+    else if (sort === "lowest") list.sort((a, b) => (a._pct || 0) - (b._pct || 0));
+    else if (sort === "genre") list.sort((a, b) => {
+      const ag = genreNames(a.genreIds, a.mediaType)[0] || "";
+      const bg = genreNames(b.genreIds, b.mediaType)[0] || "";
+      return ag.localeCompare(bg);
+    });
+    return list;
+  }, [items, taste, sort]);
 
   const note = (item, pct) => {
     if (pct == null) return null;
@@ -2195,10 +2259,35 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
         />
       )}
 
-      <div className="outnow-zip-note">
-        {settings.zip
-          ? <><MapPin size={11} /> Showtimes linked for zip <strong>{settings.zip}</strong> · set in Settings</>
-          : <><MapPin size={11} /> Add your zip in <strong>Settings</strong> for accurate showtime links</>}
+      <div className="outnow-zip-row">
+        <MapPin size={11} />
+        {editingZip ? (
+          <>
+            <input
+              className="zip-input"
+              type="text"
+              inputMode="numeric"
+              placeholder="ZIP code"
+              value={localZip}
+              onChange={(e) => setLocalZip(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") saveZip(); if (e.key === "Escape") setEditingZip(false); }}
+              autoFocus
+              maxLength={10}
+            />
+            <button className="zip-save-btn" onClick={saveZip}>Save</button>
+            <button className="zip-cancel-btn" onClick={() => setEditingZip(false)}>✕</button>
+          </>
+        ) : (
+          <button className="zip-tap" onClick={() => { setLocalZip(settings.zip || ""); setEditingZip(true); }}>
+            {settings.zip ? <><strong>{settings.zip}</strong> · tap to edit</> : "Tap to set zip for showtimes"}
+          </button>
+        )}
+      </div>
+
+      <div className="chip-scroll" style={{ marginBottom: 12 }}>
+        <button className={"chip" + (sort === "match" ? " chip-active" : "")} onClick={() => setSort("match")}>Highest match</button>
+        <button className={"chip" + (sort === "lowest" ? " chip-active" : "")} onClick={() => setSort("lowest")}>Lowest match</button>
+        <button className={"chip" + (sort === "genre" ? " chip-active" : "")} onClick={() => setSort("genre")}>Genre A–Z</button>
       </div>
 
       {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Loading theaters" body="Pulling what's playing right now." />}
@@ -2207,34 +2296,29 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
         <EmptyState icon={<Clapperboard size={32} />} title="Nothing found" body="No current releases found for your region." />
       )}
 
-      {!loading && !error && processed.length > 0 && (() => {
-        const sorted = enough
-          ? [...processed].sort((a, b) => (b._pct || 0) - (a._pct || 0))
-          : processed;
-        return (
-          <div className="outnow-all-heroes">
-            {sorted.map((item, idx) => {
-              const itemNote = enough ? note(item, item._pct) : null;
-              const itemBadges = badgesFor(item, people, taste);
-              const isOwned = ownedSet.has(item.tmdbId + item.mediaType);
-              return (
-                <OutNowHeroCard
-                  key={item.tmdbId}
-                  item={item}
-                  idx={idx}
-                  enough={enough}
-                  itemNote={itemNote}
-                  itemBadges={itemBadges}
-                  isOwned={isOwned || added[item.tmdbId]}
-                  settings={settings}
-                  onInfo={() => setInfoItem(item)}
-                  onSave={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
-                />
-              );
-            })}
-          </div>
-        );
-      })()}
+      {!loading && !error && processed.length > 0 && (
+        <div className="outnow-all-heroes">
+          {processed.map((item, idx) => {
+            const itemNote = enough ? note(item, item._pct) : null;
+            const itemBadges = badgesFor(item, people, taste);
+            const isOwned = ownedSet.has(item.tmdbId + item.mediaType);
+            return (
+              <OutNowHeroCard
+                key={item.tmdbId}
+                item={item}
+                idx={idx}
+                enough={enough}
+                itemNote={itemNote}
+                itemBadges={itemBadges}
+                isOwned={isOwned || added[item.tmdbId]}
+                settings={settings}
+                onInfo={() => setInfoItem(item)}
+                onSave={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
+              />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -2322,7 +2406,7 @@ function SearchView({ tmdb, taste, onAddToWatchlist, onLogNew }) {
                 </button>
                 <div className="suggest-info">
                   <button className="suggest-title-btn" onClick={() => setDetail(item)}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
-                  <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
+                  <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ")}</div>
                   {item.aiReason && <div className="why-watch">{item.aiReason}</div>}
                 </div>
                 <div className="suggest-actions">
@@ -2727,8 +2811,8 @@ function YearInReview({ collection, onClose }) {
 
 const TABS = [
   { id: "collection", label: "Collection", icon: Ticket },
-  { id: "discover", label: "Discover", icon: Sparkles },
   { id: "outnow", label: "Out Now", icon: Clapperboard },
+  { id: "discover", label: "Discover", icon: Sparkles },
   { id: "soon", label: "Coming Soon", icon: CalendarDays },
   { id: "search", label: "Search", icon: Search }
 ];
@@ -2740,9 +2824,9 @@ export default function App() {
   const [collection, setCollection] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
   const [feedback, setFeedback] = useState({ skippedIds: [], wantedIds: [], seenIds: [] });
-  const [tab, setTab] = useState("collection");
+  const [tab, setTab] = useState("discover");
   // mountedTabs: once a tab is visited it stays mounted (CSS display:none) so state isn't lost on switch
-  const [mountedTabs, setMountedTabs] = useState(() => new Set(["collection"]));
+  const [mountedTabs, setMountedTabs] = useState(() => new Set(["discover"]));
   const [showSettings, setShowSettings] = useState(false);
   const [showYIR, setShowYIR] = useState(false);
 
@@ -2913,6 +2997,7 @@ export default function App() {
               feedback={feedback}
               onAddToWatchlist={addToWatchlist}
               onLogNew={logNew}
+              onSaveSettings={(s) => setSettings(s)}
             />
           </div>
         )}
@@ -3075,9 +3160,15 @@ input, textarea { font-family: inherit; }
   color: var(--brass-bright); font-size: 12.5px; padding: 10px 12px; border-radius: 10px; margin-bottom: 14px;
 }
 
-/* ---- collection header ---- */
-.collection-top-strip { display: flex; gap: 20px; justify-content: flex-end; margin-bottom: 12px; }
-.cta-icon-btn { background: none; border: none; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; letter-spacing: 0.02em; cursor: pointer; padding: 0; }
+/* ---- collection footer strip ---- */
+.collection-footer-strip {
+  position: sticky; bottom: 78px; z-index: 4;
+  display: flex; justify-content: center; align-items: center; gap: 28px;
+  padding: 11px 24px; margin: 20px auto 0; width: fit-content;
+  background: rgba(15,0,0,0.92); border: 1.5px solid rgba(255,255,255,0.28);
+  border-radius: 999px; backdrop-filter: blur(12px);
+}
+.cta-icon-btn { background: none; border: none; color: var(--cream-text); display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; letter-spacing: 0.02em; cursor: pointer; padding: 0; }
 .cta-icon-btn:active { color: var(--brass); }
 
 /* ---- ticket stub grid ---- */
@@ -3213,9 +3304,16 @@ input, textarea { font-family: inherit; }
 .swipe-buttons { display: flex; justify-content: center; align-items: center; gap: 20px; padding: 10px 0 14px; }
 .round-btn { width: 50px; height: 50px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; transition: transform 0.12s; }
 .round-btn:active { transform: scale(0.88); }
-.round-btn-skip { background: #2a1818; border: 1px solid rgba(226,54,54,0.3); color: #e2685f; }
-.round-btn-seen { background: var(--marquee-red); color: #fff; width: 60px; height: 60px; border: none; }
-.round-btn-want { background: var(--marquee-red); color: #fff; }
+.round-btn-skip { background: #1a2a3a; border: 1px solid rgba(80,140,220,0.4); color: #6aabee; }
+.round-btn-seen { background: #3d2800; border: 1.5px solid rgba(220,170,50,0.5); color: #e2b44a; width: 60px; height: 60px; }
+.round-btn-want { background: #0d2e1a; border: 1px solid rgba(60,180,100,0.4); color: #5ad08a; }
+@keyframes round-btn-burst {
+  0%   { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,255,255,0.35); }
+  35%  { transform: scale(1.4); box-shadow: 0 0 0 10px rgba(255,255,255,0); }
+  65%  { transform: scale(0.88); }
+  100% { transform: scale(1); }
+}
+.round-btn-burst { animation: round-btn-burst 0.44s ease-out; }
 .swipe-flag { position: absolute; top: 20px; font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 0.05em; padding: 6px 14px; border-radius: 6px; z-index: 3; transform: rotate(-8deg); }
 .swipe-flag-want { left: 16px; border: 3px solid #6fbf73; color: #6fbf73; }
 .swipe-flag-skip { right: 16px; border: 3px solid #e9695f; color: #e9695f; transform: rotate(8deg); }
@@ -3238,9 +3336,22 @@ input, textarea { font-family: inherit; }
 .outnow-all-heroes { display: flex; flex-direction: column; gap: 10px; }
 .outnow-hero-secondary .outnow-hero-img { aspect-ratio: 16/9; }
 .outnow-hero-title-sm { font-size: 17px; }
-.outnow-tap-hint { font-size: 11px; color: rgba(255,255,255,0.5); font-style: italic; margin-top: 4px; }
-.outnow-zip-note { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 5px; margin-bottom: 12px; }
-.outnow-zip-note strong { color: var(--cream-text); }
+.outnow-zip-row { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.zip-tap { background: none; border: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 0; text-align: left; }
+.zip-tap:hover { color: var(--cream-text); }
+.zip-tap strong { color: var(--cream-text); }
+.zip-input { background: var(--velvet-2); border: 1px solid var(--line); color: var(--cream-text); border-radius: 6px; padding: 3px 7px; font-size: 12px; width: 90px; }
+.zip-save-btn { background: var(--marquee-red); border: none; color: #fff; border-radius: 6px; padding: 3px 9px; font-size: 11px; cursor: pointer; }
+.zip-cancel-btn { background: none; border: none; color: var(--muted); font-size: 13px; cursor: pointer; padding: 0 2px; }
+
+/* td stats + cast */
+.td-stats { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 10px 0 12px; }
+.td-stat { font-size: 12px; color: var(--muted); }
+.td-stat span { color: var(--cream-text); font-weight: 600; margin-right: 4px; }
+.td-cast-section { margin-bottom: 12px; }
+.td-cast-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; }
+.td-cast-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.td-reddit-btn { display: inline-flex; margin-bottom: 12px; }
 
 /* ticket detail hero */
 .td-hero { position: relative; border-radius: 14px; overflow: hidden; margin-bottom: 0; cursor: pointer; }
