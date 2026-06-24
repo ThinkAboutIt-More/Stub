@@ -1,0 +1,7 @@
+name = "watchlist-proxy"
+main = "worker.js"
+compatibility_date = "2026-06-24"
+
+# The Anthropic key is NOT stored here. It is set as an encrypted secret:
+#   wrangler secret put ANTHROPIC_API_KEY
+# (Claude Code runs this; you paste the key value once when prompted.)
