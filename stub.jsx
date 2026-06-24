@@ -3,7 +3,8 @@ import { createRoot } from "react-dom/client";
 import {
   Ticket, Search, Sparkles, CalendarDays, Settings, X, Star, Pencil,
   Undo2, Trash2, Plus, Check, Heart, ChevronLeft, ChevronRight, Eye,
-  Clapperboard, MapPin, Tv, Film, RefreshCw, ExternalLink, Info
+  Clapperboard, MapPin, Tv, Film, RefreshCw, ExternalLink, Info,
+  Bookmark, SkipForward, Camera
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -32,6 +33,19 @@ const STORAGE_KEYS = {
 };
 
 const DEFAULT_SETTINGS = { tmdbKey: "", omdbKey: "", zip: "", country: "US" };
+
+const PROXY_URL = "https://watchlist-proxy.xphazemusic.workers.dev";
+
+async function callProxy(body) {
+  const res = await fetch(PROXY_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `Proxy ${res.status}`);
+  return data;
+}
 
 /* ---------------------------------------------------------
    STORAGE
@@ -516,11 +530,23 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
    LOG FORM, used for first viewing, rewatch, and edits
 --------------------------------------------------------- */
 
+const WHERE_PRESETS = ["AMC", "Regal", "Belcourt", "Home", "Plane", "Other"];
+
 function LogForm({ initial, onSave, onCancel, saveLabel }) {
   const [date, setDate] = useState(initial?.date || todayISO());
-  const [location, setLocation] = useState(initial?.location || "");
+  const initLoc = initial?.location || "";
+  const isPreset = WHERE_PRESETS.includes(initLoc);
+  const [location, setLocation] = useState(initLoc);
+  const [selectedPreset, setSelectedPreset] = useState(isPreset ? initLoc : (initLoc ? "Other" : ""));
+  const [customLoc, setCustomLoc] = useState(!isPreset ? initLoc : "");
   const [rating, setRating] = useState(initial?.rating ?? 4);
   const [notes, setNotes] = useState(initial?.notes || "");
+
+  function pickPreset(p) {
+    setSelectedPreset(p);
+    if (p !== "Other") setLocation(p);
+    else setLocation(customLoc);
+  }
 
   return (
     <div className="log-form">
@@ -528,13 +554,25 @@ function LogForm({ initial, onSave, onCancel, saveLabel }) {
       <input className="field-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
 
       <label className="field-label">Where</label>
-      <input
-        className="field-input"
-        type="text"
-        placeholder="AMC Thoroughbred, Netflix, friend's couch..."
-        value={location}
-        onChange={(e) => setLocation(e.target.value)}
-      />
+      <div className="where-presets">
+        {WHERE_PRESETS.map((p) => (
+          <button
+            key={p} type="button"
+            className={"where-chip" + (selectedPreset === p ? " where-chip-active" : "")}
+            onClick={() => pickPreset(p)}
+          >{p}</button>
+        ))}
+      </div>
+      {selectedPreset === "Other" && (
+        <input
+          className="field-input"
+          style={{ marginTop: 8 }}
+          type="text"
+          placeholder="Where did you watch it?"
+          value={customLoc}
+          onChange={(e) => { setCustomLoc(e.target.value); setLocation(e.target.value); }}
+        />
+      )}
 
       <label className="field-label">Your rating</label>
       <Stars value={rating} onChange={setRating} size={28} />
@@ -564,11 +602,10 @@ function LogForm({ initial, onSave, onCancel, saveLabel }) {
    TICKET STUB, the collectible card
 --------------------------------------------------------- */
 
-function TicketStub({ ticket, onOpen, index }) {
+function TicketStub({ ticket, onOpen }) {
   const last = ticket.viewings[ticket.viewings.length - 1];
   return (
     <button className="stub" onClick={() => onOpen(ticket)}>
-      <div className="stub-num">No. {String(index + 1).padStart(4, "0")}</div>
       <div className="stub-poster">
         {ticket.posterPath ? (
           <img src={tmdbImg(ticket.posterPath, "w342")} alt="" loading="lazy" />
@@ -578,11 +615,13 @@ function TicketStub({ ticket, onOpen, index }) {
           </div>
         )}
         <div className="stub-perf" />
+        {ticket.viewings.length > 1 && (
+          <div className="stub-rewatch-badge">{ticket.viewings.length}×</div>
+        )}
       </div>
       <div className="stub-tab">
         <div className="stub-title">{ticket.title}</div>
         <Stars value={last.rating} size={13} />
-        {ticket.viewings.length > 1 && <div className="stub-rewatch">{ticket.viewings.length}x watched</div>}
       </div>
       <span className="stub-shine" />
     </button>
@@ -594,7 +633,7 @@ function TicketStub({ ticket, onOpen, index }) {
 --------------------------------------------------------- */
 
 function TicketDetail({ ticket, onClose, onUpdate, onDelete }) {
-  const [flipped, setFlipped] = useState(false);
+  const [flipped, setFlipped] = useState(true);
   const [editingViewingId, setEditingViewingId] = useState(null);
   const [logging, setLogging] = useState(false);
 
@@ -658,12 +697,12 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete }) {
               </div>
             )}
             <button className="btn btn-ghost flip-hint" onClick={() => setFlipped(true)}>
-              Turn ticket over <ChevronRight size={14} />
+              Back to details <ChevronRight size={14} />
             </button>
           </div>
           <div className="flip-back">
             <button className="btn btn-ghost flip-hint flip-hint-back" onClick={() => setFlipped(false)}>
-              <ChevronLeft size={14} /> Back to poster
+              <ChevronLeft size={14} /> View poster
             </button>
 
             <h2 className="detail-title">{ticket.title}</h2>
@@ -768,91 +807,89 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete }) {
 --------------------------------------------------------- */
 
 function TicketScanner({ tmdb, onClose, onLogNew }) {
-  const [stage, setStage] = useState("upload"); // upload | reading | confirm | error
+  const [stage, setStage] = useState("upload"); // upload | reading | confirm | manual | error
   const [statusText, setStatusText] = useState("");
   const [candidates, setCandidates] = useState([]);
   const [chosen, setChosen] = useState(null);
   const [guessedDate, setGuessedDate] = useState(todayISO());
-  const [rawText, setRawText] = useState("");
+  const [manualQuery, setManualQuery] = useState("");
+  const [manualSearching, setManualSearching] = useState(false);
   const fileRef = useRef(null);
-
-  function parseDate(text) {
-    // try a few common ticket date formats
-    const months = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
-    let m = text.match(/([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})/);
-    if (m) {
-      const mo = months[m[1].slice(0,3).toLowerCase()];
-      if (mo != null) return new Date(Date.UTC(+m[3], mo, +m[2])).toISOString().slice(0,10);
-    }
-    m = text.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
-    if (m) {
-      const yr = m[3].length === 2 ? 2000 + +m[3] : +m[3];
-      return new Date(Date.UTC(yr, +m[1]-1, +m[2])).toISOString().slice(0,10);
-    }
-    return todayISO();
-  }
-
-  function guessTitleLines(text) {
-    const junk = /(amc|regal|cinemark|theatre|theater|auditorium|imax|dolby|reserved|seat|row|ticket|admit|adult|child|order|conf|rated|pg|runtime|min|showtime|www\.|\.com|http)/i;
-    return text
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length >= 3 && l.length <= 40)
-      .filter((l) => !junk.test(l))
-      .filter((l) => /[A-Za-z]/.test(l))
-      .slice(0, 8);
-  }
 
   async function handleFile(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     setStage("reading");
-    setStatusText("Loading the scanner...");
+    setStatusText("Reading ticket with AI...");
     try {
-      const Tesseract = await import("https://esm.sh/tesseract.js@5");
-      setStatusText("Reading the ticket...");
-      const worker = await Tesseract.createWorker("eng");
-      const { data } = await worker.recognize(file);
-      await worker.terminate();
-      const text = data.text || "";
-      setRawText(text);
-      const date = parseDate(text);
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const mimeType = file.type || "image/jpeg";
+      const data = await callProxy({
+        model: "claude-haiku-4-5",
+        max_tokens: 150,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: mimeType, data: base64 } },
+            { type: "text", text: 'This is a movie ticket or purchase confirmation. Extract the movie title and the date of the screening or purchase. Reply with only valid JSON: {"title": "movie title here", "date": "YYYY-MM-DD"}. Use null if you cannot find the field.' }
+          ]
+        }]
+      });
+      const text = data.content?.[0]?.text?.trim() || "";
+      let parsed = {};
+      try {
+        const match = text.match(/\{[\s\S]*\}/);
+        if (match) parsed = JSON.parse(match[0]);
+      } catch { /* ignore parse error, use fallback */ }
+
+      const date = parsed.date || todayISO();
       setGuessedDate(date);
-      const titleGuesses = guessTitleLines(text);
-      if (!titleGuesses.length) {
-        setStage("confirm");
-        setCandidates([]);
-        return;
-      }
+      const title = parsed.title;
+      if (!title) { setStage("manual"); return; }
       setStatusText("Matching to a movie...");
-      let found = [];
-      for (const g of titleGuesses.slice(0, 4)) {
-        try {
-          const res = await tmdb.searchMulti(g);
-          const hits = (res.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
-          if (hits.length) { found = hits.slice(0, 5); break; }
-        } catch (e2) {}
-      }
-      setCandidates(found);
-      setChosen(found[0] || null);
+      const res = await tmdb.searchMulti(title);
+      const hits = (res.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
+      setCandidates(hits.slice(0, 5));
+      setChosen(hits[0] || null);
       setStage("confirm");
     } catch (err) {
-      setStatusText(err.message || "OCR failed");
-      setStage("error");
+      setStatusText(err.message || "Scan failed");
+      setStage("manual");
     }
+  }
+
+  async function runManualSearch(q) {
+    if (!q.trim()) return;
+    setManualSearching(true);
+    try {
+      const res = await tmdb.searchMulti(q.trim());
+      const hits = (res.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
+      setCandidates(hits.slice(0, 6));
+      setChosen(hits[0] || null);
+      setStage("confirm");
+    } catch { /* ignore */ }
+    setManualSearching(false);
   }
 
   return (
     <Modal onClose={onClose}>
-      <h3 className="modal-title">Scan a ticket</h3>
+      <h3 className="modal-title">Add from ticket</h3>
 
       {stage === "upload" && (
         <div>
-          <p className="sync-note">Upload a screenshot of your AMC, Regal, or other ticket. The scanner reads the title and date, then you confirm before it's added.</p>
+          <p className="sync-note">Upload a screenshot of your AMC or Regal confirmation — AI will read the title and date.</p>
           <button className="btn btn-primary" style={{ width: "100%", marginTop: 12 }} onClick={() => fileRef.current && fileRef.current.click()}>
-            <Plus size={16} /> Choose screenshot
+            <Camera size={16} /> Choose screenshot
           </button>
           <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFile} />
+          <button className="btn btn-ghost" style={{ width: "100%", marginTop: 10 }} onClick={() => setStage("manual")}>
+            Type the title instead
+          </button>
         </div>
       )}
 
@@ -860,10 +897,23 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
         <div className="detail-loading"><RefreshCw size={20} className="spin" /> {statusText}</div>
       )}
 
-      {stage === "error" && (
+      {stage === "manual" && (
         <div>
-          <p className="sync-note">Couldn't read that one: {statusText}. Try a clearer screenshot, or add it manually from Search.</p>
-          <button className="btn btn-outline" style={{ width: "100%", marginTop: 12 }} onClick={() => setStage("upload")}>Try another</button>
+          {statusText && <p className="sync-note" style={{ marginBottom: 10 }}>Couldn't read the screenshot automatically. Search for the title below.</p>}
+          <div className="search-bar" style={{ marginBottom: 10 }}>
+            <Search size={15} />
+            <input
+              className="search-input"
+              placeholder="Type movie title..."
+              value={manualQuery}
+              onChange={(e) => setManualQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && runManualSearch(manualQuery)}
+              autoFocus
+            />
+          </div>
+          <button className="btn btn-primary" style={{ width: "100%" }} disabled={manualSearching || !manualQuery.trim()} onClick={() => runManualSearch(manualQuery)}>
+            {manualSearching ? <RefreshCw size={14} className="spin" /> : <Search size={14} />} Search
+          </button>
         </div>
       )}
 
@@ -886,7 +936,7 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
               </div>
             </>
           ) : (
-            <p className="sync-note">Couldn't match a title automatically. You can still set the date and add it from Search, or retry with a clearer image.</p>
+            <p className="sync-note">No results. Try a different title.</p>
           )}
 
           <label className="field-label">Date watched</label>
@@ -906,13 +956,6 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
               <Check size={14} /> Add to collection
             </button>
           </div>
-
-          {rawText && (
-            <details className="edit-log" style={{ marginTop: 14 }}>
-              <summary>What the scanner read</summary>
-              <pre className="scan-raw">{rawText.slice(0, 400)}</pre>
-            </details>
-          )}
         </div>
       )}
     </Modal>
@@ -923,14 +966,16 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
    COLLECTION TAB
 --------------------------------------------------------- */
 
-function CollectionView({ collection, watchlist, tmdb, taste, settings, onUpdateTicket, onDeleteTicket, onLogFromWatchlist, onAddToWatchlist, onLogNew, onRemoveFromWatchlist }) {
+function CollectionView({ collection, watchlist, tmdb, taste, settings, people, onUpdateTicket, onDeleteTicket, onLogFromWatchlist, onAddToWatchlist, onLogNew, onRemoveFromWatchlist }) {
   const [open, setOpen] = useState(null);
   const [showWatchlist, setShowWatchlist] = useState(false);
+  const [showFavorites, setShowFavorites] = useState(false);
   const [detail, setDetail] = useState(null);
   const [sort, setSort] = useState("recent");
   const [genreFilter, setGenreFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [searching, setSearching] = useState(false);
 
   const genreOptions = useMemo(() => {
     const ids = new Set();
@@ -973,7 +1018,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, onUpdate
     );
   }
 
-  const showControls = collection.length >= 4;
+  const showControls = collection.length >= 4 || searching;
 
   return (
     <div className="view">
@@ -997,18 +1042,37 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, onUpdate
         />
       )}
 
-      <div className="view-toggle">
-        <button className={!showWatchlist ? "toggle-pill active" : "toggle-pill"} onClick={() => setShowWatchlist(false)}>
-          Collected ({collection.length})
-        </button>
-        <button className={showWatchlist ? "toggle-pill active" : "toggle-pill"} onClick={() => setShowWatchlist(true)}>
-          Want to see ({watchlist.length})
+      {showFavorites && (
+        <Modal onClose={() => setShowFavorites(false)} wide>
+          <h3 className="modal-title">Favorites</h3>
+          <FavoritesView collection={collection} people={people} tmdb={tmdb} onUpdateTicket={onUpdateTicket} />
+        </Modal>
+      )}
+
+      <div className="collection-header-row">
+        <div className="view-toggle" style={{ flex: 1, margin: 0 }}>
+          <button className={!showWatchlist ? "toggle-pill active" : "toggle-pill"} onClick={() => setShowWatchlist(false)}>
+            Collected ({collection.length})
+          </button>
+          <button className={showWatchlist ? "toggle-pill active" : "toggle-pill"} onClick={() => setShowWatchlist(true)}>
+            Want to see ({watchlist.length})
+          </button>
+        </div>
+        <button className="icon-btn" onClick={() => setShowFavorites(true)} aria-label="Favorites">
+          <Heart size={17} />
         </button>
       </div>
 
-      <button className="scan-btn" onClick={() => setScanning(true)}>
-        <Plus size={15} /> Scan a ticket stub
-      </button>
+      <div className="collection-actions">
+        <button className="collection-action-btn" onClick={() => setScanning(true)}>
+          <Camera size={20} />
+          <span>Scan ticket</span>
+        </button>
+        <button className="collection-action-btn" onClick={() => setSearching(true)}>
+          <Search size={20} />
+          <span>Search</span>
+        </button>
+      </div>
 
       {!showWatchlist && (
         collection.length === 0 ? (
@@ -1050,8 +1114,8 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, onUpdate
               <EmptyState icon={<Search size={28} />} title="No matches" body="Nothing in your collection fits that filter." />
             ) : (
               <div className="stub-grid stub-grid-compact">
-                {visibleCollection.map((t, i) => (
-                  <TicketStub ticket={t} index={collection.indexOf(t)} key={t.id} onOpen={setOpen} />
+                {visibleCollection.map((t) => (
+                  <TicketStub ticket={t} key={t.id} onOpen={setOpen} />
                 ))}
               </div>
             )}
@@ -1172,13 +1236,13 @@ function SwipeCard({ item, matchPct, onSkip, onWant, onSeen, onSwipeRight, onTap
       </div>
       <div className="swipe-buttons">
         <button className="round-btn round-btn-skip" onClick={onSkip} aria-label="Skip">
-          <X size={22} />
+          <SkipForward size={20} />
         </button>
         <button className="round-btn round-btn-seen" onClick={onSeen} aria-label="Already seen it">
-          <Eye size={20} />
+          <Eye size={26} />
         </button>
-        <button className="round-btn round-btn-want" onClick={onWant} aria-label="Want to see">
-          <Heart size={22} />
+        <button className="round-btn round-btn-want" onClick={onWant} aria-label="Save to want-to-see">
+          <Bookmark size={20} />
         </button>
       </div>
     </div>
@@ -1228,13 +1292,13 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
         : seenIdSet;
       const fresh = all.filter((a) => !skipSet.has(a.tmdbId + a.mediaType) && !ownedSet.has(a.tmdbId + a.mediaType));
       const dedup = Array.from(new Map(fresh.map((f) => [f.tmdbId + f.mediaType, f])).values());
-      const scored = dedup
-        .map((x) => ({ ...x, _pct: matchPercent(x, taste) }))
-        .sort((a, b) => (b._pct || 0) - (a._pct || 0));
-      // keep some surprise: interleave top matches with shuffled rest
-      const top = scored.slice(0, 12);
-      const rest = scored.slice(12).sort(() => Math.random() - 0.5);
-      setPool([...top, ...rest]);
+      const scored = dedup.map((x) => ({ ...x, _pct: matchPercent(x, taste) }));
+      // Shuffle with mild bias toward high match — avoids showing same movie on every refresh
+      const shuffled = scored.sort((a, b) => {
+        const bias = ((b._pct || 50) - (a._pct || 50)) * 0.3;
+        return bias + (Math.random() - 0.5) * 100;
+      });
+      setPool(shuffled);
     } catch (e) {
       setError(e.message);
     }
@@ -1761,7 +1825,6 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
                     <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
                     <a className="link-pill" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
                     <a className="link-pill" href={buildBelcourtLink(item.title)} target="_blank" rel="noreferrer">Belcourt</a>
-                    <a className="link-pill" href={buildBalthazarLink(item.title)} target="_blank" rel="noreferrer">Balthazar</a>
                   </div>
                 </div>
                 <button
@@ -1770,6 +1833,120 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
                   aria-label="Want to see"
                 >
                   <Eye size={16} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   OUT NOW TAB  — movies currently in theaters
+--------------------------------------------------------- */
+
+function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAddToWatchlist, onLogNew }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [added, setAdded] = useState({});
+  const [infoItem, setInfoItem] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    async function run() {
+      setLoading(true);
+      setError(null);
+      try {
+        const region = (settings.country || "US").toUpperCase();
+        const [p1, p2] = await Promise.all([tmdb.nowPlaying(1, region), tmdb.nowPlaying(2, region)]);
+        const raw = [...(p1.results || []), ...(p2.results || [])];
+        const dedup = Array.from(new Map(raw.map((r) => [r.id, r])).values());
+        const sorted = dedup
+          .map((r) => ({ ...normalize(r), overview: r.overview }))
+          .sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+        if (active) setItems(sorted);
+      } catch (e) {
+        if (active) setError(e.message);
+      }
+      if (active) setLoading(false);
+    }
+    run();
+    return () => { active = false; };
+  }, [settings.country]);
+
+  const enough = hasEnoughTaste(collection, feedback);
+
+  const processed = useMemo(
+    () => items.map((x) => ({ ...x, _pct: matchPercent(x, taste) })),
+    [items, taste]
+  );
+
+  const ownedSet = useMemo(
+    () => new Set([...collection.map((c) => c.tmdbId + c.mediaType), ...[]]),
+    [collection]
+  );
+
+  return (
+    <div className="view">
+      {infoItem && (
+        <DetailModal
+          item={infoItem}
+          tmdb={tmdb}
+          badges={badgesFor(infoItem, people, taste)}
+          settings={settings}
+          onClose={() => setInfoItem(null)}
+          onAddToWatchlist={(it) => { onAddToWatchlist(it); setAdded((a) => ({ ...a, [it.tmdbId]: true })); }}
+          onLogNew={onLogNew}
+        />
+      )}
+
+      {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Loading theaters" body="Pulling what's playing right now." />}
+      {!loading && error && <EmptyState icon={<Info size={32} />} title="Couldn't load" body={`TMDB said: ${error}`} />}
+      {!loading && !error && processed.length === 0 && (
+        <EmptyState icon={<Clapperboard size={32} />} title="Nothing found" body="No current releases found for your region." />
+      )}
+
+      {!loading && !error && (
+        <div className="coming-list">
+          {processed.map((item) => {
+            const badges = badgesFor(item, people, taste);
+            const isOwned = ownedSet.has(item.tmdbId + item.mediaType);
+            return (
+              <div className="coming-row" key={item.tmdbId}>
+                <button className="coming-thumb-btn" onClick={() => setInfoItem(item)} aria-label={`Details for ${item.title}`}>
+                  {item.posterPath ? (
+                    <img src={tmdbImg(item.posterPath, "w154")} alt="" className="coming-thumb" />
+                  ) : (
+                    <div className="coming-thumb coming-thumb-fallback"><Film size={18} /></div>
+                  )}
+                </button>
+                <div className="coming-info">
+                  <div className="suggest-title-row">
+                    <button className="suggest-title-btn" onClick={() => setInfoItem(item)}>{item.title}</button>
+                    {enough && item._pct != null && (
+                      <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
+                    )}
+                  </div>
+                  <div className="coming-date" style={{ color: "var(--brass-bright)" }}>In theaters now</div>
+                  {badges.length > 0 && (
+                    <div className="badge-row">
+                      {badges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
+                    </div>
+                  )}
+                  <div className="suggest-links">
+                    <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
+                    <a className="link-pill" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
+                  </div>
+                </div>
+                <button
+                  className={"icon-btn" + (added[item.tmdbId] || isOwned ? " icon-btn-active" : "")}
+                  onClick={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
+                  aria-label="Want to see"
+                >
+                  <Bookmark size={16} />
                 </button>
               </div>
             );
@@ -1968,8 +2145,8 @@ function Onboarding({ onSave }) {
 const TABS = [
   { id: "collection", label: "Collection", icon: Ticket },
   { id: "discover", label: "Discover", icon: Sparkles },
+  { id: "outnow", label: "Out Now", icon: Clapperboard },
   { id: "soon", label: "Coming Soon", icon: CalendarDays },
-  { id: "favorites", label: "Favorites", icon: Heart },
   { id: "search", label: "Search", icon: Search }
 ];
 
@@ -2104,6 +2281,7 @@ export default function App() {
             watchlist={watchlist}
             tmdb={tmdb}
             taste={taste}
+            people={people}
             settings={settings}
             onUpdateTicket={updateTicket}
             onDeleteTicket={deleteTicket}
@@ -2127,6 +2305,18 @@ export default function App() {
             onLogNew={logNew}
           />
         )}
+        {tab === "outnow" && (
+          <OutNowView
+            tmdb={tmdb}
+            settings={settings}
+            taste={taste}
+            people={people}
+            collection={collection}
+            feedback={feedback}
+            onAddToWatchlist={addToWatchlist}
+            onLogNew={logNew}
+          />
+        )}
         {tab === "soon" && (
           <ComingSoonView
             tmdb={tmdb}
@@ -2138,9 +2328,6 @@ export default function App() {
             onAddToWatchlist={addToWatchlist}
             onLogNew={logNew}
           />
-        )}
-        {tab === "favorites" && (
-          <FavoritesView collection={collection} people={people} tmdb={tmdb} onUpdateTicket={updateTicket} />
         )}
         {tab === "search" && <SearchView tmdb={tmdb} onAddToWatchlist={addToWatchlist} onLogNew={logNew} />}
       </main>
@@ -2298,6 +2485,16 @@ input, textarea { font-family: inherit; }
   color: var(--brass-bright); font-size: 12.5px; padding: 10px 12px; border-radius: 10px; margin-bottom: 14px;
 }
 
+/* ---- collection header ---- */
+.collection-header-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.collection-actions { display: flex; gap: 10px; margin-bottom: 16px; }
+.collection-action-btn {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;
+  background: rgba(226,54,54,0.08); border: 1px solid rgba(226,54,54,0.25);
+  color: #ff6b6b; padding: 14px 0; border-radius: 14px; font-size: 11.5px; font-weight: 600;
+}
+.collection-action-btn:active { opacity: 0.7; }
+
 /* ---- ticket stub grid ---- */
 .stub-grid {
   display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
@@ -2326,7 +2523,11 @@ input, textarea { font-family: inherit; }
 .stub-tab { padding: 9px 10px 11px; color: var(--ink); }
 .stub-title { font-size: 12.5px; font-weight: 700; line-height: 1.25; margin-bottom: 4px;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.stub-rewatch { font-family: 'Space Mono', monospace; font-size: 9.5px; color: var(--marquee-red); margin-top: 3px; }
+.stub-rewatch-badge {
+  position: absolute; bottom: 14px; left: 6px; z-index: 2;
+  font-family: 'Space Mono', monospace; font-size: 9px; font-weight: 700;
+  color: #fff; background: var(--marquee-red); padding: 2px 7px; border-radius: 999px;
+}
 .stub-shine {
   position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
   background: linear-gradient(115deg, transparent, rgba(255,255,255,0.5), transparent);
@@ -2428,7 +2629,7 @@ input, textarea { font-family: inherit; }
 .round-btn { width: 50px; height: 50px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; transition: transform 0.12s; }
 .round-btn:active { transform: scale(0.88); }
 .round-btn-skip { background: #2a1818; border: 1px solid rgba(226,54,54,0.3); color: #e2685f; }
-.round-btn-seen { background: #1f1a18; border: 1px solid rgba(226,168,54,0.4); color: var(--brass); width: 42px; height: 42px; }
+.round-btn-seen { background: var(--marquee-red); color: #fff; width: 60px; height: 60px; border: none; }
 .round-btn-want { background: var(--marquee-red); color: #fff; }
 .swipe-flag { position: absolute; top: 20px; font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 0.05em; padding: 6px 14px; border-radius: 6px; z-index: 3; transform: rotate(-8deg); }
 .swipe-flag-want { left: 16px; border: 3px solid #6fbf73; color: #6fbf73; }
@@ -2550,6 +2751,14 @@ input, textarea { font-family: inherit; }
 .note-hot { background: rgba(47,184,107,0.12); color: #5fd99a; }
 .note-stretch { background: rgba(226,168,54,0.12); color: var(--brass-bright); }
 .note-cool { background: rgba(154,138,138,0.1); color: var(--muted); }
+
+/* where presets */
+.where-presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+.where-chip {
+  background: var(--velvet); border: 1px solid var(--line); color: var(--muted);
+  padding: 7px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
+}
+.where-chip-active { background: var(--marquee-red); color: #fff; border-color: var(--marquee-red); }
 
 /* ticket scanner */
 .scan-candidates { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
