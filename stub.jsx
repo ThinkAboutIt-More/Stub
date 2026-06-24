@@ -155,13 +155,17 @@ function buildRegalLink(title, zip) {
   return `https://www.regmovies.com/movies/${q}${zip ? `?zip=${encodeURIComponent(zip)}` : ""}`;
 }
 
-function buildFandangoLink(title, zip) {
-  const q = encodeURIComponent(title);
-  return `https://www.fandango.com/search?q=${q}${zip ? `&loc=${encodeURIComponent(zip)}` : ""}`;
+function buildBelcourtLink(title) {
+  return `https://www.belcourt.org/?s=${encodeURIComponent(title)}`;
 }
 
-function buildRedditLink(title) {
-  return `https://www.reddit.com/search/?q=${encodeURIComponent(title)}`;
+function buildBalthazarLink(title) {
+  return `https://www.google.com/search?q=${encodeURIComponent("Hero Balthazar " + title + " showtimes")}`;
+}
+
+function buildRedditLink(title, year) {
+  const q = `${title}${year ? " " + year : ""} official discussion`;
+  return `https://www.reddit.com/r/movies/search/?q=${encodeURIComponent(q)}&restrict_sr=1&sort=relevance`;
 }
 
 /* ---------------------------------------------------------
@@ -182,13 +186,18 @@ function makeTmdb(apiKey) {
     trendingWeek: () => call("/trending/all/week"),
     popularMovies: (page = 1) => call("/movie/popular", { page }),
     popularTv: (page = 1) => call("/tv/popular", { page }),
+    topRatedMovies: (page = 1) => call("/movie/top_rated", { page }),
+    topRatedTv: (page = 1) => call("/tv/top_rated", { page }),
+    nowPlaying: (page = 1) => call("/movie/now_playing", { page, region: "US" }),
     upcoming: (page = 1) => call("/movie/upcoming", { page, region: "US" }),
     onTheAir: (page = 1) => call("/tv/on_the_air", { page }),
     discoverMovie: (params) => call("/discover/movie", params),
     discoverTv: (params) => call("/discover/tv", params),
     searchMulti: (query) => call("/search/multi", { query }),
     watchProviders: (mediaType, id) => call(`/${mediaType}/${id}/watch/providers`),
-    details: (mediaType, id) => call(`/${mediaType}/${id}`)
+    details: (mediaType, id) => call(`/${mediaType}/${id}`),
+    detailsFull: (mediaType, id) =>
+      call(`/${mediaType}/${id}`, { append_to_response: "credits" })
   };
 }
 
@@ -206,7 +215,9 @@ function normalize(item) {
 
 /* ---------------------------------------------------------
    TASTE ENGINE
-   simple weighted genre scoring from ratings + swipe feedback
+   weighted scoring from ratings + swipe feedback.
+   genres come free on every item; people (cast/director/
+   writer) come from credits we cache as you collect things.
 --------------------------------------------------------- */
 
 function buildTasteProfile(collection, feedback) {
@@ -226,10 +237,90 @@ function buildTasteProfile(collection, feedback) {
   return weights;
 }
 
+/* builds weighted maps of the people you gravitate toward,
+   pulled from the credits cached on collected tickets */
+function buildPeopleProfile(collection) {
+  const directors = {};
+  const writers = {};
+  const actors = {};
+  const add = (map, person, amount) => {
+    if (!person || !person.id) return;
+    if (!map[person.id]) map[person.id] = { id: person.id, name: person.name, score: 0 };
+    map[person.id].score += amount;
+  };
+  collection.forEach((t) => {
+    if (!t.credits) return;
+    const lastRating = t.viewings.length ? t.viewings[t.viewings.length - 1].rating : 2.5;
+    const amount = lastRating - 2; // 0.5..3
+    (t.credits.directors || []).forEach((p) => add(directors, p, amount));
+    (t.credits.writers || []).forEach((p) => add(writers, p, amount * 0.8));
+    (t.credits.cast || []).slice(0, 5).forEach((p) => add(actors, p, amount * 0.5));
+  });
+  const top = (map) => Object.values(map).sort((a, b) => b.score - a.score);
+  return { directors: top(directors), writers: top(writers), actors: top(actors) };
+}
+
+/* condense a full TMDB credits payload into just what we store */
+function slimCredits(credits) {
+  if (!credits) return null;
+  const crew = credits.crew || [];
+  const directors = crew.filter((c) => c.job === "Director").map((c) => ({ id: c.id, name: c.name }));
+  const writers = crew
+    .filter((c) => c.department === "Writing" || c.job === "Writer" || c.job === "Screenplay")
+    .map((c) => ({ id: c.id, name: c.name }));
+  const producers = crew.filter((c) => c.job === "Producer").map((c) => ({ id: c.id, name: c.name }));
+  const cast = (credits.cast || []).slice(0, 8).map((c) => ({ id: c.id, name: c.name, character: c.character }));
+  return { directors, writers, producers, cast };
+}
+
 function scoreItem(item, tasteWeights) {
   if (!item.genreIds || !item.genreIds.length) return 0;
   const total = item.genreIds.reduce((sum, g) => sum + (tasteWeights[g] || 0), 0);
   return total / item.genreIds.length;
+}
+
+/* 0..100 match percentage, normalized against the strongest
+   genre signal you've got so the number means something */
+function matchPercent(item, tasteWeights) {
+  const keys = Object.keys(tasteWeights);
+  if (!keys.length || !item.genreIds || !item.genreIds.length) return null;
+  const maxAbs = Math.max(...keys.map((k) => Math.abs(tasteWeights[k])), 1);
+  const raw = scoreItem(item, tasteWeights); // roughly -max..+max
+  const norm = (raw / maxAbs + 1) / 2; // 0..1
+  return Math.max(1, Math.min(99, Math.round(norm * 100)));
+}
+
+/* enough signal to start trusting the percentages */
+function hasEnoughTaste(collection, feedback) {
+  const rated = collection.filter((c) => c.viewings.some((v) => v.rating)).length;
+  const swipes = (feedback.wantedIds || []).length + (feedback.skippedIds || []).length;
+  return rated + Math.floor(swipes / 3) >= 5;
+}
+
+/* smart badges: surface why something is being recommended,
+   tied to the specific people/genres you've rated highly */
+function badgesFor(item, people, tasteWeights) {
+  const out = [];
+  const dirNames = new Set((people.directors || []).slice(0, 8).map((d) => d.id));
+  const actNames = new Set((people.actors || []).slice(0, 12).map((a) => a.id));
+  if (item.credits) {
+    if ((item.credits.directors || []).some((d) => dirNames.has(d.id))) {
+      const d = item.credits.directors.find((x) => dirNames.has(x.id));
+      out.push({ kind: "director", text: `From ${d.name}` });
+    }
+    const sharedActor = (item.credits.cast || []).find((c) => actNames.has(c.id));
+    if (sharedActor) out.push({ kind: "actor", text: `Stars ${sharedActor.name}` });
+  }
+  if (tasteWeights && item.genreIds) {
+    const topGenre = item.genreIds
+      .map((g) => ({ g, w: tasteWeights[g] || 0 }))
+      .sort((a, b) => b.w - a.w)[0];
+    if (topGenre && topGenre.w > 4) {
+      const name = MOVIE_GENRES[topGenre.g] || TV_GENRES[topGenre.g];
+      if (name) out.push({ kind: "genre", text: `Your kind of ${name}` });
+    }
+  }
+  return out.slice(0, 2);
 }
 
 /* ---------------------------------------------------------
@@ -286,6 +377,126 @@ function Modal({ onClose, children, wide }) {
         {children}
       </div>
     </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   DETAIL MODAL
+   full info for any title: synopsis, cast, director,
+   producer, release date, plus the recommendation badges
+--------------------------------------------------------- */
+
+function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, onLogNew, redditAfter }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [logging, setLogging] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    async function run() {
+      try {
+        const full = await tmdb.detailsFull(item.mediaType, item.tmdbId);
+        if (active) setData(full);
+      } catch (e) {
+        if (active) setErr(e.message);
+      }
+      if (active) setLoading(false);
+    }
+    run();
+    return () => { active = false; };
+  }, [item.tmdbId, item.mediaType]);
+
+  const slim = data ? slimCredits(data.credits) : null;
+  const director = slim && slim.directors[0];
+  const producer = slim && slim.producers[0];
+  const release = data ? (data.release_date || data.first_air_date || "") : item.year;
+  const runtime = data ? (data.runtime || (data.episode_run_time && data.episode_run_time[0])) : null;
+
+  return (
+    <Modal onClose={onClose} wide>
+      <div className="detail-modal">
+        <div className="detail-head">
+          {item.posterPath ? (
+            <img src={tmdbImg(item.posterPath, "w342")} alt="" className="detail-head-poster" />
+          ) : (
+            <div className="detail-head-poster detail-poster-fallback">
+              {item.mediaType === "tv" ? <Tv size={36} /> : <Film size={36} />}
+            </div>
+          )}
+          <div className="detail-head-info">
+            <h2 className="detail-title">{item.title}</h2>
+            <div className="detail-genres">
+              {genreNames(item.genreIds, item.mediaType).join(" · ") || (item.mediaType === "tv" ? "TV" : "Film")}
+            </div>
+            {badges && badges.length > 0 && (
+              <div className="badge-row">
+                {badges.map((b, i) => (
+                  <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {loading && <div className="detail-loading"><RefreshCw size={20} className="spin" /> Loading details</div>}
+        {err && <div className="detail-loading">Couldn't load full details ({err}).</div>}
+
+        {data && (
+          <div className="detail-body">
+            {data.overview && <p className="detail-overview">{data.overview}</p>}
+            <div className="detail-facts">
+              {release && <div><span>Release</span>{formatDate(release.slice(0, 10)) || release}</div>}
+              {runtime ? <div><span>Runtime</span>{runtime} min</div> : null}
+              {director && <div><span>Director</span>{director.name}</div>}
+              {producer && <div><span>Producer</span>{producer.name}</div>}
+              {data.vote_average ? <div><span>TMDB</span>{data.vote_average.toFixed(1)} / 10</div> : null}
+            </div>
+            {slim && slim.cast.length > 0 && (
+              <div className="detail-cast">
+                <div className="detail-cast-label">Cast</div>
+                <div className="detail-cast-list">
+                  {slim.cast.slice(0, 6).map((c) => (
+                    <span key={c.id} className="cast-chip">{c.name}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="detail-actions">
+          {onAddToWatchlist && (
+            <button className="btn btn-outline btn-sm" onClick={() => { onAddToWatchlist(item); onClose(); }}>
+              <Eye size={14} /> Want to see
+            </button>
+          )}
+          {onLogNew && (
+            <button className="btn btn-primary btn-sm" onClick={() => setLogging(true)}>
+              <Check size={14} /> Seen it
+            </button>
+          )}
+          <a className="btn btn-outline btn-sm" href={buildRedditLink(item.title, item.year)} target="_blank" rel="noreferrer">
+            <ExternalLink size={14} /> Reddit
+          </a>
+        </div>
+
+        {logging && (
+          <Modal onClose={() => setLogging(false)}>
+            <h3 className="modal-title">{item.title}</h3>
+            <LogForm
+              saveLabel="Add to collection"
+              onCancel={() => setLogging(false)}
+              onSave={(entry) => {
+                onLogNew(item, entry, slim);
+                setLogging(false);
+                onClose();
+              }}
+            />
+          </Modal>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -538,32 +749,242 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete }) {
 }
 
 /* ---------------------------------------------------------
+   TICKET SCANNER
+   reads an AMC / Regal screenshot with OCR, guesses the
+   title + date, finds it on TMDB, prefills the log form.
+   OCR is best effort: you can always correct before saving.
+--------------------------------------------------------- */
+
+function TicketScanner({ tmdb, onClose, onLogNew }) {
+  const [stage, setStage] = useState("upload"); // upload | reading | confirm | error
+  const [statusText, setStatusText] = useState("");
+  const [candidates, setCandidates] = useState([]);
+  const [chosen, setChosen] = useState(null);
+  const [guessedDate, setGuessedDate] = useState(todayISO());
+  const [rawText, setRawText] = useState("");
+  const fileRef = useRef(null);
+
+  function parseDate(text) {
+    // try a few common ticket date formats
+    const months = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
+    let m = text.match(/([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})/);
+    if (m) {
+      const mo = months[m[1].slice(0,3).toLowerCase()];
+      if (mo != null) return new Date(Date.UTC(+m[3], mo, +m[2])).toISOString().slice(0,10);
+    }
+    m = text.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+    if (m) {
+      const yr = m[3].length === 2 ? 2000 + +m[3] : +m[3];
+      return new Date(Date.UTC(yr, +m[1]-1, +m[2])).toISOString().slice(0,10);
+    }
+    return todayISO();
+  }
+
+  function guessTitleLines(text) {
+    const junk = /(amc|regal|cinemark|theatre|theater|auditorium|imax|dolby|reserved|seat|row|ticket|admit|adult|child|order|conf|rated|pg|runtime|min|showtime|www\.|\.com|http)/i;
+    return text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length >= 3 && l.length <= 40)
+      .filter((l) => !junk.test(l))
+      .filter((l) => /[A-Za-z]/.test(l))
+      .slice(0, 8);
+  }
+
+  async function handleFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setStage("reading");
+    setStatusText("Loading the scanner...");
+    try {
+      const Tesseract = await import("https://esm.sh/tesseract.js@5");
+      setStatusText("Reading the ticket...");
+      const worker = await Tesseract.createWorker("eng");
+      const { data } = await worker.recognize(file);
+      await worker.terminate();
+      const text = data.text || "";
+      setRawText(text);
+      const date = parseDate(text);
+      setGuessedDate(date);
+      const titleGuesses = guessTitleLines(text);
+      if (!titleGuesses.length) {
+        setStage("confirm");
+        setCandidates([]);
+        return;
+      }
+      setStatusText("Matching to a movie...");
+      let found = [];
+      for (const g of titleGuesses.slice(0, 4)) {
+        try {
+          const res = await tmdb.searchMulti(g);
+          const hits = (res.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
+          if (hits.length) { found = hits.slice(0, 5); break; }
+        } catch (e2) {}
+      }
+      setCandidates(found);
+      setChosen(found[0] || null);
+      setStage("confirm");
+    } catch (err) {
+      setStatusText(err.message || "OCR failed");
+      setStage("error");
+    }
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <h3 className="modal-title">Scan a ticket</h3>
+
+      {stage === "upload" && (
+        <div>
+          <p className="sync-note">Upload a screenshot of your AMC, Regal, or other ticket. The scanner reads the title and date, then you confirm before it's added.</p>
+          <button className="btn btn-primary" style={{ width: "100%", marginTop: 12 }} onClick={() => fileRef.current && fileRef.current.click()}>
+            <Plus size={16} /> Choose screenshot
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFile} />
+        </div>
+      )}
+
+      {stage === "reading" && (
+        <div className="detail-loading"><RefreshCw size={20} className="spin" /> {statusText}</div>
+      )}
+
+      {stage === "error" && (
+        <div>
+          <p className="sync-note">Couldn't read that one: {statusText}. Try a clearer screenshot, or add it manually from Search.</p>
+          <button className="btn btn-outline" style={{ width: "100%", marginTop: 12 }} onClick={() => setStage("upload")}>Try another</button>
+        </div>
+      )}
+
+      {stage === "confirm" && (
+        <div>
+          {candidates.length > 0 ? (
+            <>
+              <label className="field-label">Which movie?</label>
+              <div className="scan-candidates">
+                {candidates.map((c) => (
+                  <button
+                    key={c.tmdbId + c.mediaType}
+                    className={"scan-cand" + (chosen && chosen.tmdbId === c.tmdbId ? " scan-cand-active" : "")}
+                    onClick={() => setChosen(c)}
+                  >
+                    {c.posterPath ? <img src={tmdbImg(c.posterPath, "w92")} alt="" /> : <div className="scan-cand-fallback"><Film size={16} /></div>}
+                    <span>{c.title} {c.year ? `(${c.year})` : ""}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="sync-note">Couldn't match a title automatically. You can still set the date and add it from Search, or retry with a clearer image.</p>
+          )}
+
+          <label className="field-label">Date watched</label>
+          <input className="field-input" type="date" value={guessedDate} onChange={(e) => setGuessedDate(e.target.value)} />
+
+          <div className="form-actions">
+            <button className="btn btn-ghost" onClick={() => setStage("upload")}>Back</button>
+            <button
+              className="btn btn-primary"
+              disabled={!chosen}
+              onClick={() => {
+                if (!chosen) return;
+                onLogNew(chosen, { id: uid(), date: guessedDate, location: "", rating: 4, notes: "", loggedAt: Date.now() });
+                onClose();
+              }}
+            >
+              <Check size={14} /> Add to collection
+            </button>
+          </div>
+
+          {rawText && (
+            <details className="edit-log" style={{ marginTop: 14 }}>
+              <summary>What the scanner read</summary>
+              <pre className="scan-raw">{rawText.slice(0, 400)}</pre>
+            </details>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/* ---------------------------------------------------------
    COLLECTION TAB
 --------------------------------------------------------- */
 
-function CollectionView({ collection, watchlist, onUpdateTicket, onDeleteTicket, onLogFromWatchlist }) {
+function CollectionView({ collection, watchlist, tmdb, taste, settings, onUpdateTicket, onDeleteTicket, onLogFromWatchlist, onAddToWatchlist, onLogNew, onRemoveFromWatchlist }) {
   const [open, setOpen] = useState(null);
   const [showWatchlist, setShowWatchlist] = useState(false);
+  const [detail, setDetail] = useState(null);
+  const [sort, setSort] = useState("recent");
+  const [genreFilter, setGenreFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [scanning, setScanning] = useState(false);
+
+  const genreOptions = useMemo(() => {
+    const ids = new Set();
+    collection.forEach((c) => (c.genreIds || []).forEach((g) => ids.add(g)));
+    return Array.from(ids)
+      .map((id) => ({ id, name: MOVIE_GENRES[id] || TV_GENRES[id] }))
+      .filter((x) => x.name)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [collection]);
+
+  const visibleCollection = useMemo(() => {
+    let list = collection.slice();
+    if (query.trim()) {
+      const q = query.trim().toLowerCase();
+      list = list.filter((c) => c.title.toLowerCase().includes(q));
+    }
+    if (genreFilter !== "all") {
+      list = list.filter((c) => (c.genreIds || []).includes(Number(genreFilter)));
+    }
+    const lastDate = (t) => t.viewings[t.viewings.length - 1].date;
+    const lastRating = (t) => t.viewings[t.viewings.length - 1].rating || 0;
+    list.sort((a, b) => {
+      if (sort === "recent") return lastDate(a) < lastDate(b) ? 1 : -1;
+      if (sort === "oldest") return lastDate(a) > lastDate(b) ? 1 : -1;
+      if (sort === "highest") return lastRating(b) - lastRating(a);
+      if (sort === "lowest") return lastRating(a) - lastRating(b);
+      return 0;
+    });
+    return list;
+  }, [collection, query, genreFilter, sort]);
 
   if (open) {
     return (
       <TicketDetail
         ticket={open}
         onClose={() => setOpen(null)}
-        onUpdate={(t) => {
-          onUpdateTicket(t);
-          setOpen(t);
-        }}
-        onDelete={(id) => {
-          onDeleteTicket(id);
-          setOpen(null);
-        }}
+        onUpdate={(t) => { onUpdateTicket(t); setOpen(t); }}
+        onDelete={(id) => { onDeleteTicket(id); setOpen(null); }}
       />
     );
   }
 
+  const showControls = collection.length >= 4;
+
   return (
     <div className="view">
+      {detail && (
+        <DetailModal
+          item={detail}
+          tmdb={tmdb}
+          badges={[]}
+          settings={settings}
+          onClose={() => setDetail(null)}
+          onAddToWatchlist={null}
+          onLogNew={(it, entry, credits) => { onLogNew(it, entry, credits); onRemoveFromWatchlist(it); }}
+        />
+      )}
+
+      {scanning && (
+        <TicketScanner
+          tmdb={tmdb}
+          onClose={() => setScanning(false)}
+          onLogNew={(it, entry) => { onLogNew(it, entry); }}
+        />
+      )}
+
       <div className="view-toggle">
         <button className={!showWatchlist ? "toggle-pill active" : "toggle-pill"} onClick={() => setShowWatchlist(false)}>
           Collected ({collection.length})
@@ -573,6 +994,10 @@ function CollectionView({ collection, watchlist, onUpdateTicket, onDeleteTicket,
         </button>
       </div>
 
+      <button className="scan-btn" onClick={() => setScanning(true)}>
+        <Plus size={15} /> Scan a ticket stub
+      </button>
+
       {!showWatchlist && (
         collection.length === 0 ? (
           <EmptyState
@@ -581,18 +1006,44 @@ function CollectionView({ collection, watchlist, onUpdateTicket, onDeleteTicket,
             body="Log the next thing you watch and it'll show up here as a ticket stub you can flip open any time."
           />
         ) : (
-          <div className="stub-grid">
-            {collection
-              .slice()
-              .sort((a, b) => {
-                const aLast = a.viewings[a.viewings.length - 1].date;
-                const bLast = b.viewings[b.viewings.length - 1].date;
-                return aLast < bLast ? 1 : -1;
-              })
-              .map((t, i) => (
-                <TicketStub ticket={t} index={i} key={t.id} onOpen={setOpen} />
-              ))}
-          </div>
+          <>
+            {showControls && (
+              <div className="collection-controls">
+                <div className="search-bar collection-search">
+                  <Search size={15} />
+                  <input
+                    className="search-input"
+                    placeholder="Search your collection"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                </div>
+                <div className="filter-row">
+                  <select className="filter-select" value={sort} onChange={(e) => setSort(e.target.value)}>
+                    <option value="recent">Recently collected</option>
+                    <option value="oldest">Oldest first</option>
+                    <option value="highest">Highest rated</option>
+                    <option value="lowest">Lowest rated</option>
+                  </select>
+                  <select className="filter-select" value={genreFilter} onChange={(e) => setGenreFilter(e.target.value)}>
+                    <option value="all">All genres</option>
+                    {genreOptions.map((g) => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+            {visibleCollection.length === 0 ? (
+              <EmptyState icon={<Search size={28} />} title="No matches" body="Nothing in your collection fits that filter." />
+            ) : (
+              <div className="stub-grid stub-grid-compact">
+                {visibleCollection.map((t, i) => (
+                  <TicketStub ticket={t} index={collection.indexOf(t)} key={t.id} onOpen={setOpen} />
+                ))}
+              </div>
+            )}
+          </>
         )
       )}
 
@@ -607,19 +1058,21 @@ function CollectionView({ collection, watchlist, onUpdateTicket, onDeleteTicket,
           <div className="watchlist-rows">
             {watchlist.map((w) => (
               <div className="watch-row" key={w.tmdbId + w.mediaType}>
-                {w.posterPath ? (
-                  <img src={tmdbImg(w.posterPath, "w154")} alt="" className="watch-thumb" />
-                ) : (
-                  <div className="watch-thumb watch-thumb-fallback">
-                    {w.mediaType === "tv" ? <Tv size={18} /> : <Film size={18} />}
+                <button className="watch-tap" onClick={() => setDetail(w)} aria-label={`Details for ${w.title}`}>
+                  {w.posterPath ? (
+                    <img src={tmdbImg(w.posterPath, "w154")} alt="" className="watch-thumb" />
+                  ) : (
+                    <div className="watch-thumb watch-thumb-fallback">
+                      {w.mediaType === "tv" ? <Tv size={18} /> : <Film size={18} />}
+                    </div>
+                  )}
+                  <div className="watch-info">
+                    <div className="watch-title">{w.title}</div>
+                    <div className="watch-sub">{w.year} · tap for details</div>
                   </div>
-                )}
-                <div className="watch-info">
-                  <div className="watch-title">{w.title}</div>
-                  <div className="watch-sub">{w.year}</div>
-                </div>
+                </button>
                 <button className="btn btn-primary btn-sm" onClick={() => onLogFromWatchlist(w)}>
-                  <Check size={14} /> Watched it
+                  <Check size={14} /> Watched
                 </button>
               </div>
             ))}
@@ -644,21 +1097,24 @@ function EmptyState({ icon, title, body }) {
    DISCOVER TAB, swipe deck
 --------------------------------------------------------- */
 
-function SwipeCard({ item, onSkip, onWant, onSeen }) {
+function SwipeCard({ item, matchPct, onSkip, onWant, onSeen, onSwipeRight, onTapInfo }) {
   const [drag, setDrag] = useState({ x: 0, active: false });
   const startX = useRef(0);
+  const moved = useRef(false);
 
   function down(e) {
     startX.current = e.touches ? e.touches[0].clientX : e.clientX;
+    moved.current = false;
     setDrag({ x: 0, active: true });
   }
   function move(e) {
     if (!drag.active) return;
     const x = (e.touches ? e.touches[0].clientX : e.clientX) - startX.current;
+    if (Math.abs(x) > 6) moved.current = true;
     setDrag({ x, active: true });
   }
   function up() {
-    if (drag.x > 100) onWant();
+    if (drag.x > 100) onSwipeRight();
     else if (drag.x < -100) onSkip();
     setDrag({ x: 0, active: false });
   }
@@ -677,15 +1133,27 @@ function SwipeCard({ item, onSkip, onWant, onSeen }) {
       onTouchMove={move}
       onTouchEnd={up}
     >
-      {drag.x > 40 && <div className="swipe-flag swipe-flag-want">WANT TO SEE</div>}
+      {drag.x > 40 && <div className="swipe-flag swipe-flag-want">SAVE IT</div>}
       {drag.x < -40 && <div className="swipe-flag swipe-flag-skip">SKIP</div>}
-      {item.posterPath ? (
-        <img src={tmdbImg(item.posterPath, "w500")} alt="" className="swipe-poster" draggable={false} />
-      ) : (
-        <div className="swipe-poster swipe-poster-fallback">
-          {item.mediaType === "tv" ? <Tv size={40} /> : <Film size={40} />}
+      {matchPct != null && (
+        <div className={"match-badge " + (matchPct >= 70 ? "match-high" : matchPct >= 40 ? "match-mid" : "match-low")}>
+          {matchPct}% match
         </div>
       )}
+      <button
+        className="swipe-poster-btn"
+        onClick={() => { if (!moved.current) onTapInfo(); }}
+        aria-label="More info"
+      >
+        {item.posterPath ? (
+          <img src={tmdbImg(item.posterPath, "w500")} alt="" className="swipe-poster" draggable={false} />
+        ) : (
+          <div className="swipe-poster swipe-poster-fallback">
+            {item.mediaType === "tv" ? <Tv size={40} /> : <Film size={40} />}
+          </div>
+        )}
+        <span className="swipe-info-hint"><Info size={13} /> Tap for info</span>
+      </button>
       <div className="swipe-meta">
         <div className="swipe-title">{item.title} {item.year ? `(${item.year})` : ""}</div>
         <div className="swipe-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ") || (item.mediaType === "tv" ? "TV series" : "Film")}</div>
@@ -705,31 +1173,61 @@ function SwipeCard({ item, onSkip, onWant, onSeen }) {
   );
 }
 
-function DiscoverView({ tmdb, feedback, setFeedback, onAddToWatchlist, onLogNew }) {
+function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, collection, watchlist, onAddToWatchlist, onLogNew }) {
   const [pool, setPool] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [pendingLog, setPendingLog] = useState(null);
+  const [infoItem, setInfoItem] = useState(null);
+  const [swipeChoice, setSwipeChoice] = useState(null);
+  const [mode, setMode] = useState("swipe");
+  const [lastSkipped, setLastSkipped] = useState(null);
 
   const seenIdSet = useMemo(
     () => new Set([...feedback.skippedIds, ...feedback.wantedIds, ...feedback.seenIds].map((x) => x.tmdbId + x.mediaType)),
     [feedback]
   );
+  const ownedSet = useMemo(
+    () => new Set([...collection.map((c) => c.tmdbId + c.mediaType), ...watchlist.map((w) => w.tmdbId + w.mediaType)]),
+    [collection, watchlist]
+  );
 
-  const loadPool = useCallback(async () => {
+  const loadPool = useCallback(async (includeSkipped = false) => {
     setLoading(true);
     setError(null);
     try {
-      const pages = await Promise.all([tmdb.trendingWeek(), tmdb.popularMovies(2), tmdb.popularTv(2)]);
+      const topGenres = Object.entries(taste).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g).join(",");
+      const calls = [
+        tmdb.trendingWeek(),
+        tmdb.popularMovies(1),
+        tmdb.popularMovies(2),
+        tmdb.popularTv(1),
+        tmdb.topRatedMovies(1),
+        tmdb.nowPlaying(1)
+      ];
+      if (topGenres) {
+        calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "popularity.desc", page: 1 }));
+        calls.push(tmdb.discoverTv({ with_genres: topGenres, sort_by: "popularity.desc", page: 1 }));
+      }
+      const pages = await Promise.all(calls);
       const all = pages.flatMap((p) => p.results || []).map(normalize);
-      const fresh = all.filter((a) => !seenIdSet.has(a.tmdbId + a.mediaType));
+      const skipSet = includeSkipped
+        ? new Set([...feedback.wantedIds, ...feedback.seenIds].map((x) => x.tmdbId + x.mediaType))
+        : seenIdSet;
+      const fresh = all.filter((a) => !skipSet.has(a.tmdbId + a.mediaType) && !ownedSet.has(a.tmdbId + a.mediaType));
       const dedup = Array.from(new Map(fresh.map((f) => [f.tmdbId + f.mediaType, f])).values());
-      setPool(dedup);
+      const scored = dedup
+        .map((x) => ({ ...x, _pct: matchPercent(x, taste) }))
+        .sort((a, b) => (b._pct || 0) - (a._pct || 0));
+      // keep some surprise: interleave top matches with shuffled rest
+      const top = scored.slice(0, 12);
+      const rest = scored.slice(12).sort(() => Math.random() - 0.5);
+      setPool([...top, ...rest]);
     } catch (e) {
       setError(e.message);
     }
     setLoading(false);
-  }, [tmdb, seenIdSet]);
+  }, [tmdb, seenIdSet, ownedSet, taste, feedback]);
 
   useEffect(() => {
     loadPool();
@@ -740,68 +1238,147 @@ function DiscoverView({ tmdb, feedback, setFeedback, onAddToWatchlist, onLogNew 
     setFeedback((f) => ({ ...f, [bucket]: [...f[bucket], { tmdbId: item.tmdbId, mediaType: item.mediaType, genreIds: item.genreIds }] }));
   }
 
-  function advance() {
-    setPool((p) => p.slice(1));
-  }
+  function advance() { setPool((p) => p.slice(1)); }
 
   function skip(item) {
     recordFeedback("skippedIds", item);
+    setLastSkipped(item);
     advance();
   }
-
+  function undoSkip() {
+    if (!lastSkipped) return;
+    setFeedback((f) => ({
+      ...f,
+      skippedIds: f.skippedIds.filter((s) => !(s.tmdbId === lastSkipped.tmdbId && s.mediaType === lastSkipped.mediaType))
+    }));
+    setPool((p) => [lastSkipped, ...p]);
+    setLastSkipped(null);
+  }
   function want(item) {
     recordFeedback("wantedIds", item);
     onAddToWatchlist(item);
     advance();
   }
-
   function seen(item) {
     recordFeedback("seenIds", item);
     setPendingLog(item);
   }
 
+  const enough = hasEnoughTaste(collection, feedback);
   const current = pool[0];
 
   return (
-    <div className="view view-discover">
+    <div className="view">
+      <div className="view-toggle">
+        <button className={mode === "swipe" ? "toggle-pill active" : "toggle-pill"} onClick={() => setMode("swipe")}>
+          Swipe
+        </button>
+        <button className={mode === "list" ? "toggle-pill active" : "toggle-pill"} onClick={() => setMode("list")}>
+          For you list
+        </button>
+      </div>
+
+      {infoItem && (
+        <DetailModal
+          item={infoItem}
+          tmdb={tmdb}
+          badges={badgesFor(infoItem, people, taste)}
+          settings={settings}
+          onClose={() => setInfoItem(null)}
+          onAddToWatchlist={(it) => { want(it); }}
+          onLogNew={(it, entry, credits) => { onLogNew(it, entry, credits); recordFeedback("seenIds", it); advance(); }}
+        />
+      )}
+
+      {swipeChoice && (
+        <Modal onClose={() => setSwipeChoice(null)}>
+          <h3 className="modal-title">{swipeChoice.title}</h3>
+          <p className="sync-note" style={{ marginBottom: 18 }}>Have you already seen this, or do you want to watch it?</p>
+          <div className="choice-grid">
+            <button className="btn btn-outline" onClick={() => { want(swipeChoice); setSwipeChoice(null); }}>
+              <Eye size={16} /> Want to watch
+            </button>
+            <button className="btn btn-primary" onClick={() => { const it = swipeChoice; setSwipeChoice(null); seen(it); }}>
+              <Check size={16} /> Already seen it
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {pendingLog && (
         <Modal onClose={() => setPendingLog(null)}>
           <h3 className="modal-title">{pendingLog.title}</h3>
           <LogForm
             saveLabel="Add to collection"
             onCancel={() => setPendingLog(null)}
-            onSave={(entry) => {
-              onLogNew(pendingLog, entry);
-              setPendingLog(null);
-              advance();
-            }}
+            onSave={(entry) => { onLogNew(pendingLog, entry); setPendingLog(null); advance(); }}
           />
         </Modal>
       )}
 
-      {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Shuffling the deck" body="Pulling fresh titles you haven't seen yet." />}
-
-      {!loading && error && (
-        <EmptyState
-          icon={<Info size={32} />}
-          title="Couldn't load new titles"
-          body={`TMDB said: ${error}. Check your API key in settings, then tap refresh.`}
-        />
-      )}
-
-      {!loading && !error && !current && (
-        <EmptyState icon={<Sparkles size={32} />} title="That's everything for now" body="You've been through the current pool. Refresh for another batch." />
-      )}
-
-      {!loading && current && (
-        <div className="swipe-stack">
-          <SwipeCard item={current} onSkip={() => skip(current)} onWant={() => want(current)} onSeen={() => seen(current)} />
+      {mode === "swipe" && (
+        <div className="view-discover">
+          {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Shuffling the deck" body="Pulling titles you haven't seen yet." />}
+          {!loading && error && (
+            <EmptyState icon={<Info size={32} />} title="Couldn't load new titles" body={`TMDB said: ${error}. Check your API key in settings, then tap refresh.`} />
+          )}
+          {!loading && !error && !current && (
+            <EmptyState icon={<Sparkles size={32} />} title="That's everything for now" body="You've been through the pool. Refresh, or pull back skipped titles." />
+          )}
+          {!loading && current && (
+            <div className="swipe-stack">
+              <SwipeCard
+                item={current}
+                matchPct={enough ? current._pct : null}
+                onSkip={() => skip(current)}
+                onWant={() => want(current)}
+                onSeen={() => seen(current)}
+                onSwipeRight={() => setSwipeChoice(current)}
+                onTapInfo={() => setInfoItem(current)}
+              />
+            </div>
+          )}
+          <div className="discover-foot">
+            {lastSkipped && (
+              <button className="btn btn-ghost btn-sm" onClick={undoSkip}>
+                <Undo2 size={14} /> Bring back last skip
+              </button>
+            )}
+            <button className="btn btn-ghost btn-sm" onClick={() => loadPool(false)}>
+              <RefreshCw size={14} /> Refresh deck
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => loadPool(true)}>
+              <Undo2 size={14} /> Replay skipped
+            </button>
+          </div>
         </div>
       )}
 
-      <button className="btn btn-ghost refresh-btn" onClick={loadPool}>
-        <RefreshCw size={14} /> Refresh deck
-      </button>
+      {mode === "list" && (
+        <>
+          {!enough && (
+            <div className="hint-banner">
+              <Sparkles size={14} /> Rate a few films or swipe through and these match scores sharpen up.
+            </div>
+          )}
+          {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Reading your taste" body="Ranking titles against what you've rated." />}
+          {!loading && !error && (
+            <div className="suggest-list">
+              {pool.slice(0, 25).map((item) => (
+                <SuggestionRow
+                  key={item.tmdbId + item.mediaType}
+                  item={item}
+                  matchPct={enough ? item._pct : null}
+                  settings={settings}
+                  onAddToWatchlist={want}
+                  onLogNew={onLogNew}
+                  onInfo={() => setInfoItem(item)}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -810,30 +1387,33 @@ function DiscoverView({ tmdb, feedback, setFeedback, onAddToWatchlist, onLogNew 
    FOR YOU TAB
 --------------------------------------------------------- */
 
-function SuggestionRow({ item, settings, onAddToWatchlist, onLogNew }) {
+function SuggestionRow({ item, matchPct, settings, onAddToWatchlist, onLogNew, onInfo }) {
   const [logging, setLogging] = useState(false);
-  const [providers, setProviders] = useState(null);
 
   return (
     <div className="suggest-row">
-      {item.posterPath ? (
-        <img src={tmdbImg(item.posterPath, "w154")} alt="" className="suggest-thumb" />
-      ) : (
-        <div className="suggest-thumb suggest-thumb-fallback">{item.mediaType === "tv" ? <Tv size={18} /> : <Film size={18} />}</div>
-      )}
+      <button className="suggest-thumb-btn" onClick={onInfo} aria-label={`Details for ${item.title}`}>
+        {item.posterPath ? (
+          <img src={tmdbImg(item.posterPath, "w154")} alt="" className="suggest-thumb" />
+        ) : (
+          <div className="suggest-thumb suggest-thumb-fallback">{item.mediaType === "tv" ? <Tv size={18} /> : <Film size={18} />}</div>
+        )}
+      </button>
       <div className="suggest-info">
-        <div className="suggest-title">{item.title} {item.year ? `· ${item.year}` : ""}</div>
+        <div className="suggest-title-row">
+          <button className="suggest-title-btn" onClick={onInfo}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
+          {matchPct != null && <span className={"match-pill " + (matchPct >= 70 ? "match-high" : matchPct >= 40 ? "match-mid" : "match-low")}>{matchPct}%</span>}
+        </div>
         <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
         <div className="suggest-links">
           <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
           <a className="link-pill" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
-          <a className="link-pill" href={buildFandangoLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Fandango</a>
-          <a className="link-pill" href={buildRedditLink(item.title)} target="_blank" rel="noreferrer">Reddit</a>
+          <a className="link-pill" href={buildRedditLink(item.title, item.year)} target="_blank" rel="noreferrer">Reddit</a>
         </div>
       </div>
       <div className="suggest-actions">
-        <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Want to see"><Heart size={16} /></button>
-        <button className="icon-btn" onClick={() => setLogging(true)} aria-label="Seen it"><Eye size={16} /></button>
+        <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Want to see"><Eye size={16} /></button>
+        <button className="icon-btn" onClick={() => setLogging(true)} aria-label="Seen it"><Check size={16} /></button>
       </div>
       {logging && (
         <Modal onClose={() => setLogging(false)}>
@@ -845,59 +1425,109 @@ function SuggestionRow({ item, settings, onAddToWatchlist, onLogNew }) {
   );
 }
 
-function ForYouView({ tmdb, taste, settings, collection, watchlist, onAddToWatchlist, onLogNew }) {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+/* ---------------------------------------------------------
+   FAVORITES TAB
+   surfaces the people you gravitate toward, computed from the
+   credits cached on the movies you've collected and rated
+--------------------------------------------------------- */
 
-  const topGenres = useMemo(
-    () => Object.entries(taste).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g).join(","),
-    [taste]
+function FavoritesView({ collection, people, tmdb, onUpdateTicket }) {
+  const [enriching, setEnriching] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+
+  const missingCredits = useMemo(
+    () => collection.filter((c) => !c.credits),
+    [collection]
   );
 
-  const excludeSet = useMemo(
-    () => new Set([...collection.map((c) => c.tmdbId + c.mediaType), ...watchlist.map((w) => w.tmdbId + w.mediaType)]),
-    [collection, watchlist]
-  );
-
-  useEffect(() => {
-    let active = true;
-    async function run() {
-      setLoading(true);
-      setError(null);
+  async function enrich() {
+    setEnriching(true);
+    setProgress({ done: 0, total: missingCredits.length });
+    for (let i = 0; i < missingCredits.length; i++) {
+      const t = missingCredits[i];
       try {
-        const params = topGenres ? { with_genres: topGenres, sort_by: "popularity.desc" } : { sort_by: "popularity.desc" };
-        const [m, t] = await Promise.all([tmdb.discoverMovie(params), tmdb.discoverTv(params)]);
-        const all = [...(m.results || []), ...(t.results || [])].map(normalize).filter((x) => !excludeSet.has(x.tmdbId + x.mediaType));
-        const scored = all.map((x) => ({ ...x, score: scoreItem(x, taste) })).sort((a, b) => b.score - a.score);
-        if (active) setItems(scored.slice(0, 20));
+        const full = await tmdb.detailsFull(t.mediaType, t.tmdbId);
+        const slim = slimCredits(full.credits);
+        onUpdateTicket({ ...t, credits: slim });
       } catch (e) {
-        if (active) setError(e.message);
+        // skip ones that fail, keep going
       }
-      if (active) setLoading(false);
+      setProgress({ done: i + 1, total: missingCredits.length });
     }
-    run();
-    return () => { active = false; };
-    // eslint-disable-next-line
-  }, [topGenres]);
+    setEnriching(false);
+  }
 
-  const hasTaste = Object.keys(taste).length > 0;
+  const topMovies = useMemo(
+    () =>
+      collection
+        .map((c) => ({ ...c, rating: c.viewings[c.viewings.length - 1].rating || 0 }))
+        .sort((a, b) => b.rating - a.rating)
+        .slice(0, 6),
+    [collection]
+  );
+
+  if (collection.length === 0) {
+    return (
+      <div className="view">
+        <EmptyState
+          icon={<Heart size={32} />}
+          title="No favorites yet"
+          body="Once you collect and rate a few films, this tab learns your go-to directors, writers, and actors."
+        />
+      </div>
+    );
+  }
+
+  const Section = ({ title, list, suffix }) =>
+    list && list.length > 0 ? (
+      <div className="fav-section">
+        <div className="fav-section-title">{title}</div>
+        <div className="fav-chips">
+          {list.slice(0, 8).map((p) => (
+            <span key={p.id} className="fav-chip">{p.name}{suffix ? ` ${suffix}` : ""}</span>
+          ))}
+        </div>
+      </div>
+    ) : null;
 
   return (
     <div className="view">
-      {!hasTaste && (
-        <div className="hint-banner">
-          <Sparkles size={14} /> Log a few ratings or swipe through Discover and this list gets sharper.
+      {topMovies.length > 0 && (
+        <div className="fav-section">
+          <div className="fav-section-title">Top rated in your collection</div>
+          <div className="fav-poster-row">
+            {topMovies.map((m) => (
+              <div className="fav-poster" key={m.id}>
+                {m.posterPath ? (
+                  <img src={tmdbImg(m.posterPath, "w185")} alt={m.title} />
+                ) : (
+                  <div className="fav-poster-fallback">{m.mediaType === "tv" ? <Tv size={20} /> : <Film size={20} />}</div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
-      {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Reading your taste" body="Matching genres against what you've rated highly." />}
-      {!loading && error && <EmptyState icon={<Info size={32} />} title="Couldn't load suggestions" body={`TMDB said: ${error}`} />}
-      {!loading && !error && (
-        <div className="suggest-list">
-          {items.map((item) => (
-            <SuggestionRow key={item.tmdbId + item.mediaType} item={item} settings={settings} onAddToWatchlist={onAddToWatchlist} onLogNew={onLogNew} />
-          ))}
+
+      {(people.directors.length === 0 && people.actors.length === 0) && (
+        <div className="hint-banner" style={{ flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
+          <span><Info size={14} /> To learn your favorite directors and actors, the app needs to pull credits for what you've collected.</span>
+          {missingCredits.length > 0 && (
+            <button className="btn btn-primary btn-sm" onClick={enrich} disabled={enriching}>
+              {enriching ? `Scanning ${progress.done}/${progress.total}` : `Scan ${missingCredits.length} titles`}
+            </button>
+          )}
         </div>
+      )}
+
+      <Section title="Favorite directors" list={people.directors} />
+      <Section title="Favorite writers" list={people.writers} />
+      <Section title="Actors you keep watching" list={people.actors} />
+
+      {(people.directors.length > 0 || people.actors.length > 0) && missingCredits.length > 0 && (
+        <button className="btn btn-outline btn-sm" style={{ marginTop: 8 }} onClick={enrich} disabled={enriching}>
+          {enriching ? `Scanning ${progress.done}/${progress.total}` : `Update from ${missingCredits.length} newer titles`}
+        </button>
       )}
     </div>
   );
@@ -907,11 +1537,14 @@ function ForYouView({ tmdb, taste, settings, collection, watchlist, onAddToWatch
    COMING SOON TAB
 --------------------------------------------------------- */
 
-function ComingSoonView({ tmdb, settings, onAddToWatchlist }) {
+function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, onAddToWatchlist, onLogNew }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [added, setAdded] = useState({});
+  const [window, setWindow] = useState("all");
+  const [sort, setSort] = useState("soonest");
+  const [infoItem, setInfoItem] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -919,11 +1552,12 @@ function ComingSoonView({ tmdb, settings, onAddToWatchlist }) {
       setLoading(true);
       setError(null);
       try {
-        const data = await tmdb.upcoming();
-        const sorted = (data.results || [])
-          .map(normalize)
-          .map((x, i) => ({ ...x, releaseDate: data.results[i].release_date }))
+        const [p1, p2] = await Promise.all([tmdb.upcoming(1), tmdb.upcoming(2)]);
+        const raw = [...(p1.results || []), ...(p2.results || [])];
+        const sorted = raw
+          .map((r) => ({ ...normalize(r), releaseDate: r.release_date, overview: r.overview }))
           .filter((x) => x.releaseDate)
+          .filter((x, i, arr) => arr.findIndex((y) => y.tmdbId === x.tmdbId) === i)
           .sort((a, b) => (a.releaseDate < b.releaseDate ? -1 : 1));
         if (active) setItems(sorted);
       } catch (e) {
@@ -943,36 +1577,135 @@ function ComingSoonView({ tmdb, settings, onAddToWatchlist }) {
     return formatDate(dateStr);
   }
 
+  function inWindow(dateStr) {
+    const now = new Date();
+    const d = new Date(dateStr);
+    const days = Math.ceil((d - now) / 86400000);
+    const thisYear = now.getFullYear();
+    const yr = d.getFullYear();
+    if (window === "all") return true;
+    if (window === "week") return days >= 0 && days <= 7;
+    if (window === "nextweek") return days > 7 && days <= 14;
+    if (window === "month") return days >= 0 && days <= 31;
+    if (window === "thisyear") return yr === thisYear;
+    if (window === "nextyear") return yr === thisYear + 1;
+    return true;
+  }
+
+  const enough = hasEnoughTaste(collection, feedback);
+
+  const note = (item, pct) => {
+    if (pct == null) return null;
+    const topUserGenres = Object.entries(taste).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
+    const overlaps = (item.genreIds || []).some((g) => topUserGenres.includes(g));
+    if (pct >= 70) return { tone: "hot", text: "Right in your lane" };
+    if (!overlaps && pct >= 35) return { tone: "stretch", text: "Outside your usual genres, might be worth the stretch" };
+    if (pct < 30) return { tone: "cool", text: "A departure from what you usually rate highly" };
+    return null;
+  };
+
+  const processed = useMemo(() => {
+    let list = items
+      .map((x) => ({ ...x, _pct: matchPercent(x, taste) }))
+      .filter((x) => inWindow(x.releaseDate));
+    if (sort === "soonest") list.sort((a, b) => (a.releaseDate < b.releaseDate ? -1 : 1));
+    if (sort === "highest") list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
+    if (sort === "lowest") list.sort((a, b) => (a._pct || 0) - (b._pct || 0));
+    return list;
+  }, [items, window, sort, taste]);
+
+  const WINDOWS = [
+    { id: "all", label: "All" },
+    { id: "week", label: "This week" },
+    { id: "nextweek", label: "Next week" },
+    { id: "month", label: "This month" },
+    { id: "thisyear", label: "This year" },
+    { id: "nextyear", label: "Next year" }
+  ];
+
   return (
     <div className="view">
+      {infoItem && (
+        <DetailModal
+          item={infoItem}
+          tmdb={tmdb}
+          badges={badgesFor(infoItem, people, taste)}
+          settings={settings}
+          onClose={() => setInfoItem(null)}
+          onAddToWatchlist={(it) => { onAddToWatchlist(it); setAdded((a) => ({ ...a, [it.tmdbId]: true })); }}
+          onLogNew={onLogNew}
+        />
+      )}
+
+      <div className="chip-scroll">
+        {WINDOWS.map((w) => (
+          <button key={w.id} className={"chip" + (window === w.id ? " chip-active" : "")} onClick={() => setWindow(w.id)}>
+            {w.label}
+          </button>
+        ))}
+      </div>
+
+      {enough && (
+        <div className="filter-row" style={{ marginBottom: 12 }}>
+          <select className="filter-select" value={sort} onChange={(e) => setSort(e.target.value)}>
+            <option value="soonest">Soonest first</option>
+            <option value="highest">Highest match</option>
+            <option value="lowest">Lowest match</option>
+          </select>
+        </div>
+      )}
+
       {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Checking the calendar" body="Pulling what's headed to theaters." />}
       {!loading && error && <EmptyState icon={<Info size={32} />} title="Couldn't load release dates" body={`TMDB said: ${error}`} />}
+      {!loading && !error && processed.length === 0 && (
+        <EmptyState icon={<CalendarDays size={32} />} title="Nothing in that window" body="Try a wider time range." />
+      )}
+
       {!loading && !error && (
         <div className="coming-list">
-          {items.map((item) => (
-            <div className="coming-row" key={item.tmdbId}>
-              {item.posterPath ? (
-                <img src={tmdbImg(item.posterPath, "w154")} alt="" className="coming-thumb" />
-              ) : (
-                <div className="coming-thumb coming-thumb-fallback"><Film size={18} /></div>
-              )}
-              <div className="coming-info">
-                <div className="coming-title">{item.title}</div>
-                <div className="coming-date">{daysOut(item.releaseDate)}</div>
-                <div className="suggest-links">
-                  <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
-                  <a className="link-pill" href={buildFandangoLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Fandango</a>
+          {processed.map((item) => {
+            const badges = badgesFor(item, people, taste);
+            const n = enough ? note(item, item._pct) : null;
+            return (
+              <div className="coming-row" key={item.tmdbId}>
+                <button className="coming-thumb-btn" onClick={() => setInfoItem(item)} aria-label={`Details for ${item.title}`}>
+                  {item.posterPath ? (
+                    <img src={tmdbImg(item.posterPath, "w154")} alt="" className="coming-thumb" />
+                  ) : (
+                    <div className="coming-thumb coming-thumb-fallback"><Film size={18} /></div>
+                  )}
+                </button>
+                <div className="coming-info">
+                  <div className="suggest-title-row">
+                    <button className="suggest-title-btn" onClick={() => setInfoItem(item)}>{item.title}</button>
+                    {enough && item._pct != null && (
+                      <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
+                    )}
+                  </div>
+                  <div className="coming-date">{daysOut(item.releaseDate)}</div>
+                  {badges.length > 0 && (
+                    <div className="badge-row">
+                      {badges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
+                    </div>
+                  )}
+                  {n && <div className={"proactive-note note-" + n.tone}>{n.text}</div>}
+                  <div className="suggest-links">
+                    <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
+                    <a className="link-pill" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
+                    <a className="link-pill" href={buildBelcourtLink(item.title)} target="_blank" rel="noreferrer">Belcourt</a>
+                    <a className="link-pill" href={buildBalthazarLink(item.title)} target="_blank" rel="noreferrer">Balthazar</a>
+                  </div>
                 </div>
+                <button
+                  className={"icon-btn" + (added[item.tmdbId] ? " icon-btn-active" : "")}
+                  onClick={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
+                  aria-label="Want to see"
+                >
+                  <Eye size={16} />
+                </button>
               </div>
-              <button
-                className={"icon-btn" + (added[item.tmdbId] ? " icon-btn-active" : "")}
-                onClick={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
-                aria-label="Add to watchlist"
-              >
-                <Heart size={16} />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -989,6 +1722,7 @@ function SearchView({ tmdb, onAddToWatchlist, onLogNew }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [logging, setLogging] = useState(null);
+  const [detail, setDetail] = useState(null);
 
   async function runSearch(e) {
     e.preventDefault();
@@ -1007,6 +1741,18 @@ function SearchView({ tmdb, onAddToWatchlist, onLogNew }) {
 
   return (
     <div className="view">
+      {detail && (
+        <DetailModal
+          item={detail}
+          tmdb={tmdb}
+          badges={[]}
+          settings={{}}
+          onClose={() => setDetail(null)}
+          onAddToWatchlist={onAddToWatchlist}
+          onLogNew={onLogNew}
+        />
+      )}
+
       <form className="search-bar" onSubmit={runSearch}>
         <Search size={16} />
         <input
@@ -1024,18 +1770,20 @@ function SearchView({ tmdb, onAddToWatchlist, onLogNew }) {
         <div className="suggest-list">
           {results.map((item) => (
             <div className="suggest-row" key={item.tmdbId + item.mediaType}>
-              {item.posterPath ? (
-                <img src={tmdbImg(item.posterPath, "w154")} alt="" className="suggest-thumb" />
-              ) : (
-                <div className="suggest-thumb suggest-thumb-fallback">{item.mediaType === "tv" ? <Tv size={18} /> : <Film size={18} />}</div>
-              )}
+              <button className="suggest-thumb-btn" onClick={() => setDetail(item)} aria-label={`Details for ${item.title}`}>
+                {item.posterPath ? (
+                  <img src={tmdbImg(item.posterPath, "w154")} alt="" className="suggest-thumb" />
+                ) : (
+                  <div className="suggest-thumb suggest-thumb-fallback">{item.mediaType === "tv" ? <Tv size={18} /> : <Film size={18} />}</div>
+                )}
+              </button>
               <div className="suggest-info">
-                <div className="suggest-title">{item.title} {item.year ? `· ${item.year}` : ""}</div>
+                <button className="suggest-title-btn" onClick={() => setDetail(item)}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
                 <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 3).join(" · ")}</div>
               </div>
               <div className="suggest-actions">
-                <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Want to see"><Heart size={16} /></button>
-                <button className="icon-btn" onClick={() => setLogging(item)} aria-label="Seen it"><Eye size={16} /></button>
+                <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Want to see"><Eye size={16} /></button>
+                <button className="icon-btn" onClick={() => setLogging(item)} aria-label="Seen it"><Check size={16} /></button>
               </div>
             </div>
           ))}
@@ -1112,7 +1860,7 @@ function Onboarding({ onSave }) {
     <div className="onboarding">
       <div className="onboarding-card">
         <Ticket size={36} className="onboarding-icon" />
-        <h1 className="onboarding-title">Welcome to Stub</h1>
+        <h1 className="onboarding-title">Welcome to Watchtime</h1>
         <p className="onboarding-body">
           One free key from TMDB powers everything here: posters, release dates, and where to watch.
           Takes about a minute to grab.
@@ -1142,8 +1890,8 @@ function Onboarding({ onSave }) {
 const TABS = [
   { id: "collection", label: "Collection", icon: Ticket },
   { id: "discover", label: "Discover", icon: Sparkles },
-  { id: "foryou", label: "For You", icon: Clapperboard },
   { id: "soon", label: "Coming Soon", icon: CalendarDays },
+  { id: "favorites", label: "Favorites", icon: Heart },
   { id: "search", label: "Search", icon: Search }
 ];
 
@@ -1187,15 +1935,24 @@ export default function App() {
 
   const tmdb = useMemo(() => makeTmdb(settings.tmdbKey), [settings.tmdbKey]);
   const taste = useMemo(() => buildTasteProfile(collection, feedback), [collection, feedback]);
+  const people = useMemo(() => buildPeopleProfile(collection), [collection]);
+  const [redditPrompt, setRedditPrompt] = useState(null);
+  const [burst, setBurst] = useState(null);
+
+  function fireBurst(kind) {
+    setBurst({ kind, key: Date.now() });
+    setTimeout(() => setBurst(null), 850);
+  }
 
   function addToWatchlist(item) {
     setWatchlist((w) => {
       if (w.find((x) => x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)) return w;
       return [...w, { ...item, addedAt: Date.now() }];
     });
+    fireBurst("want");
   }
 
-  function logNew(item, viewing) {
+  function logNew(item, viewing, credits) {
     const ticket = {
       id: uid(),
       tmdbId: item.tmdbId,
@@ -1204,12 +1961,15 @@ export default function App() {
       year: item.year,
       posterPath: item.posterPath,
       genreIds: item.genreIds,
+      credits: credits || item.credits || null,
       viewings: [viewing],
       log: [{ at: Date.now(), text: "Added to your collection" }],
       history: []
     };
     setCollection((c) => [...c, ticket]);
     setWatchlist((w) => w.filter((x) => !(x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)));
+    setRedditPrompt({ title: item.title, year: item.year });
+    fireBurst("collect");
   }
 
   function updateTicket(t) {
@@ -1222,6 +1982,10 @@ export default function App() {
 
   function logFromWatchlist(w) {
     logNew(w, { id: uid(), date: todayISO(), location: "", rating: 4, notes: "", loggedAt: Date.now() });
+  }
+
+  function removeFromWatchlist(item) {
+    setWatchlist((w) => w.filter((x) => !(x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)));
   }
 
   if (!ready) return <div className="boot-screen"><Ticket size={28} className="spin" /></div>;
@@ -1238,8 +2002,15 @@ export default function App() {
   return (
     <div className="app">
       <GlobalStyle />
+      {burst && (
+        <div className="burst-overlay" key={burst.key}>
+          <div className={"burst-icon burst-" + burst.kind}>
+            {burst.kind === "collect" ? <Ticket size={46} /> : <Eye size={46} />}
+          </div>
+        </div>
+      )}
       <header className="app-header">
-        <div className="wordmark">STUB<span className="wordmark-dot">.</span></div>
+        <div className="wordmark">WATCH<span className="wordmark-dot">TIME</span></div>
         <div className="header-right">
           <span className={"sync-pill" + (hasCloud(conn) ? " sync-on" : "")}>
             {hasCloud(conn) ? "Synced" : "This device only"}
@@ -1253,20 +2024,69 @@ export default function App() {
           <CollectionView
             collection={collection}
             watchlist={watchlist}
+            tmdb={tmdb}
+            taste={taste}
+            settings={settings}
             onUpdateTicket={updateTicket}
             onDeleteTicket={deleteTicket}
             onLogFromWatchlist={logFromWatchlist}
+            onAddToWatchlist={addToWatchlist}
+            onLogNew={logNew}
+            onRemoveFromWatchlist={removeFromWatchlist}
           />
         )}
         {tab === "discover" && (
-          <DiscoverView tmdb={tmdb} feedback={feedback} setFeedback={setFeedback} onAddToWatchlist={addToWatchlist} onLogNew={logNew} />
+          <DiscoverView
+            tmdb={tmdb}
+            feedback={feedback}
+            setFeedback={setFeedback}
+            taste={taste}
+            people={people}
+            settings={settings}
+            collection={collection}
+            watchlist={watchlist}
+            onAddToWatchlist={addToWatchlist}
+            onLogNew={logNew}
+          />
         )}
-        {tab === "foryou" && (
-          <ForYouView tmdb={tmdb} taste={taste} settings={settings} collection={collection} watchlist={watchlist} onAddToWatchlist={addToWatchlist} onLogNew={logNew} />
+        {tab === "soon" && (
+          <ComingSoonView
+            tmdb={tmdb}
+            settings={settings}
+            taste={taste}
+            people={people}
+            collection={collection}
+            feedback={feedback}
+            onAddToWatchlist={addToWatchlist}
+            onLogNew={logNew}
+          />
         )}
-        {tab === "soon" && <ComingSoonView tmdb={tmdb} settings={settings} onAddToWatchlist={addToWatchlist} />}
+        {tab === "favorites" && (
+          <FavoritesView collection={collection} people={people} tmdb={tmdb} onUpdateTicket={updateTicket} />
+        )}
         {tab === "search" && <SearchView tmdb={tmdb} onAddToWatchlist={addToWatchlist} onLogNew={logNew} />}
       </main>
+
+      {redditPrompt && (
+        <Modal onClose={() => setRedditPrompt(null)}>
+          <h3 className="modal-title">Logged: {redditPrompt.title}</h3>
+          <p className="sync-note" style={{ marginBottom: 16 }}>
+            Want to see what everyone else thought? Here's the official Reddit discussion thread.
+          </p>
+          <div className="form-actions">
+            <button className="btn btn-ghost" onClick={() => setRedditPrompt(null)}>No thanks</button>
+            <a
+              className="btn btn-primary"
+              href={buildRedditLink(redditPrompt.title, redditPrompt.year)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => setRedditPrompt(null)}
+            >
+              <ExternalLink size={14} /> Open discussion
+            </a>
+          </div>
+        </Modal>
+      )}
 
       <nav className="tab-bar">
         {TABS.map((t) => {
@@ -1305,17 +2125,17 @@ const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
 
 :root {
-  --curtain: #150c14;
-  --velvet: #271521;
-  --velvet-2: #38202f;
-  --brass: #c9a24b;
-  --brass-bright: #ecd08a;
-  --marquee-red: #d6453a;
-  --stub-cream: #f1e6cf;
-  --ink: #2a1c14;
-  --cream-text: #f4ecde;
-  --muted: #b39d8a;
-  --line: rgba(241,230,207,0.14);
+  --curtain: #0a0708;
+  --velvet: #15100f;
+  --velvet-2: #221615;
+  --brass: #e2a836;
+  --brass-bright: #f0c668;
+  --marquee-red: #e23636;
+  --stub-cream: #f3eeec;
+  --ink: #1a1210;
+  --cream-text: #f5f0f0;
+  --muted: #9a8a8a;
+  --line: rgba(226,54,54,0.16);
 }
 
 * { box-sizing: border-box; }
@@ -1324,7 +2144,7 @@ button { font-family: inherit; cursor: pointer; }
 input, textarea { font-family: inherit; }
 
 .app {
-  background: radial-gradient(circle at 50% -10%, #2c1726 0%, var(--curtain) 55%);
+  background: radial-gradient(circle at 50% -10%, #1a0606 0%, var(--curtain) 55%);
   color: var(--cream-text);
   font-family: 'Inter', system-ui, sans-serif;
   min-height: 100vh;
@@ -1351,14 +2171,14 @@ input, textarea { font-family: inherit; }
   font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase;
   color: var(--muted); border: 1px solid var(--line); padding: 4px 9px; border-radius: 999px;
 }
-.sync-pill.sync-on { color: #6fbf73; border-color: rgba(111,191,115,0.4); }
+.sync-pill.sync-on { color: var(--brass); border-color: rgba(226,168,54,0.4); }
 .sync-note { font-size: 12px; color: var(--muted); line-height: 1.45; margin: 4px 0 10px; }
 .wordmark {
   font-family: 'Bebas Neue', sans-serif;
   font-size: 28px;
   letter-spacing: 0.06em;
-  color: var(--brass);
-  text-shadow: 0 0 18px rgba(201,162,75,0.35);
+  color: var(--cream-text);
+  text-shadow: none;
 }
 .wordmark-dot { color: var(--marquee-red); }
 
@@ -1378,7 +2198,7 @@ input, textarea { font-family: inherit; }
   font-size: 10.5px; letter-spacing: 0.02em; padding: 6px 2px; border-radius: 10px;
   transition: color 0.15s, background 0.15s;
 }
-.tab-btn.active { color: var(--brass-bright); background: rgba(201,162,75,0.1); }
+.tab-btn.active { color: #ff6b6b; background: rgba(226,54,54,0.14); }
 
 .view { padding-top: 6px; }
 .view-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
@@ -1396,7 +2216,7 @@ input, textarea { font-family: inherit; }
 
 .hint-banner {
   display: flex; align-items: center; gap: 8px;
-  background: rgba(201,162,75,0.12); border: 1px solid rgba(201,162,75,0.3);
+  background: rgba(226,168,54,0.12); border: 1px solid rgba(226,168,54,0.3);
   color: var(--brass-bright); font-size: 12.5px; padding: 10px 12px; border-radius: 10px; margin-bottom: 14px;
 }
 
@@ -1518,7 +2338,8 @@ input, textarea { font-family: inherit; }
 .swipe-stack { width: 100%; max-width: 340px; }
 .swipe-card {
   background: var(--velvet); border-radius: 18px; overflow: hidden; position: relative;
-  touch-action: none; user-select: none; box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  touch-action: none; user-select: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  border: 1px solid rgba(226,54,54,0.1);
 }
 .swipe-poster { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; }
 .swipe-poster-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); background: var(--velvet-2); }
@@ -1526,9 +2347,10 @@ input, textarea { font-family: inherit; }
 .swipe-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
 .swipe-genres { color: var(--muted); font-size: 12px; }
 .swipe-buttons { display: flex; justify-content: center; gap: 16px; padding: 14px 0 18px; }
-.round-btn { width: 50px; height: 50px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; }
-.round-btn-skip { background: var(--velvet-2); color: #e98b85; }
-.round-btn-seen { background: var(--velvet-2); color: var(--brass-bright); width: 42px; height: 42px; }
+.round-btn { width: 50px; height: 50px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; transition: transform 0.12s; }
+.round-btn:active { transform: scale(0.88); }
+.round-btn-skip { background: #2a1818; border: 1px solid rgba(226,54,54,0.3); color: #e2685f; }
+.round-btn-seen { background: #1f1a18; border: 1px solid rgba(226,168,54,0.4); color: var(--brass); width: 42px; height: 42px; }
 .round-btn-want { background: var(--marquee-red); color: #fff; }
 .swipe-flag { position: absolute; top: 20px; font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 0.05em; padding: 6px 14px; border-radius: 6px; z-index: 3; transform: rotate(-8deg); }
 .swipe-flag-want { left: 16px; border: 3px solid #6fbf73; color: #6fbf73; }
@@ -1559,7 +2381,115 @@ input, textarea { font-family: inherit; }
 .onboarding-title { font-family: 'Bebas Neue', sans-serif; font-size: 32px; letter-spacing: 0.04em; color: var(--cream-text); margin: 0 0 10px; }
 .onboarding-body { font-size: 13.5px; color: var(--muted); line-height: 1.5; margin-bottom: 10px; }
 
+/* ---- new feature styles ---- */
+
+/* compact collection grid: smaller posters, 3 across */
+.stub-grid-compact { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stub-grid-compact .stub-title { font-size: 11px; }
+.stub-grid-compact .stub-tab { padding: 7px 8px 9px; }
+
+/* collection controls */
+.collection-controls { margin-bottom: 14px; }
+.collection-search { margin-bottom: 10px; }
+.filter-row { display: flex; gap: 8px; }
+.filter-select {
+  flex: 1; background: var(--velvet); border: 1px solid var(--line); color: var(--cream-text);
+  padding: 9px 10px; border-radius: 10px; font-size: 12.5px; appearance: none;
+}
+.scan-btn {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;
+  background: rgba(226,54,54,0.1); border: 1px dashed rgba(226,54,54,0.4); color: #ff6b6b;
+  padding: 11px; border-radius: 12px; font-size: 13px; font-weight: 600; margin-bottom: 16px;
+}
+
+/* tappable watchlist row */
+.watch-tap { display: flex; align-items: center; gap: 12px; background: none; border: none; padding: 0; flex: 1; min-width: 0; text-align: left; color: inherit; }
+
+/* detail modal */
+.detail-modal { padding-top: 4px; }
+.detail-head { display: flex; gap: 14px; margin-bottom: 16px; }
+.detail-head-poster { width: 92px; height: 138px; border-radius: 10px; object-fit: cover; flex-shrink: 0; background: var(--velvet-2); }
+.detail-head-info { flex: 1; min-width: 0; }
+.detail-loading { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; padding: 14px 0; }
+.detail-body { margin-bottom: 16px; }
+.detail-overview { font-size: 13.5px; line-height: 1.55; color: var(--cream-text); margin: 0 0 14px; }
+.detail-facts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.detail-facts > div { font-size: 13px; color: var(--cream-text); display: flex; gap: 8px; }
+.detail-facts span { color: var(--muted); min-width: 72px; display: inline-block; }
+.detail-cast-label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+.detail-cast-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.cast-chip { font-size: 11.5px; background: var(--velvet-2); color: var(--cream-text); padding: 4px 9px; border-radius: 999px; }
+.detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* badges */
+.badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.badge { font-size: 10.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px; letter-spacing: 0.02em; }
+.badge-director { background: rgba(226,54,54,0.18); color: #ff8080; }
+.badge-actor { background: rgba(226,168,54,0.18); color: var(--brass-bright); }
+.badge-genre { background: rgba(226,54,54,0.12); color: #ff9a9a; }
+
+/* match scores */
+.match-badge { position: absolute; top: 14px; right: 14px; z-index: 3; font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; backdrop-filter: blur(4px); }
+.match-pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; flex-shrink: 0; }
+.match-high { background: rgba(47,184,107,0.2); color: #5fd99a; }
+.match-mid { background: rgba(226,168,54,0.2); color: var(--brass-bright); }
+.match-low { background: rgba(154,138,138,0.2); color: var(--muted); }
+
+/* swipe poster tap */
+.swipe-poster-btn { display: block; width: 100%; padding: 0; border: none; background: none; position: relative; cursor: pointer; }
+.swipe-info-hint { position: absolute; bottom: 10px; right: 10px; display: flex; align-items: center; gap: 4px; font-size: 11px; color: #fff; background: rgba(10,7,8,0.6); padding: 4px 8px; border-radius: 999px; }
+.discover-foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
+
+/* suggestion rows */
+.suggest-thumb-btn, .coming-thumb-btn { padding: 0; border: none; background: none; flex-shrink: 0; cursor: pointer; }
+.suggest-title-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.suggest-title-btn { background: none; border: none; color: var(--cream-text); font-weight: 600; font-size: 13.5px; padding: 0; text-align: left; cursor: pointer; }
+
+/* choice grid */
+.choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.choice-grid .btn { width: 100%; }
+
+/* favorites tab */
+.fav-section { margin-bottom: 22px; }
+.fav-section-title { font-family: 'Bebas Neue', sans-serif; font-size: 17px; letter-spacing: 0.03em; color: var(--cream-text); margin-bottom: 10px; }
+.fav-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.fav-chip { font-size: 13px; background: var(--velvet); border: 1px solid var(--line); color: var(--cream-text); padding: 7px 12px; border-radius: 999px; }
+.fav-poster-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.fav-poster { width: 72px; flex-shrink: 0; }
+.fav-poster img { width: 72px; height: 108px; border-radius: 8px; object-fit: cover; }
+.fav-poster-fallback { width: 72px; height: 108px; border-radius: 8px; background: var(--velvet-2); display: flex; align-items: center; justify-content: center; color: var(--marquee-red); }
+
+/* coming soon chips + notes */
+.chip-scroll { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 6px; }
+.chip { flex-shrink: 0; background: var(--velvet); border: 1px solid var(--line); color: var(--muted); padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.chip-active { background: var(--marquee-red); color: #fff; border-color: var(--marquee-red); }
+.proactive-note { font-size: 11.5px; margin: 6px 0; padding: 5px 9px; border-radius: 8px; line-height: 1.35; }
+.note-hot { background: rgba(47,184,107,0.12); color: #5fd99a; }
+.note-stretch { background: rgba(226,168,54,0.12); color: var(--brass-bright); }
+.note-cool { background: rgba(154,138,138,0.1); color: var(--muted); }
+
+/* ticket scanner */
+.scan-candidates { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+.scan-cand { display: flex; align-items: center; gap: 10px; background: var(--velvet); border: 1px solid var(--line); border-radius: 10px; padding: 8px; color: var(--cream-text); text-align: left; font-size: 13px; }
+.scan-cand img { width: 36px; height: 54px; border-radius: 5px; object-fit: cover; }
+.scan-cand-fallback { width: 36px; height: 54px; border-radius: 5px; background: var(--velvet-2); display: flex; align-items: center; justify-content: center; color: var(--marquee-red); }
+.scan-cand-active { border-color: var(--marquee-red); background: rgba(226,54,54,0.1); }
+.scan-raw { font-size: 10.5px; color: var(--muted); white-space: pre-wrap; max-height: 140px; overflow-y: auto; font-family: 'Space Mono', monospace; }
+
+/* action burst animation */
+.burst-overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 100; }
+.burst-icon { animation: burstPop 0.85s cubic-bezier(.2,.8,.3,1) forwards; }
+.burst-collect { color: var(--marquee-red); }
+.burst-want { color: #2fb86b; }
+@keyframes burstPop {
+  0% { transform: scale(0.3) rotate(-12deg); opacity: 0; }
+  30% { transform: scale(1.25) rotate(4deg); opacity: 1; }
+  60% { transform: scale(1) rotate(0deg); opacity: 1; }
+  100% { transform: scale(0.9) translateY(-30px); opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .burst-icon { animation: none !important; }
   .stub-shine, .spin, .flip-stage { animation: none !important; transition: none !important; }
 }
 `;
