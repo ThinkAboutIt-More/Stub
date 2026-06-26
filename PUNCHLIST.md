@@ -8,12 +8,12 @@ Status: [x] done & deployed, [~] in progress, [ ] todo, [?] verify (may already 
 - [x] 18. Zip/collection inputs zoom in and never zoom back; nothing should zoom ever
 
 ## Batch 2 — swipe + discover mechanics
-- [ ] 5. Swipe left in discover has a double glitch; make it clean
-- [ ] 14. Swipe right should SAVE (unwatched); currently glitches then shows eye
-- [ ] 7. Swipes left/right should affect taste data across the whole app
-- [ ] 22. Deck says "that's it for now" and ends; should never end; refresh deck does nothing
-- [?] 17. Remove "tap for info" button; keep it by tapping the poster (poster tap already opens info — verify no stray hint)
-- [ ] 21. "For you" tab should show the same 3 icons on the right of each movie
+- [x] 5. Swipe left in discover has a double glitch; make it clean
+- [x] 14. Swipe right should SAVE (unwatched); currently glitches then shows eye
+- [x] 7. Swipes left/right should affect taste data across the whole app
+- [x] 22. Deck says "that's it for now" and ends; should never end; refresh deck does nothing
+- [x] 17. Remove "tap for info" button; keep it by tapping the poster (poster tap already opens info — verify no stray hint)
+- [x] 21. "For you" tab should show the same 3 icons on the right of each movie
 
 ## Batch 3 — layout / overflow
 - [ ] 3. Collection + discover content larger than allowed; 3 buttons cut off

@@ -1361,11 +1361,13 @@ function SwipeButtons({ onSkip, onSeen, onWant }) {
 function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo }) {
   const [drag, setDrag] = useState({ x: 0, active: false });
   const [flying, setFlying] = useState(null);
+  const [flyFrom, setFlyFrom] = useState(0);
   const startX = useRef(0);
   const moved = useRef(false);
   const pendingAction = useRef(null);
 
   function fly(dir, action) {
+    setFlyFrom(drag.x);
     pendingAction.current = action;
     setFlying(dir);
     setDrag({ x: 0, active: false });
@@ -1403,7 +1405,7 @@ function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo })
   return (
     <div
       className={"swipe-card" + flyClass}
-      style={flying ? undefined : { transform: `translateX(${drag.x}px) rotate(${rotate}deg)` }}
+      style={flying ? { "--fly-from": flyFrom + "px" } : { transform: `translateX(${drag.x}px) rotate(${rotate}deg)` }}
       onAnimationEnd={flying ? handleAnimEnd : undefined}
       onMouseDown={down}
       onMouseMove={move}
@@ -1460,7 +1462,8 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   const [forYouList, setForYouList] = useState([]);
   const [forYouLoading, setForYouLoading] = useState(false);
   const forYouLoadedRef = useRef(false);
-  const autoReloadedRef = useRef(false);
+  const pageRef = useRef(1);
+  const reloadAttemptsRef = useRef(0);
 
   const seenIdSet = useMemo(
     () => new Set([...feedback.skippedIds, ...feedback.wantedIds, ...feedback.seenIds].map((x) => x.tmdbId + x.mediaType)),
@@ -1476,21 +1479,24 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
     setError(null);
     try {
       const topGenres = Object.entries(getWeights(taste)).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g).join(",");
+      const pageNum = pageRef.current;
       const calls = [
         tmdb.trendingWeek(),
-        tmdb.popularMovies(1),
-        tmdb.popularMovies(2),
-        tmdb.popularTv(1),
-        tmdb.topRatedMovies(1),
-        tmdb.nowPlaying(1)
+        tmdb.popularMovies(pageNum),
+        tmdb.popularMovies(pageNum + 1),
+        tmdb.popularTv(pageNum),
+        tmdb.topRatedMovies(pageNum),
+        tmdb.nowPlaying(pageNum)
       ];
       if (topGenres) {
-        calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "popularity.desc", page: 1, with_original_language: "en" }));
-        calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "vote_average.desc", page: 1, "vote_count.gte": 200 }));
-        calls.push(tmdb.discoverTv({ with_genres: topGenres, sort_by: "popularity.desc", page: 1, with_original_language: "en" }));
+        calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "popularity.desc", page: pageNum, with_original_language: "en" }));
+        calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 200 }));
+        calls.push(tmdb.discoverTv({ with_genres: topGenres, sort_by: "popularity.desc", page: pageNum, with_original_language: "en" }));
       }
       const pages = await Promise.all(calls);
       const all = pages.flatMap((p) => p.results || []).map(normalize);
+      // advance paging for next load; wrap back to the start when we run out so the deck never truly ends
+      pageRef.current = all.length === 0 || pageNum + 2 > 9 ? 1 : pageNum + 2;
       const skipSet = includeSkipped
         ? new Set([...feedback.wantedIds, ...feedback.seenIds].map((x) => x.tmdbId + x.mediaType))
         : seenIdSet;
@@ -1514,12 +1520,15 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
     // eslint-disable-next-line
   }, []);
 
-  // Auto-reload when swipe deck is exhausted
+  // Keep the deck alive: whenever it empties, pull the next pages (which wrap
+  // around when exhausted). Capped so a dead API key can't spin forever.
   useEffect(() => {
-    if (!loading && !error && pool.length === 0 && !autoReloadedRef.current) {
-      autoReloadedRef.current = true;
-      loadPool(true);
-    }
+    if (loading || error) return;
+    if (pool.length > 0) { reloadAttemptsRef.current = 0; return; }
+    if (reloadAttemptsRef.current >= 5) return;
+    reloadAttemptsRef.current += 1;
+    loadPool(true);
+    // eslint-disable-next-line
   }, [pool.length, loading, error]);
 
   const loadForYouList = useCallback(async () => {
@@ -1649,7 +1658,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
                 <Undo2 size={14} /> Undo skip
               </button>
             )}
-            <button className="btn btn-ghost btn-sm" onClick={() => { autoReloadedRef.current = false; loadPool(true); }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => { reloadAttemptsRef.current = 0; loadPool(true); }}>
               <RefreshCw size={14} /> Refresh deck
             </button>
             {skippedPool.length > 0 && (
@@ -3447,11 +3456,11 @@ input, textarea { font-family: inherit; }
 .swipe-flag-want { left: 16px; border: 3px solid #6fbf73; color: #6fbf73; }
 .swipe-flag-skip { right: 16px; border: 3px solid #e9695f; color: #e9695f; transform: rotate(8deg); }
 @keyframes swipe-fly-left {
-  0%   { transform: translateX(0) rotate(0deg); opacity: 1; }
+  0%   { transform: translateX(var(--fly-from, 0px)) rotate(0deg); opacity: 1; }
   100% { transform: translateX(-130vw) rotate(-28deg); opacity: 0; }
 }
 @keyframes swipe-fly-right {
-  0%   { transform: translateX(0) rotate(0deg); opacity: 1; }
+  0%   { transform: translateX(var(--fly-from, 0px)) rotate(0deg); opacity: 1; }
   100% { transform: translateX(130vw) rotate(28deg); opacity: 0; }
 }
 @keyframes swipe-fly-up {
