@@ -38,3 +38,8 @@ Status: [x] done & deployed, [~] in progress, [ ] todo, [?] verify (may already 
 ## Batch 7 — polish
 - [ ] 19. Cooler animation on button taps and swipes
 - [ ] 1. Ticket scanner pulls from phone files; bias toward photo album (note: web file picker has limits on iOS; accept=image/* already prioritizes photos)
+
+## Recent changes that were never committed (rebuilding)
+- [x] 10-star rating scale with half-star taps (0.5 steps), For You threshold 7+
+- [ ] swipe poster back to proper 2/3 aspect + refresh deck placement
+- [ ] AI-notes prompt rewrite

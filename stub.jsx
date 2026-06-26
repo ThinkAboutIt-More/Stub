@@ -251,10 +251,10 @@ function buildTasteProfile(collection, feedback) {
       if (!v.rating) return;
       const age = now - (v.loggedAt || now);
       const decay = Math.max(0.35, 1 - age / TWO_YEARS_MS);
-      bump(t.genreIds, (v.rating - 2.5) * 2 * decay);
+      bump(t.genreIds, (v.rating - 5) * decay);
       // track how your ratings compare to TMDB consensus per genre
       if (t.voteAverage != null && (t.voteCount ?? 0) > 50) {
-        const yourScore = (v.rating / 5) * 10; // 1-5 stars → 0-10 scale
+        const yourScore = v.rating; // already on the 0-10 scale
         const delta = yourScore - t.voteAverage;
         (t.genreIds || []).forEach((g) => {
           if (!ratingDeltas[g]) ratingDeltas[g] = { sum: 0, n: 0 };
@@ -290,8 +290,8 @@ function buildPeopleProfile(collection) {
   };
   collection.forEach((t) => {
     if (!t.credits) return;
-    const lastRating = t.viewings.length ? t.viewings[t.viewings.length - 1].rating : 2.5;
-    const amount = lastRating - 2; // 0.5..3
+    const lastRating = t.viewings.length ? t.viewings[t.viewings.length - 1].rating : 5;
+    const amount = (lastRating / 2) - 2; // 0.5..3 on the 0-10 scale
     (t.credits.directors || []).forEach((p) => add(directors, p, amount));
     (t.credits.writers || []).forEach((p) => add(writers, p, amount * 0.8));
     (t.credits.cast || []).slice(0, 5).forEach((p) => add(actors, p, amount * 0.5));
@@ -387,7 +387,7 @@ function badgesFor(item, people, tasteWeights) {
 --------------------------------------------------------- */
 
 function Stars({ value = 0, onChange, size = 18 }) {
-  const slots = [1, 2, 3, 4, 5];
+  const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   return (
     <div className="stars" style={{ height: size }}>
       {slots.map((n) => {
@@ -404,13 +404,13 @@ function Stars({ value = 0, onChange, size = 18 }) {
                 <button
                   type="button"
                   className="star-hit star-hit-left"
-                  aria-label={`Rate ${n - 0.5} of 5`}
+                  aria-label={`Rate ${n - 0.5} of 10`}
                   onClick={() => onChange(n - 0.5)}
                 />
                 <button
                   type="button"
                   className="star-hit star-hit-right"
-                  aria-label={`Rate ${n} of 5`}
+                  aria-label={`Rate ${n} of 10`}
                   onClick={() => onChange(n)}
                 />
               </>
@@ -640,7 +640,7 @@ function LogForm({ initial, onSave, onCancel, saveLabel }) {
       )}
 
       <label className="field-label">Your rating</label>
-      <Stars value={rating} onChange={setRating} size={28} />
+      <Stars value={rating} onChange={setRating} size={24} />
 
       <label className="field-label">Notes</label>
       <textarea
@@ -1103,7 +1103,7 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
               disabled={!chosen}
               onClick={() => {
                 if (!chosen) return;
-                onLogNew(chosen, { id: uid(), date: guessedDate, location: "", rating: 4, notes: "", loggedAt: Date.now() });
+                onLogNew(chosen, { id: uid(), date: guessedDate, location: "", rating: 8, notes: "", loggedAt: Date.now() });
                 onClose();
               }}
             >
@@ -1535,7 +1535,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
     setForYouLoading(true);
     try {
       const topRated = [...collection]
-        .filter((t) => t.viewings.some((v) => (v.rating || 0) >= 3.5))
+        .filter((t) => t.viewings.some((v) => (v.rating || 0) >= 7))
         .sort((a, b) => {
           const ra = Math.max(...a.viewings.map((v) => v.rating || 0));
           const rb = Math.max(...b.viewings.map((v) => v.rating || 0));
@@ -1716,7 +1716,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
             <EmptyState icon={<Heart size={32} />} title="Nothing yet" body="Rate a few films in your collection and this list will fill up." />
           )}
           {!forYouLoading && forYouList.length === 0 && collection.length > 0 && (
-            <EmptyState icon={<Sparkles size={32} />} title="No recommendations yet" body="Rate a few films 3.5 stars or higher and we'll find you similar ones." />
+            <EmptyState icon={<Sparkles size={32} />} title="No recommendations yet" body="Rate a few films 7 stars or higher and we'll find you similar ones." />
           )}
           {!forYouLoading && forYouList.length > 0 && (
             <div className="suggest-list">
@@ -3046,7 +3046,7 @@ export default function App() {
   }
 
   function logFromWatchlist(w) {
-    logNew(w, { id: uid(), date: todayISO(), location: "", rating: 4, notes: "", loggedAt: Date.now() });
+    logNew(w, { id: uid(), date: todayISO(), location: "", rating: 8, notes: "", loggedAt: Date.now() });
   }
 
   function removeFromWatchlist(item) {
