@@ -2950,10 +2950,36 @@ export default function App() {
     // eslint-disable-next-line
   }, []);
 
-  useEffect(() => { if (ready) saveKey(STORAGE_KEYS.settings, settings, conn); }, [settings, ready, conn]);
-  useEffect(() => { if (ready) saveKey(STORAGE_KEYS.collection, collection, conn); }, [collection, ready, conn]);
-  useEffect(() => { if (ready) saveKey(STORAGE_KEYS.watchlist, watchlist, conn); }, [watchlist, ready, conn]);
-  useEffect(() => { if (ready) saveKey(STORAGE_KEYS.feedback, feedback, conn); }, [feedback, ready, conn]);
+  useEffect(() => { if (ready) saveKey(STORAGE_KEYS.settings, settings, conn); }, [settings, ready]);
+  useEffect(() => { if (ready) saveKey(STORAGE_KEYS.collection, collection, conn); }, [collection, ready]);
+  useEffect(() => { if (ready) saveKey(STORAGE_KEYS.watchlist, watchlist, conn); }, [watchlist, ready]);
+  useEffect(() => { if (ready) saveKey(STORAGE_KEYS.feedback, feedback, conn); }, [feedback, ready]);
+
+  // DATA SAFETY: when the cloud connection changes (e.g. you re-enter your keys
+  // after clearing the cache), PULL from the cloud instead of pushing local up.
+  // Cloud wins only when it actually has data, so an empty cloud can never wipe
+  // your local collection, and an empty local can never overwrite real cloud
+  // data. This closes the sync bug that erased the collection on reconnect.
+  useEffect(() => {
+    if (!ready || !hasCloud(conn)) return;
+    let active = true;
+    (async () => {
+      const [c, w, f] = await Promise.all([
+        loadKey(STORAGE_KEYS.collection, [], conn),
+        loadKey(STORAGE_KEYS.watchlist, [], conn),
+        loadKey(STORAGE_KEYS.feedback, { skippedIds: [], wantedIds: [], seenIds: [] }, conn)
+      ]);
+      if (!active) return;
+      setCollection((local) => (Array.isArray(c) && c.length ? c : local));
+      setWatchlist((local) => (Array.isArray(w) && w.length ? w : local));
+      setFeedback((local) => {
+        const cloudHas = f && ((f.skippedIds || []).length || (f.wantedIds || []).length || (f.seenIds || []).length);
+        return cloudHas ? f : local;
+      });
+    })();
+    return () => { active = false; };
+    // eslint-disable-next-line
+  }, [conn]);
 
   function updateConnection(next) {
     saveConnection(next);
