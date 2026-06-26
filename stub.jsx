@@ -2321,7 +2321,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
    OUT NOW TAB  — movies currently in theaters
 --------------------------------------------------------- */
 
-function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCollection, ownedRating, inWatchlist, onInfo, onSave }) {
+function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCollection, ownedRating, availability, inWatchlist, onInfo, onSave }) {
   return (
     <div className="outnow-hero" onClick={onInfo} style={{ cursor: "pointer" }}>
       {item.backdropPath ? (
@@ -2338,6 +2338,11 @@ function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCo
       >
         <Bookmark size={14} />
       </button>
+      {availability && (
+        <span className={"avail-tag avail-" + availability}>
+          {availability === "theaters" ? <><Ticket size={9} /> In theaters</> : <><Tv size={9} /> Streaming</>}
+        </span>
+      )}
       <div className="outnow-hero-overlay">
         <div className="outnow-hero-top">
           {inWatchlist && <span className="watchlist-badge"><Bookmark size={10} /></span>}
@@ -2374,6 +2379,9 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
   const [infoItem, setInfoItem] = useState(null);
   const [sort, setSort] = useState("match");
   const [genreFilter, setGenreFilter] = useState("all");
+  const [availMap, setAvailMap] = useState({});
+  const availCacheRef = useRef({});
+  const availRegionRef = useRef((settings.country || "US").toUpperCase());
 
   useEffect(() => {
     let active = true;
@@ -2397,6 +2405,30 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
     run();
     return () => { active = false; };
   }, [settings.country]);
+
+  // classify each title: a subscription (flatrate) provider means it's watchable online,
+  // so it's "streaming" rather than genuinely theatrical-only. fills in after the list shows.
+  useEffect(() => {
+    if (!items.length) return;
+    let active = true;
+    const region = (settings.country || "US").toUpperCase();
+    if (region !== availRegionRef.current) { availCacheRef.current = {}; availRegionRef.current = region; }
+    const toFetch = items.filter((it) => availCacheRef.current[it.tmdbId + it.mediaType] === undefined);
+    if (!toFetch.length) { setAvailMap({ ...availCacheRef.current }); return; }
+    Promise.allSettled(
+      toFetch.map((it) =>
+        tmdb.watchProviders(it.mediaType, it.tmdbId).then((d) => {
+          const entry = d.results && d.results[region];
+          const streaming = !!(entry && entry.flatrate && entry.flatrate.length);
+          return { key: it.tmdbId + it.mediaType, val: streaming ? "streaming" : "theaters" };
+        })
+      )
+    ).then((results) => {
+      results.forEach((r) => { if (r.status === "fulfilled" && r.value) availCacheRef.current[r.value.key] = r.value.val; });
+      if (active) setAvailMap({ ...availCacheRef.current });
+    });
+    return () => { active = false; };
+  }, [items, settings.country]);
 
   const enough = hasEnoughTaste(collection, feedback);
 
@@ -2531,6 +2563,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
                 isOwned={isOwned || added[item.tmdbId]}
                 inCollection={isOwned}
                 ownedRating={ownedRatingMap[item.tmdbId + item.mediaType]}
+                availability={availMap[item.tmdbId + item.mediaType]}
                 inWatchlist={inWl || added[item.tmdbId]}
                 onInfo={() => setInfoItem(item)}
                 onSave={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
@@ -3792,6 +3825,9 @@ input, textarea { font-family: inherit; }
 .match-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex-shrink: 0; }
 .match-high { background: rgba(34,150,86,0.88); color: #eafff3; border: 1px solid rgba(120,240,170,0.9); }
 .match-seen { background: rgba(196,140,40,0.92); color: #fff6e6; border: 1px solid rgba(240,200,120,0.9); display: inline-flex; align-items: center; }
+.avail-tag { position: absolute; top: 10px; left: 10px; z-index: 3; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 999px; backdrop-filter: blur(6px); }
+.avail-theaters { background: rgba(226,54,54,0.85); color: #fff; border: 1px solid rgba(255,150,150,0.55); }
+.avail-streaming { background: rgba(38,38,46,0.82); color: #cfd6e4; border: 1px solid rgba(150,160,180,0.45); }
 .match-mid { background: rgba(198,140,30,0.9); color: #fff7e6; border: 1px solid rgba(245,204,106,0.95); }
 .match-low { background: rgba(90,80,80,0.9); color: #ffffff; border: 1px solid rgba(210,200,200,0.7); }
 
