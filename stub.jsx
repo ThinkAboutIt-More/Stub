@@ -1479,12 +1479,14 @@ function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo })
   }
 
   const rotate = drag.x / 18;
+  const dragPct = Math.min(1, Math.abs(drag.x) / 120);
+  const dragScale = drag.active && Math.abs(drag.x) > 4 ? 1.015 : 1;
   const flyClass = flying ? ` swipe-fly-${flying}` : "";
 
   return (
     <div
       className={"swipe-card" + flyClass}
-      style={flying ? { "--fly-from": flyFrom + "px" } : { transform: `translateX(${drag.x}px) rotate(${rotate}deg)` }}
+      style={flying ? { "--fly-from": flyFrom + "px" } : { transform: `translateX(${drag.x}px) rotate(${rotate}deg) scale(${dragScale})` }}
       onAnimationEnd={flying ? handleAnimEnd : undefined}
       onMouseDown={down}
       onMouseMove={move}
@@ -1494,8 +1496,11 @@ function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo })
       onTouchMove={move}
       onTouchEnd={up}
     >
-      {drag.x > 40 && <div className="swipe-flag swipe-flag-want">SAVE IT</div>}
-      {drag.x < -40 && <div className="swipe-flag swipe-flag-skip">SKIP</div>}
+      {drag.x !== 0 && !flying && (
+        <div className={"swipe-glow " + (drag.x > 0 ? "swipe-glow-want" : "swipe-glow-skip")} style={{ opacity: dragPct * 0.95 }} />
+      )}
+      {drag.x > 0 && <div className="swipe-flag swipe-flag-want" style={{ opacity: dragPct, transform: `rotate(-8deg) scale(${0.55 + dragPct * 0.55})` }}>SAVE IT</div>}
+      {drag.x < 0 && <div className="swipe-flag swipe-flag-skip" style={{ opacity: dragPct, transform: `rotate(8deg) scale(${0.55 + dragPct * 0.55})` }}>SKIP</div>}
       {matchPct != null && (
         <div className="match-badge" style={matchStyle(matchPct)}>
           {matchPct}% match
@@ -3640,29 +3645,35 @@ input, textarea { font-family: inherit; }
 .swipe-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
 .swipe-genres { color: var(--muted); font-size: 12px; }
 .swipe-buttons { display: flex; justify-content: center; align-items: center; gap: 20px; padding: 10px 0 14px; flex-shrink: 0; }
-.round-btn { width: 52px; height: 52px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; transition: transform 0.1s, box-shadow 0.1s; }
-.round-btn:active { transform: scale(0.82); box-shadow: 0 0 0 6px rgba(255,255,255,0.1); }
+.round-btn { width: 52px; height: 52px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; transition: transform 0.16s cubic-bezier(.34,1.56,.64,1), box-shadow 0.16s; }
+.round-btn:active { transform: scale(0.86); }
+.round-btn-skip:active { box-shadow: 0 0 0 7px rgba(80,140,220,0.22); }
+.round-btn-seen:active { box-shadow: 0 0 0 7px rgba(220,170,50,0.24); }
+.round-btn-want:active { box-shadow: 0 0 0 7px rgba(60,200,110,0.24); }
 .round-btn-skip { background: #152535; border: 1.5px solid rgba(80,140,220,0.55); color: #7ec2ff; box-shadow: 0 4px 14px rgba(80,140,220,0.18); }
 .round-btn-seen { background: #3a2200; border: 2px solid rgba(220,170,50,0.6); color: #f0c060; width: 62px; height: 62px; box-shadow: 0 4px 18px rgba(220,170,50,0.22); }
 .round-btn-want { background: #0a2818; border: 1.5px solid rgba(60,200,110,0.55); color: #6ae898; box-shadow: 0 4px 14px rgba(60,200,110,0.18); }
 .swipe-flag { position: absolute; top: 20px; font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 0.05em; padding: 6px 14px; border-radius: 6px; z-index: 3; transform: rotate(-8deg); }
 .swipe-flag-want { left: 16px; border: 3px solid #6fbf73; color: #6fbf73; }
 .swipe-flag-skip { right: 16px; border: 3px solid #e9695f; color: #e9695f; transform: rotate(8deg); }
+.swipe-glow { position: absolute; inset: 0; border-radius: 18px; pointer-events: none; z-index: 2; }
+.swipe-glow-want { box-shadow: inset 0 0 0 3px rgba(74,240,144,0.95), inset 0 0 44px rgba(74,240,144,0.4); }
+.swipe-glow-skip { box-shadow: inset 0 0 0 3px rgba(233,105,95,0.95), inset 0 0 44px rgba(233,105,95,0.4); }
 @keyframes swipe-fly-left {
-  0%   { transform: translateX(var(--fly-from, 0px)) rotate(0deg); opacity: 1; }
-  100% { transform: translateX(-130vw) rotate(-28deg); opacity: 0; }
+  0%   { transform: translateX(var(--fly-from, 0px)) rotate(0deg) scale(1); opacity: 1; }
+  100% { transform: translateX(-135vw) rotate(-24deg) scale(0.85); opacity: 0; }
 }
 @keyframes swipe-fly-right {
-  0%   { transform: translateX(var(--fly-from, 0px)) rotate(0deg); opacity: 1; }
-  100% { transform: translateX(130vw) rotate(28deg); opacity: 0; }
+  0%   { transform: translateX(var(--fly-from, 0px)) rotate(0deg) scale(1); opacity: 1; }
+  100% { transform: translateX(135vw) rotate(24deg) scale(0.85); opacity: 0; }
 }
 @keyframes swipe-fly-up {
-  0%   { transform: translateY(0) scale(1); opacity: 1; }
-  100% { transform: translateY(-90vh) scale(0.65); opacity: 0; }
+  0%   { transform: translateY(0) scale(1) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(-95vh) scale(0.6) rotate(-4deg); opacity: 0; }
 }
-.swipe-fly-left  { animation: swipe-fly-left  0.22s cubic-bezier(0.4,0,1,1) forwards; pointer-events: none; }
-.swipe-fly-right { animation: swipe-fly-right 0.22s cubic-bezier(0.4,0,1,1) forwards; pointer-events: none; }
-.swipe-fly-up    { animation: swipe-fly-up    0.22s cubic-bezier(0.4,0,1,1) forwards; pointer-events: none; }
+.swipe-fly-left  { animation: swipe-fly-left  0.3s cubic-bezier(0.45,0,0.7,0.2) forwards; pointer-events: none; z-index: 5; }
+.swipe-fly-right { animation: swipe-fly-right 0.3s cubic-bezier(0.45,0,0.7,0.2) forwards; pointer-events: none; z-index: 5; }
+.swipe-fly-up    { animation: swipe-fly-up    0.3s cubic-bezier(0.45,0,0.7,0.2) forwards; pointer-events: none; z-index: 5; }
 
 /* out now cards */
 .outnow-hero { position: relative; border-radius: 14px; overflow: hidden; cursor: pointer; }
@@ -3883,6 +3894,8 @@ input, textarea { font-family: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .burst-icon { animation: none !important; }
   .stub-shine, .spin, .flip-stage { animation: none !important; transition: none !important; }
+  .swipe-fly-left, .swipe-fly-right, .swipe-fly-up { animation-duration: 0.12s !important; }
+  .swipe-glow { display: none !important; }
 }
 `;
 
