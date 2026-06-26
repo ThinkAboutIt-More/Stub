@@ -608,7 +608,10 @@ function LogForm({ initial, onSave, onCancel, saveLabel }) {
         <button type="button" className={"approx-chip" + (approx ? " approx-chip-active" : "")} onClick={() => setApprox(true)}>Just the year</button>
       </div>
       {!approx ? (
-        <input className="field-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input className="field-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ flex: 1 }} />
+          <button type="button" className="approx-chip approx-chip-active" onClick={() => setDate(todayISO())} style={{ whiteSpace: "nowrap", flexShrink: 0 }}>Today</button>
+        </div>
       ) : (
         <select className="field-input" value={approxYear} onChange={(e) => setApproxYear(e.target.value)}>
           {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
@@ -1304,6 +1307,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
         )
       )}
 
+      <div style={{ height: "56px" }} />
       <div className="collection-footer-strip">
         <button className="cta-icon-btn" onClick={() => setShowFavorites(true)}>
           <Heart size={17} />
@@ -1645,6 +1649,21 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
 
       {mode === "swipe" && (
         <div className="view-discover">
+          <div className="discover-foot">
+            {lastAction && (
+              <button className="btn btn-ghost btn-sm" onClick={undoLast}>
+                <Undo2 size={14} /> Undo skip
+              </button>
+            )}
+            <button className="btn btn-ghost btn-sm" onClick={() => { autoReloadedRef.current = false; loadPool(true); }}>
+              <RefreshCw size={14} /> Refresh deck
+            </button>
+            {skippedPool.length > 0 && (
+              <button className="btn btn-ghost btn-sm" onClick={replaySkipped}>
+                <Undo2 size={14} /> Replay skipped ({skippedPool.length})
+              </button>
+            )}
+          </div>
           {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Shuffling the deck" body="Pulling titles you haven't seen yet." />}
           {!loading && error && (
             <EmptyState icon={<Info size={32} />} title="Couldn't load new titles" body={`TMDB said: ${error}. Check your API key in settings, then tap refresh.`} />
@@ -1661,7 +1680,6 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
                 onSkip={() => skip(current)}
                 onWant={() => want(current)}
                 onSeen={() => seen(current)}
-  
                 onTapInfo={() => setInfoItem(current)}
               />
             </div>
@@ -1675,21 +1693,6 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
               <button className="toast-close" onClick={() => setJustLogged(null)}><X size={12} /></button>
             </div>
           )}
-          <div className="discover-foot">
-            {lastAction && (
-              <button className="btn btn-ghost btn-sm" onClick={undoLast}>
-                <Undo2 size={14} /> Undo skip
-              </button>
-            )}
-            <button className="btn btn-ghost btn-sm" onClick={() => { autoReloadedRef.current = false; loadPool(true); }}>
-              <RefreshCw size={14} /> Refresh deck
-            </button>
-            {skippedPool.length > 0 && (
-              <button className="btn btn-ghost btn-sm" onClick={replaySkipped}>
-                <Undo2 size={14} /> Replay skipped ({skippedPool.length})
-              </button>
-            )}
-          </div>
         </div>
       )}
 
@@ -2208,41 +2211,39 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
    OUT NOW TAB  — movies currently in theaters
 --------------------------------------------------------- */
 
-function OutNowHeroCard({ item, enough, itemNote, itemBadges, isOwned, inWatchlist, onInfo, onSave }) {
+function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inWatchlist, onInfo, onSave }) {
   return (
-    <div className="outnow-row" onClick={onInfo}>
-      <button className="coming-thumb-btn" onClick={(e) => { e.stopPropagation(); onInfo(); }} aria-label={`Details for ${item.title}`}>
-        {item.posterPath ? (
-          <img src={tmdbImg(item.posterPath, "w154")} alt="" className="coming-thumb" />
-        ) : (
-          <div className="coming-thumb coming-thumb-fallback"><Film size={18} /></div>
-        )}
+    <div className="outnow-hero" onClick={onInfo} style={{ cursor: "pointer" }}>
+      {item.backdropPath ? (
+        <img src={tmdbImg(item.backdropPath, "w780")} alt="" className="outnow-hero-img" />
+      ) : item.posterPath ? (
+        <img src={tmdbImg(item.posterPath, "w500")} alt="" className="outnow-hero-img" />
+      ) : (
+        <div className="outnow-hero-img outnow-hero-blank"><Film size={28} /></div>
+      )}
+      <button
+        className={"outnow-save-btn" + (isOwned ? " outnow-save-btn-active" : "")}
+        onClick={(e) => { e.stopPropagation(); onSave(); }}
+        aria-label="Save to wishlist"
+      >
+        <Bookmark size={14} />
       </button>
-      <div className="coming-info">
-        <div className="suggest-title-row">
-          <button className="suggest-title-btn" onClick={(e) => { e.stopPropagation(); onInfo(); }}>{item.title}</button>
-          <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
-            {inWatchlist && <span className="watchlist-badge"><Bookmark size={10} /></span>}
-            {enough && item._pct != null && (
-              <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
-            )}
-          </div>
+      <div className="outnow-hero-overlay">
+        <div className="outnow-hero-top">
+          {inWatchlist && <span className="watchlist-badge"><Bookmark size={10} /></span>}
+          {enough && item._pct != null && (
+            <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
+          )}
+          {itemNote && <span className={"proactive-note note-" + itemNote.tone} style={{ margin: 0 }}>{itemNote.text}</span>}
         </div>
-        <div className="coming-date">{genreNames(item.genreIds, item.mediaType).slice(0, 2).join(" · ")}</div>
+        <div className={"outnow-hero-title" + (idx > 0 ? " outnow-hero-title-sm" : "")}>{item.title}</div>
+        <div className="outnow-hero-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 2).join(" · ")}</div>
         {itemBadges.length > 0 && (
           <div className="badge-row">
             {itemBadges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
           </div>
         )}
-        {itemNote && <div className={"proactive-note note-" + itemNote.tone}>{itemNote.text}</div>}
       </div>
-      <button
-        className={"icon-btn" + (isOwned ? " icon-btn-active" : "")}
-        onClick={(e) => { e.stopPropagation(); onSave(); }}
-        aria-label="Save to wishlist"
-      >
-        <Bookmark size={16} />
-      </button>
     </div>
   );
 }
@@ -2398,8 +2399,8 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
       )}
 
       {!loading && !error && processed.length > 0 && (
-        <div className="outnow-list">
-          {processed.map((item) => {
+        <div className="outnow-all-heroes">
+          {processed.map((item, idx) => {
             const itemNote = enough ? note(item, item._pct) : null;
             const itemBadges = badgesFor(item, people, taste);
             const isOwned = ownedSet.has(item.tmdbId + item.mediaType);
@@ -2408,6 +2409,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
               <OutNowHeroCard
                 key={item.tmdbId}
                 item={item}
+                idx={idx}
                 enough={enough}
                 itemNote={itemNote}
                 itemBadges={itemBadges}
@@ -3225,7 +3227,7 @@ input, textarea { font-family: inherit; }
 }
 .wordmark-dot { color: var(--marquee-red); }
 
-.app-main { flex: 1; padding: 2px 14px 140px; }
+.app-main { flex: 1; padding: 2px 14px 86px; }
 
 .tab-bar {
   position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
@@ -3449,7 +3451,18 @@ input, textarea { font-family: inherit; }
 .swipe-fly-up    { animation: swipe-fly-up    0.32s cubic-bezier(0.4,0,1,1) forwards; pointer-events: none; }
 .refresh-btn { margin-top: 18px; }
 
-/* out now rows */
+/* out now cards */
+.outnow-hero { position: relative; border-radius: 14px; overflow: hidden; cursor: pointer; }
+.outnow-hero-img { width: 100%; aspect-ratio: 16/7; object-fit: cover; display: block; background: var(--velvet-2); }
+.outnow-hero-blank { display: flex; align-items: center; justify-content: center; background: var(--velvet-2); color: var(--brass); }
+.outnow-hero-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 24px 12px 10px; background: linear-gradient(to top, rgba(10,5,9,0.95) 30%, rgba(10,5,9,0.45) 65%, transparent); }
+.outnow-hero-top { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; margin-bottom: 3px; }
+.outnow-hero-title { font-size: 16px; font-weight: 800; color: var(--cream-text); line-height: 1.2; margin-bottom: 2px; }
+.outnow-hero-title-sm { font-size: 14px; }
+.outnow-hero-genres { font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 4px; }
+.outnow-save-btn { position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; border-radius: 50%; background: rgba(10,5,9,0.65); border: 1px solid rgba(255,255,255,0.25); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; backdrop-filter: blur(6px); }
+.outnow-save-btn-active { background: rgba(226,54,54,0.75) !important; border-color: var(--marquee-red) !important; }
+.outnow-all-heroes { display: flex; flex-direction: column; gap: 8px; }
 .outnow-zip-row { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 .zip-tap { background: none; border: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 0; text-align: left; }
 .zip-tap:hover { color: var(--cream-text); }
@@ -3475,9 +3488,9 @@ input, textarea { font-family: inherit; }
 .td-hero-genres { font-size: 12px; color: rgba(255,255,255,0.55); }
 .td-overview { font-size: 13px; color: var(--muted); line-height: 1.55; margin: 12px 0 4px; }
 
-/* suggestions / search / coming soon / out now shared rows */
-.suggest-list, .coming-list, .outnow-list { display: flex; flex-direction: column; gap: 10px; }
-.suggest-row, .coming-row, .outnow-row { display: flex; gap: 12px; background: var(--velvet); border-radius: 12px; padding: 10px 12px; position: relative; cursor: pointer; }
+/* suggestions / search / coming soon shared rows */
+.suggest-list, .coming-list { display: flex; flex-direction: column; gap: 10px; }
+.suggest-row, .coming-row { display: flex; gap: 12px; background: var(--velvet); border-radius: 12px; padding: 10px 12px; position: relative; cursor: pointer; }
 .suggest-thumb, .coming-thumb { width: 46px; height: 69px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: var(--velvet-2); }
 .suggest-thumb-fallback, .coming-thumb-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); }
 .suggest-info, .coming-info { flex: 1; min-width: 0; }
@@ -3560,7 +3573,7 @@ input, textarea { font-family: inherit; }
 /* swipe poster tap */
 .swipe-poster-btn { display: block; width: 100%; padding: 0; border: none; background: none; position: relative; cursor: pointer; }
 .swipe-info-hint { position: absolute; bottom: 10px; right: 10px; display: flex; align-items: center; gap: 4px; font-size: 11px; color: #fff; background: rgba(10,7,8,0.6); padding: 4px 8px; border-radius: 999px; }
-.discover-foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
+.discover-foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 12px; }
 
 /* suggestion rows */
 .suggest-thumb-btn, .coming-thumb-btn { padding: 0; border: none; background: none; flex-shrink: 0; cursor: pointer; }
