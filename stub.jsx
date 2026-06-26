@@ -2445,24 +2445,35 @@ function SearchView({ tmdb, taste, onAddToWatchlist, onLogNew }) {
 
   async function runSearch(e) {
     e.preventDefault();
-    if (!query.trim()) return;
+    const q = query.trim();
+    if (!q) return;
     setLoading(true);
     setError(null);
     setAiMode(false);
+    const tmdbSearch = async () => {
+      const data = await tmdb.searchMulti(q);
+      return (data.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
+    };
+    // Treat it as an AI "ask" only when it's phrased like one; otherwise it's a title lookup.
+    const isAsk = /(\blike\b|\bsimilar\b|recommend|suggest|\bmovies? about\b|\bshows? about\b|something to watch|what should i|\?)/i.test(q);
     try {
-      // Try AI smart search first
-      const aiResults = await smartSearch(query.trim(), tmdb);
-      setResults(aiResults);
-      setAiMode(true);
-    } catch {
-      // Fallback to direct TMDB search
-      try {
-        const data = await tmdb.searchMulti(query.trim());
-        const filtered = (data.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
-        setResults(filtered);
-      } catch (e2) {
-        setError(e2.message);
+      if (isAsk) {
+        setResults(await smartSearch(q, tmdb));
+        setAiMode(true);
+      } else {
+        const hits = await tmdbSearch();
+        if (hits.length) {
+          setResults(hits);
+        } else {
+          // no title match — fall back to AI suggestions
+          try { setResults(await smartSearch(q, tmdb)); setAiMode(true); }
+          catch { setResults([]); }
+        }
       }
+    } catch {
+      // AI path failed — fall back to a plain title search
+      try { setResults(await tmdbSearch()); }
+      catch (e2) { setError(e2.message); }
     }
     setLoading(false);
   }

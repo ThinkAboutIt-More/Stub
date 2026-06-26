@@ -43,3 +43,6 @@ Status: [x] done & deployed, [~] in progress, [ ] todo, [?] verify (may already 
 - [x] 10-star rating scale with half-star taps (0.5 steps), For You threshold 7+
 - [ ] swipe poster back to proper 2/3 aspect + refresh deck placement
 - [ ] AI-notes prompt rewrite
+
+## Found during testing
+- [x] Search ran AI recommendations for everything; plain title search now hits TMDB directly, AI only for natural-language asks
