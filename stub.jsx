@@ -173,12 +173,6 @@ function buildBelcourtLink(title) {
   return `https://www.belcourt.org/?s=${encodeURIComponent(title)}`;
 }
 
-// Google's showtimes panel is the most reliable local aggregator and honors the zip in the query
-function buildShowtimesLink(title, zip) {
-  const q = `${title} showtimes${zip ? " " + zip : " near me"}`;
-  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
-}
-
 
 function buildRedditLink(title, year) {
   const q = `${title}${year ? " " + year : ""} official discussion`;
@@ -2322,7 +2316,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
    OUT NOW TAB  — movies currently in theaters
 --------------------------------------------------------- */
 
-function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCollection, ownedRating, inWatchlist, zip, onInfo, onSave }) {
+function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCollection, ownedRating, inWatchlist, onInfo, onSave }) {
   return (
     <div className="outnow-hero" onClick={onInfo} style={{ cursor: "pointer" }}>
       {item.backdropPath ? (
@@ -2362,15 +2356,6 @@ function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCo
             {itemBadges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
           </div>
         )}
-        <a
-          className="outnow-showtimes-btn"
-          href={buildShowtimesLink(item.title, zip)}
-          target="_blank"
-          rel="noreferrer"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Clapperboard size={11} /> Showtimes{zip ? ` · ${zip}` : ""}
-        </a>
       </div>
     </div>
   );
@@ -2386,7 +2371,6 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
   const [genreFilter, setGenreFilter] = useState("all");
   const [editingZip, setEditingZip] = useState(false);
   const [localZip, setLocalZip] = useState(settings.zip || "");
-  useEffect(() => { setLocalZip(settings.zip || ""); }, [settings.zip]);
 
   function saveZip() {
     if (onSaveSettings) onSaveSettings({ ...settings, zip: localZip.trim() });
@@ -2575,7 +2559,6 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
                 inCollection={isOwned}
                 ownedRating={ownedRatingMap[item.tmdbId + item.mediaType]}
                 inWatchlist={inWl || added[item.tmdbId]}
-                zip={settings.zip || ""}
                 onInfo={() => setInfoItem(item)}
                 onSave={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
               />
@@ -3727,8 +3710,6 @@ input, textarea { font-family: inherit; }
 .outnow-all-heroes { display: flex; flex-direction: column; gap: 8px; }
 .outnow-zip-row { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 .zip-tap { background: none; border: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 0; text-align: left; }
-.outnow-showtimes-btn { display: inline-flex; align-items: center; gap: 5px; margin-top: 9px; align-self: flex-start; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.28); color: #fff; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 999px; text-decoration: none; backdrop-filter: blur(6px); }
-.outnow-showtimes-btn:hover { background: var(--marquee-red); border-color: var(--marquee-red); }
 .zip-tap:hover { color: var(--cream-text); }
 .zip-tap strong { color: var(--cream-text); }
 .zip-input { background: var(--velvet-2); border: 1px solid var(--line); color: var(--cream-text); border-radius: 6px; padding: 3px 7px; font-size: 16px; width: 100px; }
