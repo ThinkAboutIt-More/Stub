@@ -602,7 +602,7 @@ const WHERE_PRESETS = ["AMC", "Regal", "Belcourt", "Home", "Plane", "Other"];
 
 function LogForm({ initial, onSave, onCancel, saveLabel }) {
   const [date, setDate] = useState(initial?.date || todayISO());
-  const [approx, setApprox] = useState(false);
+  const [dateMode, setDateMode] = useState(initial?.undated ? "anytime" : "exact");
   const [approxYear, setApproxYear] = useState(String(new Date().getFullYear()));
   const initLoc = initial?.location || "";
   const isPreset = WHERE_PRESETS.includes(initLoc);
@@ -612,7 +612,7 @@ function LogForm({ initial, onSave, onCancel, saveLabel }) {
   const [rating, setRating] = useState(initial?.rating ?? 0);
   const [notes, setNotes] = useState(initial?.notes || "");
 
-  const effectiveDate = approx ? `${approxYear}-01-01` : date;
+  const effectiveDate = dateMode === "anytime" ? null : (dateMode === "year" ? `${approxYear}-01-01` : date);
 
   function pickPreset(p) {
     setSelectedPreset(p);
@@ -627,18 +627,21 @@ function LogForm({ initial, onSave, onCancel, saveLabel }) {
     <div className="log-form">
       <label className="field-label">Date watched</label>
       <div className="approx-toggle">
-        <button type="button" className={"approx-chip" + (!approx ? " approx-chip-active" : "")} onClick={() => setApprox(false)}>Exact date</button>
-        <button type="button" className={"approx-chip" + (approx ? " approx-chip-active" : "")} onClick={() => setApprox(true)}>Just the year</button>
+        <button type="button" className={"approx-chip" + (dateMode === "exact" ? " approx-chip-active" : "")} onClick={() => setDateMode("exact")}>Exact date</button>
+        <button type="button" className={"approx-chip" + (dateMode === "year" ? " approx-chip-active" : "")} onClick={() => setDateMode("year")}>Just the year</button>
+        <button type="button" className={"approx-chip" + (dateMode === "anytime" ? " approx-chip-active" : "")} onClick={() => setDateMode("anytime")}>Anytime</button>
       </div>
-      {!approx ? (
+      {dateMode === "exact" ? (
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input className="field-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ flex: 1 }} />
           <button type="button" className="approx-chip approx-chip-active" onClick={() => setDate(todayISO())} style={{ whiteSpace: "nowrap", flexShrink: 0 }}>Today</button>
         </div>
-      ) : (
+      ) : dateMode === "year" ? (
         <select className="field-input" value={approxYear} onChange={(e) => setApproxYear(e.target.value)}>
           {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
+      ) : (
+        <div className="anytime-hint">No specific date. Good for shows you've watched on and off, like a long-running series.</div>
       )}
 
       <label className="field-label">Where</label>
@@ -677,7 +680,7 @@ function LogForm({ initial, onSave, onCancel, saveLabel }) {
         <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
         <button
           className="btn btn-primary"
-          onClick={() => onSave({ id: initial?.id || uid(), date: effectiveDate, location, rating, notes, loggedAt: Date.now() })}
+          onClick={() => onSave({ id: initial?.id || uid(), date: effectiveDate, undated: dateMode === "anytime", location, rating, notes, loggedAt: Date.now() })}
         >
           {saveLabel || "Save"}
         </button>
@@ -808,10 +811,10 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
     const exists = t.viewings.find((v) => v.id === entry.id);
     if (exists) {
       t.viewings = t.viewings.map((v) => (v.id === entry.id ? entry : v));
-      t = withLog(t, `Edited the ${formatDate(entry.date)} entry`);
+      t = withLog(t, entry.date ? `Edited the ${formatDate(entry.date)} entry` : "Edited an undated entry");
     } else {
       t.viewings = [...t.viewings, entry];
-      t = withLog(t, `Logged a rewatch on ${formatDate(entry.date)}`);
+      t = withLog(t, entry.date ? `Logged a rewatch on ${formatDate(entry.date)}` : "Logged an undated rewatch");
     }
     onUpdate(t);
     setEditingViewingId(null);
@@ -931,7 +934,7 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
             <div className="viewing-list">
               {ticket.viewings
                 .slice()
-                .sort((a, b) => (a.date < b.date ? 1 : -1))
+                .sort((a, b) => ((a.date || "") < (b.date || "") ? 1 : -1))
                 .map((v) => (
                   <div className="viewing-row" key={v.id}>
                     {editingViewingId === v.id ? (
@@ -944,7 +947,7 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
                     ) : (
                       <>
                         <div className="viewing-top">
-                          <div className="viewing-date"><CalendarDays size={12} /> {formatDate(v.date)}</div>
+                          <div className="viewing-date"><CalendarDays size={12} /> {v.undated || !v.date ? "Anytime" : formatDate(v.date)}</div>
                           <Stars value={v.rating} size={14} />
                         </div>
                         {v.location && (
@@ -1208,7 +1211,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
     if (yearFilter !== "all") {
       list = list.filter((c) => c.year === yearFilter);
     }
-    const lastDate = (t) => t.viewings[t.viewings.length - 1].date;
+    const lastDate = (t) => t.viewings[t.viewings.length - 1].date || "";
     const lastRating = (t) => t.viewings[t.viewings.length - 1].rating || 0;
     list.sort((a, b) => {
       if (sort === "recent") return lastDate(a) < lastDate(b) ? 1 : -1;
@@ -3604,6 +3607,7 @@ input, textarea { font-family: inherit; }
 .approx-toggle { display: flex; gap: 6px; margin-bottom: 8px; }
 .approx-chip { flex: 1; padding: 7px 0; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--velvet-2); border: 1px solid var(--line); color: var(--muted); }
 .approx-chip-active { background: rgba(226,54,54,0.18); border-color: rgba(226,54,54,0.5); color: #ff8080; }
+.anytime-hint { font-size: 12px; color: var(--muted); background: var(--velvet-2); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; line-height: 1.4; }
 
 /* buttons */
 .btn { border-radius: 999px; padding: 10px 18px; font-size: 13.5px; font-weight: 600; border: none; display: inline-flex; align-items: center; gap: 6px; justify-content: center; }
