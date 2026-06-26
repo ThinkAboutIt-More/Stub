@@ -1663,21 +1663,6 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
 
       {mode === "swipe" && (
         <div className="view-discover">
-          <div className="discover-foot">
-            {lastAction && (
-              <button className="btn btn-ghost btn-sm" onClick={undoLast}>
-                <Undo2 size={14} /> Undo skip
-              </button>
-            )}
-            <button className="btn btn-ghost btn-sm" onClick={() => { reloadAttemptsRef.current = 0; loadPool(true); }}>
-              <RefreshCw size={14} /> Refresh deck
-            </button>
-            {skippedPool.length > 0 && (
-              <button className="btn btn-ghost btn-sm" onClick={replaySkipped}>
-                <Undo2 size={14} /> Replay skipped ({skippedPool.length})
-              </button>
-            )}
-          </div>
           {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Shuffling the deck" body="Pulling titles you haven't seen yet." />}
           {!loading && error && (
             <EmptyState icon={<Info size={32} />} title="Couldn't load new titles" body={`TMDB said: ${error}. Check your API key in settings, then tap refresh.`} />
@@ -1707,6 +1692,21 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
               <button className="toast-close" onClick={() => setJustLogged(null)}><X size={12} /></button>
             </div>
           )}
+          <div className="discover-foot discover-foot-bottom">
+            {lastAction && (
+              <button className="btn btn-ghost btn-sm" onClick={undoLast}>
+                <Undo2 size={14} /> Undo skip
+              </button>
+            )}
+            <button className="btn btn-ghost btn-sm" onClick={() => { reloadAttemptsRef.current = 0; loadPool(true); }}>
+              <RefreshCw size={14} /> Refresh deck
+            </button>
+            {skippedPool.length > 0 && (
+              <button className="btn btn-ghost btn-sm" onClick={replaySkipped}>
+                <Undo2 size={14} /> Replay skipped ({skippedPool.length})
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -2032,6 +2032,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
   const [added, setAdded] = useState({});
   const [window, setWindow] = useState("all");
   const [sort, setSort] = useState("soonest");
+  const [genreFilter, setGenreFilter] = useState("all");
   const [infoItem, setInfoItem] = useState(null);
 
   useEffect(() => {
@@ -2136,15 +2137,23 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
     return { tone: "stretch", text: pick(["Could go either way", "Flip a coin on this one", "Worth a second look maybe", "Might click, might not"], seed) };
   };
 
+  const genreOpts = useMemo(() => {
+    const ids = new Set();
+    items.forEach((x) => (x.genreIds || []).forEach((g) => ids.add(g)));
+    return Array.from(ids).map((id) => ({ id, name: MOVIE_GENRES[id] || TV_GENRES[id] }))
+      .filter((x) => x.name).sort((a, b) => a.name.localeCompare(b.name));
+  }, [items]);
+
   const processed = useMemo(() => {
     let list = items
       .map((x) => ({ ...x, _pct: matchPercent(x, taste) }))
       .filter((x) => inWindow(x.releaseDate));
+    if (genreFilter !== "all") list = list.filter((x) => (x.genreIds || []).includes(Number(genreFilter)));
     if (sort === "soonest") list.sort((a, b) => (a.releaseDate < b.releaseDate ? -1 : 1));
     if (sort === "highest") list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
     if (sort === "lowest") list.sort((a, b) => (a._pct || 0) - (b._pct || 0));
     return list;
-  }, [items, window, sort, taste]);
+  }, [items, window, sort, taste, genreFilter]);
 
   const thisYr = new Date().getFullYear();
   const WINDOWS = [
@@ -2177,6 +2186,15 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
           </button>
         ))}
       </div>
+
+      {genreOpts.length > 0 && (
+        <div className="chip-scroll" style={{ marginTop: 8 }}>
+          <button className={"chip" + (genreFilter === "all" ? " chip-active" : "")} onClick={() => setGenreFilter("all")}>All genres</button>
+          {genreOpts.map((g) => (
+            <button key={g.id} className={"chip" + (genreFilter === String(g.id) ? " chip-active" : "")} onClick={() => setGenreFilter(String(g.id))}>{g.name}</button>
+          ))}
+        </div>
+      )}
 
       {enough && (
         <div className="filter-row" style={{ marginBottom: 12 }}>
@@ -2270,6 +2288,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
   const [added, setAdded] = useState({});
   const [infoItem, setInfoItem] = useState(null);
   const [sort, setSort] = useState("match");
+  const [genreFilter, setGenreFilter] = useState("all");
   const [editingZip, setEditingZip] = useState(false);
   const [localZip, setLocalZip] = useState(settings.zip || "");
 
@@ -2303,8 +2322,16 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
 
   const enough = hasEnoughTaste(collection, feedback);
 
+  const genreOpts = useMemo(() => {
+    const ids = new Set();
+    items.forEach((x) => (x.genreIds || []).forEach((g) => ids.add(g)));
+    return Array.from(ids).map((id) => ({ id, name: MOVIE_GENRES[id] || TV_GENRES[id] }))
+      .filter((x) => x.name).sort((a, b) => a.name.localeCompare(b.name));
+  }, [items]);
+
   const processed = useMemo(() => {
     let list = items.map((x) => ({ ...x, _pct: matchPercent(x, taste) }));
+    if (genreFilter !== "all") list = list.filter((x) => (x.genreIds || []).includes(Number(genreFilter)));
     if (sort === "match") list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
     else if (sort === "lowest") list.sort((a, b) => (a._pct || 0) - (b._pct || 0));
     else if (sort === "genre") list.sort((a, b) => {
@@ -2313,7 +2340,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
       return ag.localeCompare(bg);
     });
     return list;
-  }, [items, taste, sort]);
+  }, [items, taste, sort, genreFilter]);
 
   const note = (item, pct) => {
     if (pct == null) return null;
@@ -2406,6 +2433,15 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
         <button className={"chip" + (sort === "lowest" ? " chip-active" : "")} onClick={() => setSort("lowest")}>Lowest match</button>
         <button className={"chip" + (sort === "genre" ? " chip-active" : "")} onClick={() => setSort("genre")}>Genre A–Z</button>
       </div>
+
+      {genreOpts.length > 0 && (
+        <div className="chip-scroll" style={{ marginBottom: 12 }}>
+          <button className={"chip" + (genreFilter === "all" ? " chip-active" : "")} onClick={() => setGenreFilter("all")}>All genres</button>
+          {genreOpts.map((g) => (
+            <button key={g.id} className={"chip" + (genreFilter === String(g.id) ? " chip-active" : "")} onClick={() => setGenreFilter(String(g.id))}>{g.name}</button>
+          ))}
+        </div>
+      )}
 
       {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Loading theaters" body="Pulling what's playing right now." />}
       {!loading && error && <EmptyState icon={<Info size={32} />} title="Couldn't load" body={`TMDB said: ${error}`} />}
@@ -3687,6 +3723,7 @@ input, textarea { font-family: inherit; }
 /* swipe poster tap */
 .swipe-poster-btn { display: block; width: 100%; padding: 0; border: none; background: none; position: relative; cursor: pointer; flex: 1 1 0; min-height: 0; overflow: hidden; }
 .discover-foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 12px; }
+.discover-foot-bottom { margin-top: 10px; margin-bottom: 0; }
 
 /* suggestion rows */
 .suggest-thumb-btn, .coming-thumb-btn { padding: 0; border: none; background: none; flex-shrink: 0; cursor: pointer; }
