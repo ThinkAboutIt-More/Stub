@@ -1135,6 +1135,9 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
   const [query, setQuery] = useState("");
   const [scanning, setScanning] = useState(false);
   const [yearFilter, setYearFilter] = useState("all");
+  const [wlQuery, setWlQuery] = useState("");
+  const [wlGenre, setWlGenre] = useState("all");
+  const [wlSort, setWlSort] = useState("added");
 
   const genreOptions = useMemo(() => {
     const ids = new Set();
@@ -1144,6 +1147,26 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
       .filter((x) => x.name)
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [collection]);
+
+  const wlGenreOptions = useMemo(() => {
+    const ids = new Set();
+    (watchlist || []).forEach((w) => (w.genreIds || []).forEach((g) => ids.add(g)));
+    return Array.from(ids)
+      .map((id) => ({ id, name: MOVIE_GENRES[id] || TV_GENRES[id] }))
+      .filter((x) => x.name)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [watchlist]);
+
+  const visibleWatchlist = useMemo(() => {
+    let list = (watchlist || []).slice();
+    const q = wlQuery.trim().toLowerCase();
+    if (q) list = list.filter((w) => (w.title || "").toLowerCase().includes(q));
+    if (wlGenre !== "all") list = list.filter((w) => (w.genreIds || []).includes(Number(wlGenre)));
+    if (wlSort === "title") list.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+    else if (wlSort === "year") list.sort((a, b) => String(b.releaseDate || "").localeCompare(String(a.releaseDate || "")));
+    // "added" keeps insertion order (most-recent first as stored)
+    return list;
+  }, [watchlist, wlQuery, wlGenre, wlSort]);
 
   const yearOptions = useMemo(() => {
     const years = new Set(collection.map((c) => c.year).filter(Boolean));
@@ -1297,17 +1320,49 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
             body="Swipe right on something in Discover, or save it from Search, and it'll wait here until you've watched it."
           />
         ) : (
-          <div className="stub-grid stub-grid-compact">
-            {watchlist.map((w) => (
-              <WatchlistStub
-                key={w.tmdbId + w.mediaType}
-                item={w}
-                onClick={() => setDetail(w)}
-                onLog={() => setLoggingWl(w)}
-                onRemove={() => onRemoveFromWatchlist(w)}
-              />
-            ))}
-          </div>
+          <>
+            <div className="collection-controls">
+              <div className="search-bar collection-search">
+                <Search size={15} />
+                <input
+                  className="search-input"
+                  placeholder="Search your wishlist"
+                  value={wlQuery}
+                  onChange={(e) => setWlQuery(e.target.value)}
+                />
+              </div>
+              <div className="filter-row">
+                <select className="filter-select" value={wlSort} onChange={(e) => setWlSort(e.target.value)}>
+                  <option value="added">Recently added</option>
+                  <option value="title">Title A–Z</option>
+                  <option value="year">Newest release</option>
+                </select>
+                {wlGenreOptions.length > 0 && (
+                  <select className="filter-select" value={wlGenre} onChange={(e) => setWlGenre(e.target.value)}>
+                    <option value="all">All genres</option>
+                    {wlGenreOptions.map((g) => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+            {visibleWatchlist.length === 0 ? (
+              <EmptyState icon={<Search size={28} />} title="No matches" body="Nothing in your wishlist fits that filter." />
+            ) : (
+              <div className="stub-grid stub-grid-compact">
+                {visibleWatchlist.map((w) => (
+                  <WatchlistStub
+                    key={w.tmdbId + w.mediaType}
+                    item={w}
+                    onClick={() => setDetail(w)}
+                    onLog={() => setLoggingWl(w)}
+                    onRemove={() => onRemoveFromWatchlist(w)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )
       )}
 
@@ -1489,19 +1544,22 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
       const intlLangs = ["ko", "ja", "fr", "es", "it", "de", "hi", "zh"];
       const langA = intlLangs[pageNum % intlLangs.length];
       const langB = intlLangs[(pageNum + 3) % intlLangs.length];
+      const yr = new Date().getFullYear();
+      const recentFloor = `${yr - 6}-01-01`;   // skew the deck to the last ~6 years
+      const freshFloor = `${yr - 2}-01-01`;     // plus a heavy dose of the last 2
       const calls = [
         tmdb.trendingWeek(),
-        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "vote_count.gte": 80 }),
-        tmdb.discoverMovie({ sort_by: "vote_average.desc", page: pageNum, with_original_language: "en", "vote_count.gte": 300 }),
-        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: langA, "vote_count.gte": 40 }),
-        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: langB, "vote_count.gte": 40 }),
+        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "vote_count.gte": 80, "primary_release_date.gte": recentFloor }),
+        tmdb.discoverMovie({ sort_by: "vote_average.desc", page: pageNum, with_original_language: "en", "vote_count.gte": 300, "primary_release_date.gte": recentFloor }),
+        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "vote_count.gte": 50, "primary_release_date.gte": freshFloor }),
+        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: langA, "vote_count.gte": 40, "primary_release_date.gte": recentFloor }),
+        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: langB, "vote_count.gte": 40, "primary_release_date.gte": recentFloor }),
         tmdb.popularTv(pageNum),
-        tmdb.topRatedMovies(pageNum),
         tmdb.nowPlaying(pageNum)
       ];
       if (topGenres) {
-        calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "popularity.desc", page: pageNum, with_original_language: "en" }));
-        calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 200 }));
+        calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "primary_release_date.gte": recentFloor }));
+        calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 200, "primary_release_date.gte": recentFloor }));
         calls.push(tmdb.discoverTv({ with_genres: topGenres, sort_by: "popularity.desc", page: pageNum, with_original_language: "en" }));
       }
       const pages = await Promise.all(calls);
@@ -2098,10 +2156,12 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
 
   const note = (item, pct) => {
     if (pct == null) return null;
-    const topUserGenres = Object.entries(getWeights(taste)).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
+    const _w = getWeights(taste);
+    const likedGenres = Object.entries(_w).filter(([, v]) => v > 0).map(([g]) => Number(g));
+    const topUserGenres = Object.entries(_w).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
     const itemGenres = item.genreIds || [];
-    const overlapping = itemGenres.filter((g) => topUserGenres.includes(g));
-    const nonOverlapping = itemGenres.filter((g) => !topUserGenres.includes(g));
+    const overlapping = itemGenres.filter((g) => likedGenres.includes(g));
+    const nonOverlapping = itemGenres.filter((g) => !likedGenres.includes(g));
     const gName = (id) => MOVIE_GENRES[id] || TV_GENRES[id];
     const pick = (arr, seed) => arr[seed % arr.length];
     const seed = item.tmdbId % 13;
@@ -2179,32 +2239,24 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
         />
       )}
 
-      <div className="chip-scroll">
-        {WINDOWS.map((w) => (
-          <button key={w.id} className={"chip" + (window === w.id ? " chip-active" : "")} onClick={() => setWindow(w.id)}>
-            {w.label}
-          </button>
-        ))}
-      </div>
-
-      {genreOpts.length > 0 && (
-        <div className="chip-scroll" style={{ marginTop: 8 }}>
-          <button className={"chip" + (genreFilter === "all" ? " chip-active" : "")} onClick={() => setGenreFilter("all")}>All genres</button>
-          {genreOpts.map((g) => (
-            <button key={g.id} className={"chip" + (genreFilter === String(g.id) ? " chip-active" : "")} onClick={() => setGenreFilter(String(g.id))}>{g.name}</button>
-          ))}
-        </div>
-      )}
-
-      {enough && (
-        <div className="filter-row" style={{ marginBottom: 12 }}>
+      <div className="filter-row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
+        <select className="filter-select" value={window} onChange={(e) => setWindow(e.target.value)}>
+          {WINDOWS.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
+        </select>
+        {genreOpts.length > 0 && (
+          <select className="filter-select" value={genreFilter} onChange={(e) => setGenreFilter(e.target.value)}>
+            <option value="all">All genres</option>
+            {genreOpts.map((g) => <option key={g.id} value={String(g.id)}>{g.name}</option>)}
+          </select>
+        )}
+        {enough && (
           <select className="filter-select" value={sort} onChange={(e) => setSort(e.target.value)}>
             <option value="soonest">Soonest first</option>
             <option value="highest">Highest match</option>
             <option value="lowest">Lowest match</option>
           </select>
-        </div>
-      )}
+        )}
+      </div>
 
       {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Checking the calendar" body="Pulling what's headed to theaters." />}
       {!loading && error && <EmptyState icon={<Info size={32} />} title="Couldn't load release dates" body={`TMDB said: ${error}`} />}
@@ -2344,10 +2396,12 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
 
   const note = (item, pct) => {
     if (pct == null) return null;
-    const topUserGenres = Object.entries(getWeights(taste)).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
+    const _w = getWeights(taste);
+    const likedGenres = Object.entries(_w).filter(([, v]) => v > 0).map(([g]) => Number(g));
+    const topUserGenres = Object.entries(_w).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
     const itemGenres = item.genreIds || [];
-    const overlapping = itemGenres.filter((g) => topUserGenres.includes(g));
-    const nonOverlapping = itemGenres.filter((g) => !topUserGenres.includes(g));
+    const overlapping = itemGenres.filter((g) => likedGenres.includes(g));
+    const nonOverlapping = itemGenres.filter((g) => !likedGenres.includes(g));
     const gName = (id) => MOVIE_GENRES[id] || TV_GENRES[id];
     const pick = (arr, seed) => arr[seed % arr.length];
     const seed = item.tmdbId % 13;
@@ -2435,11 +2489,11 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
       </div>
 
       {genreOpts.length > 0 && (
-        <div className="chip-scroll" style={{ marginBottom: 12 }}>
-          <button className={"chip" + (genreFilter === "all" ? " chip-active" : "")} onClick={() => setGenreFilter("all")}>All genres</button>
-          {genreOpts.map((g) => (
-            <button key={g.id} className={"chip" + (genreFilter === String(g.id) ? " chip-active" : "")} onClick={() => setGenreFilter(String(g.id))}>{g.name}</button>
-          ))}
+        <div className="filter-row" style={{ marginBottom: 12 }}>
+          <select className="filter-select" value={genreFilter} onChange={(e) => setGenreFilter(e.target.value)}>
+            <option value="all">All genres</option>
+            {genreOpts.map((g) => <option key={g.id} value={String(g.id)}>{g.name}</option>)}
+          </select>
         </div>
       )}
 
@@ -2730,11 +2784,12 @@ function buildWhyWatch(item, taste, matchPct, voteAvg) {
   if (matchPct == null) return null;
   const pct = matchPct;
   const weights = getWeights(taste);
+  const likedGenres = Object.entries(weights).filter(([, v]) => v > 0).map(([g]) => Number(g));
   const topUserGenres = Object.entries(weights).filter(([, v]) => v > 0)
     .sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
   const gName = (id) => MOVIE_GENRES[id] || TV_GENRES[id];
   const itemGenres = item.genreIds || [];
-  const overlap = itemGenres.filter((g) => topUserGenres.includes(g)).map(gName).filter(Boolean);
+  const overlap = itemGenres.filter((g) => likedGenres.includes(g)).map(gName).filter(Boolean);
   const offGenre = itemGenres.map(gName).filter(Boolean).find((g) => !overlap.includes(g));
   const g = overlap[0];
   const good = voteAvg != null && voteAvg >= 7;
