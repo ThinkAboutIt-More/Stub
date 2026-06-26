@@ -1343,21 +1343,15 @@ function EmptyState({ icon, title, body }) {
 --------------------------------------------------------- */
 
 function SwipeButtons({ onSkip, onSeen, onWant }) {
-  const [burst, setBurst] = useState(null);
-  function fire(kind, fn) {
-    setBurst(kind);
-    setTimeout(() => setBurst(null), 480);
-    fn();
-  }
   return (
     <div className="swipe-buttons">
-      <button className={"round-btn round-btn-skip" + (burst === "skip" ? " round-btn-burst" : "")} onClick={() => fire("skip", onSkip)} aria-label="Skip">
+      <button className="round-btn round-btn-skip" onClick={onSkip} aria-label="Skip">
         <X size={22} />
       </button>
-      <button className={"round-btn round-btn-seen" + (burst === "seen" ? " round-btn-burst" : "")} onClick={() => fire("seen", onSeen)} aria-label="Already seen it">
+      <button className="round-btn round-btn-seen" onClick={onSeen} aria-label="Already seen it">
         <Eye size={26} />
       </button>
-      <button className={"round-btn round-btn-want" + (burst === "want" ? " round-btn-burst" : "")} onClick={() => fire("want", onWant)} aria-label="Save to want-to-see">
+      <button className="round-btn round-btn-want" onClick={onWant} aria-label="Save to want-to-see">
         <Bookmark size={20} />
       </button>
     </div>
@@ -3412,7 +3406,7 @@ input, textarea { font-family: inherit; }
   touch-action: none; user-select: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
   border: 1px solid rgba(226,54,54,0.1);
 }
-.swipe-poster { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; }
+.swipe-poster { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; max-height: 360px; }
 .swipe-poster-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); background: var(--velvet-2); }
 .swipe-meta { padding: 10px 12px 4px; }
 .swipe-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
@@ -3423,14 +3417,6 @@ input, textarea { font-family: inherit; }
 .round-btn-skip { background: #152535; border: 1.5px solid rgba(80,140,220,0.55); color: #7ec2ff; box-shadow: 0 4px 14px rgba(80,140,220,0.18); }
 .round-btn-seen { background: #3a2200; border: 2px solid rgba(220,170,50,0.6); color: #f0c060; width: 62px; height: 62px; box-shadow: 0 4px 18px rgba(220,170,50,0.22); }
 .round-btn-want { background: #0a2818; border: 1.5px solid rgba(60,200,110,0.55); color: #6ae898; box-shadow: 0 4px 14px rgba(60,200,110,0.18); }
-@keyframes round-btn-burst {
-  0%   { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,255,255,0.6); }
-  20%  { transform: scale(1.45); box-shadow: 0 0 0 14px rgba(255,255,255,0.0); }
-  50%  { transform: scale(1.12); }
-  75%  { transform: scale(0.9); }
-  100% { transform: scale(1); }
-}
-.round-btn-burst { animation: round-btn-burst 0.5s cubic-bezier(.2,.8,.3,1); }
 .swipe-flag { position: absolute; top: 20px; font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 0.05em; padding: 6px 14px; border-radius: 6px; z-index: 3; transform: rotate(-8deg); }
 .swipe-flag-want { left: 16px; border: 3px solid #6fbf73; color: #6fbf73; }
 .swipe-flag-skip { right: 16px; border: 3px solid #e9695f; color: #e9695f; transform: rotate(8deg); }
@@ -3446,10 +3432,9 @@ input, textarea { font-family: inherit; }
   0%   { transform: translateY(0) scale(1); opacity: 1; }
   100% { transform: translateY(-90vh) scale(0.65); opacity: 0; }
 }
-.swipe-fly-left  { animation: swipe-fly-left  0.38s cubic-bezier(0.4,0,1,1) forwards; pointer-events: none; }
-.swipe-fly-right { animation: swipe-fly-right 0.38s cubic-bezier(0.4,0,1,1) forwards; pointer-events: none; }
-.swipe-fly-up    { animation: swipe-fly-up    0.32s cubic-bezier(0.4,0,1,1) forwards; pointer-events: none; }
-.refresh-btn { margin-top: 18px; }
+.swipe-fly-left  { animation: swipe-fly-left  0.22s cubic-bezier(0.4,0,1,1) forwards; pointer-events: none; }
+.swipe-fly-right { animation: swipe-fly-right 0.22s cubic-bezier(0.4,0,1,1) forwards; pointer-events: none; }
+.swipe-fly-up    { animation: swipe-fly-up    0.22s cubic-bezier(0.4,0,1,1) forwards; pointer-events: none; }
 
 /* out now cards */
 .outnow-hero { position: relative; border-radius: 14px; overflow: hidden; cursor: pointer; }
@@ -3572,7 +3557,6 @@ input, textarea { font-family: inherit; }
 
 /* swipe poster tap */
 .swipe-poster-btn { display: block; width: 100%; padding: 0; border: none; background: none; position: relative; cursor: pointer; }
-.swipe-info-hint { position: absolute; bottom: 10px; right: 10px; display: flex; align-items: center; gap: 4px; font-size: 11px; color: #fff; background: rgba(10,7,8,0.6); padding: 4px 8px; border-radius: 999px; }
 .discover-foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 12px; }
 
 /* suggestion rows */
