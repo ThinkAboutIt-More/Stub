@@ -2369,13 +2369,6 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
   const [infoItem, setInfoItem] = useState(null);
   const [sort, setSort] = useState("match");
   const [genreFilter, setGenreFilter] = useState("all");
-  const [editingZip, setEditingZip] = useState(false);
-  const [localZip, setLocalZip] = useState(settings.zip || "");
-
-  function saveZip() {
-    if (onSaveSettings) onSaveSettings({ ...settings, zip: localZip.trim() });
-    setEditingZip(false);
-  }
 
   useEffect(() => {
     let active = true;
@@ -2493,31 +2486,6 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
           onLogNew={onLogNew}
         />
       )}
-
-      <div className="outnow-zip-row">
-        <MapPin size={11} />
-        {editingZip ? (
-          <>
-            <input
-              className="zip-input"
-              type="text"
-              inputMode="numeric"
-              placeholder="ZIP code"
-              value={localZip}
-              onChange={(e) => setLocalZip(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") saveZip(); if (e.key === "Escape") setEditingZip(false); }}
-              autoFocus
-              maxLength={10}
-            />
-            <button className="zip-save-btn" onClick={saveZip}>Save</button>
-            <button className="zip-cancel-btn" onClick={() => setEditingZip(false)}>✕</button>
-          </>
-        ) : (
-          <button className="zip-tap" onClick={() => { setLocalZip(settings.zip || ""); setEditingZip(true); }}>
-            {settings.zip ? <><strong>{settings.zip}</strong> · tap to edit</> : "Tap to set zip for showtimes"}
-          </button>
-        )}
-      </div>
 
       <div className="chip-scroll" style={{ marginBottom: 12 }}>
         <button className={"chip" + (sort === "match" ? " chip-active" : "")} onClick={() => setSort("match")}>Highest match</button>
