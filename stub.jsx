@@ -701,20 +701,23 @@ function TicketStub({ ticket, onOpen }) {
 
 function WatchlistStub({ item, onClick, onLog, onRemove }) {
   return (
-    <div className="wl-stub">
-      <button className="wl-poster-btn" onClick={onClick} aria-label={item.title}>
-        {item.posterPath ? (
-          <img src={tmdbImg(item.posterPath, "w342")} alt="" className="wl-poster" loading="lazy" />
-        ) : (
-          <div className="wl-poster wl-poster-fallback">
-            {item.mediaType === "tv" ? <Tv size={28} /> : <Film size={28} />}
-          </div>
-        )}
-        <div className="stub-perf" />
+    <div className="stub">
+      <button className="stub-poster-link" onClick={onClick} aria-label={item.title}>
+        <div className="stub-poster">
+          {item.posterPath ? (
+            <img src={tmdbImg(item.posterPath, "w342")} alt="" loading="lazy" />
+          ) : (
+            <div className="stub-poster-fallback">
+              {item.mediaType === "tv" ? <Tv size={28} /> : <Film size={28} />}
+            </div>
+          )}
+          <div className="stub-perf" />
+        </div>
       </button>
-      <div className="wl-tab">
-        <div className="wl-title">{item.title}</div>
-        <div className="wl-year">{item.year}</div>
+      <div className="stub-tab">
+        <div className="stub-tab-top">
+          <div className="stub-title">{item.title}</div>
+        </div>
         <div className="wl-actions">
           <button className="wl-watched-btn" onClick={(e) => { e.stopPropagation(); onLog(); }}>
             <Check size={12} /> Watched
@@ -724,6 +727,7 @@ function WatchlistStub({ item, onClick, onLog, onRemove }) {
           </button>
         </div>
       </div>
+      <span className="stub-shine" />
     </div>
   );
 }
@@ -1293,7 +1297,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
             body="Swipe right on something in Discover, or save it from Search, and it'll wait here until you've watched it."
           />
         ) : (
-          <div className="stub-grid">
+          <div className="stub-grid stub-grid-compact">
             {watchlist.map((w) => (
               <WatchlistStub
                 key={w.tmdbId + w.mediaType}
@@ -1480,10 +1484,17 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
     try {
       const topGenres = Object.entries(getWeights(taste)).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g).join(",");
       const pageNum = pageRef.current;
+      // Balance the deck across languages so no single country's output dominates:
+      // English-forward, plus a rotating pair of international languages each load.
+      const intlLangs = ["ko", "ja", "fr", "es", "it", "de", "hi", "zh"];
+      const langA = intlLangs[pageNum % intlLangs.length];
+      const langB = intlLangs[(pageNum + 3) % intlLangs.length];
       const calls = [
         tmdb.trendingWeek(),
-        tmdb.popularMovies(pageNum),
-        tmdb.popularMovies(pageNum + 1),
+        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "vote_count.gte": 80 }),
+        tmdb.discoverMovie({ sort_by: "vote_average.desc", page: pageNum, with_original_language: "en", "vote_count.gte": 300 }),
+        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: langA, "vote_count.gte": 40 }),
+        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: langB, "vote_count.gte": 40 }),
         tmdb.popularTv(pageNum),
         tmdb.topRatedMovies(pageNum),
         tmdb.nowPlaying(pageNum)
@@ -3436,6 +3447,9 @@ input, textarea { font-family: inherit; }
 .wl-title { font-size: 12px; font-weight: 700; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 2px; }
 .wl-year { font-size: 10.5px; color: rgba(0,0,0,0.5); margin-bottom: 6px; }
 .wl-actions { display: flex; align-items: center; gap: 5px; }
+.stub-poster-link { display: block; width: 100%; padding: 0; border: none; background: none; cursor: pointer; }
+.stub-grid-compact .wl-watched-btn { font-size: 10px; padding: 4px 4px; }
+.stub-grid-compact .wl-remove-btn { width: 22px; height: 22px; }
 .wl-watched-btn { flex: 1; background: var(--marquee-red); color: #fff; border: none; border-radius: 999px; padding: 5px 8px; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 3px; cursor: pointer; }
 .wl-remove-btn { background: rgba(0,0,0,0.1); border: none; color: rgba(0,0,0,0.5); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
 

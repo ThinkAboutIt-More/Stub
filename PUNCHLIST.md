@@ -29,10 +29,10 @@ Status: [x] done & deployed, [~] in progress, [ ] todo, [?] verify (may already 
 - [x] 9. "Your kind of adventure" repeated across most movies
 - [ ] 10. Coming Soon shows "your kind of adventure" AND "right in your adventure lane"; keep concise
 - [x] 15. Repetitive descriptions; same 3-4 phrases shared everywhere; should vary as it learns
-- [ ] 6. Lots of Indian movies; ensure notable films in other languages are represented too
+- [x] 6. Lots of Indian movies; ensure notable films in other languages are represented too
 
 ## Batch 6 — wishlist + TV logging
-- [ ] 20. Wishlist should mirror the Collected tab but with a "watched" button instead of rating stars
+- [x] 20. Wishlist should mirror the Collected tab but with a "watched" button instead of rating stars
 - [ ] 11. Creative way to log shows (Law & Order 1999, Simpsons) without an exact date
 
 ## Batch 7 — polish
