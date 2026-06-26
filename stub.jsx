@@ -3514,18 +3514,19 @@ input, textarea { font-family: inherit; }
 
 /* discover swipe */
 .view-discover { display: flex; flex-direction: column; align-items: center; }
-.swipe-stack { width: 100%; max-width: 340px; }
+.swipe-stack { width: 100%; max-width: 340px; height: calc(100dvh - 240px); display: flex; flex-direction: column; }
 .swipe-card {
   background: var(--velvet); border-radius: 18px; overflow: hidden; position: relative;
   touch-action: none; user-select: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
   border: 1px solid rgba(226,54,54,0.1);
+  flex: 1; display: flex; flex-direction: column; min-height: 0;
 }
-.swipe-poster { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; max-height: min(510px, calc(100dvh - 380px)); }
+.swipe-poster { width: 100%; height: 100%; object-fit: cover; display: block; }
 .swipe-poster-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); background: var(--velvet-2); }
-.swipe-meta { padding: 10px 12px 4px; }
+.swipe-meta { padding: 10px 12px 4px; flex-shrink: 0; }
 .swipe-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
 .swipe-genres { color: var(--muted); font-size: 12px; }
-.swipe-buttons { display: flex; justify-content: center; align-items: center; gap: 20px; padding: 10px 0 14px; }
+.swipe-buttons { display: flex; justify-content: center; align-items: center; gap: 20px; padding: 10px 0 14px; flex-shrink: 0; }
 .round-btn { width: 52px; height: 52px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; transition: transform 0.1s, box-shadow 0.1s; }
 .round-btn:active { transform: scale(0.82); box-shadow: 0 0 0 6px rgba(255,255,255,0.1); }
 .round-btn-skip { background: #152535; border: 1.5px solid rgba(80,140,220,0.55); color: #7ec2ff; box-shadow: 0 4px 14px rgba(80,140,220,0.18); }
@@ -3670,7 +3671,7 @@ input, textarea { font-family: inherit; }
 .match-low { background: rgba(90,80,80,0.9); color: #ffffff; border: 1px solid rgba(210,200,200,0.7); }
 
 /* swipe poster tap */
-.swipe-poster-btn { display: block; width: 100%; padding: 0; border: none; background: none; position: relative; cursor: pointer; }
+.swipe-poster-btn { display: block; width: 100%; padding: 0; border: none; background: none; position: relative; cursor: pointer; flex: 1 1 0; min-height: 0; overflow: hidden; }
 .discover-foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 12px; }
 
 /* suggestion rows */
