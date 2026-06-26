@@ -2208,35 +2208,41 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
    OUT NOW TAB  — movies currently in theaters
 --------------------------------------------------------- */
 
-function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inWatchlist, settings, onInfo, onSave }) {
+function OutNowHeroCard({ item, enough, itemNote, itemBadges, isOwned, inWatchlist, onInfo, onSave }) {
   return (
-    <div className={"outnow-hero" + (idx > 0 ? " outnow-hero-secondary" : "")} onClick={onInfo} style={{ cursor: "pointer" }}>
-      {item.backdropPath ? (
-        <img src={tmdbImg(item.backdropPath, "w780")} alt="" className="outnow-hero-img" />
-      ) : item.posterPath ? (
-        <img src={tmdbImg(item.posterPath, "w500")} alt="" className="outnow-hero-img outnow-hero-poster" />
-      ) : (
-        <div className="outnow-hero-img outnow-hero-blank"><Film size={36} /></div>
-      )}
-      <div className="outnow-hero-overlay">
-        <div className="outnow-hero-top">
-          {enough && item._pct != null && (
-            <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}% match</span>
-          )}
-          {inWatchlist && <span className="watchlist-badge"><Bookmark size={10} /> Saved</span>}
-          {itemNote && <span className={"proactive-note note-" + itemNote.tone} style={{ margin: 0 }}>{itemNote.text}</span>}
+    <div className="outnow-row" onClick={onInfo}>
+      <button className="coming-thumb-btn" onClick={(e) => { e.stopPropagation(); onInfo(); }} aria-label={`Details for ${item.title}`}>
+        {item.posterPath ? (
+          <img src={tmdbImg(item.posterPath, "w154")} alt="" className="coming-thumb" />
+        ) : (
+          <div className="coming-thumb coming-thumb-fallback"><Film size={18} /></div>
+        )}
+      </button>
+      <div className="coming-info">
+        <div className="suggest-title-row">
+          <button className="suggest-title-btn" onClick={(e) => { e.stopPropagation(); onInfo(); }}>{item.title}</button>
+          <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
+            {inWatchlist && <span className="watchlist-badge"><Bookmark size={10} /></span>}
+            {enough && item._pct != null && (
+              <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
+            )}
+          </div>
         </div>
-        <div className={"outnow-hero-title" + (idx > 0 ? " outnow-hero-title-sm" : "")}>{item.title}</div>
-        <div className="outnow-hero-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ")}</div>
+        <div className="coming-date">{genreNames(item.genreIds, item.mediaType).slice(0, 2).join(" · ")}</div>
         {itemBadges.length > 0 && (
-          <div className="badge-row" style={{ marginBottom: 8 }}>
+          <div className="badge-row">
             {itemBadges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
           </div>
         )}
-        <div className="outnow-hero-btns" onClick={(e) => e.stopPropagation()}>
-          <button className={"hero-btn hero-btn-icon" + (isOwned ? " hero-btn-active" : "")} onClick={onSave} aria-label="Save to wishlist"><Bookmark size={14} /></button>
-        </div>
+        {itemNote && <div className={"proactive-note note-" + itemNote.tone}>{itemNote.text}</div>}
       </div>
+      <button
+        className={"icon-btn" + (isOwned ? " icon-btn-active" : "")}
+        onClick={(e) => { e.stopPropagation(); onSave(); }}
+        aria-label="Save to wishlist"
+      >
+        <Bookmark size={16} />
+      </button>
     </div>
   );
 }
@@ -2392,8 +2398,8 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
       )}
 
       {!loading && !error && processed.length > 0 && (
-        <div className="outnow-all-heroes">
-          {processed.map((item, idx) => {
+        <div className="outnow-list">
+          {processed.map((item) => {
             const itemNote = enough ? note(item, item._pct) : null;
             const itemBadges = badgesFor(item, people, taste);
             const isOwned = ownedSet.has(item.tmdbId + item.mediaType);
@@ -2402,13 +2408,11 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
               <OutNowHeroCard
                 key={item.tmdbId}
                 item={item}
-                idx={idx}
                 enough={enough}
                 itemNote={itemNote}
                 itemBadges={itemBadges}
                 isOwned={isOwned || added[item.tmdbId]}
                 inWatchlist={inWl || added[item.tmdbId]}
-                settings={settings}
                 onInfo={() => setInfoItem(item)}
                 onSave={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
               />
@@ -3221,7 +3225,7 @@ input, textarea { font-family: inherit; }
 }
 .wordmark-dot { color: var(--marquee-red); }
 
-.app-main { flex: 1; padding: 2px 14px 86px; }
+.app-main { flex: 1; padding: 2px 14px 140px; }
 
 .tab-bar {
   position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
@@ -3445,23 +3449,7 @@ input, textarea { font-family: inherit; }
 .swipe-fly-up    { animation: swipe-fly-up    0.32s cubic-bezier(0.4,0,1,1) forwards; pointer-events: none; }
 .refresh-btn { margin-top: 18px; }
 
-/* out now hero */
-.outnow-hero { position: relative; border-radius: 16px; overflow: hidden; margin-bottom: 6px; cursor: pointer; }
-.outnow-hero-img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; background: var(--velvet-2); }
-.outnow-hero-poster { aspect-ratio: 2/3; max-height: 280px; }
-.outnow-hero-blank { display: flex; align-items: center; justify-content: center; background: var(--velvet-2); color: var(--brass); aspect-ratio: 16/9; }
-.outnow-hero-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 36px 14px 12px; background: linear-gradient(to top, rgba(10,5,9,0.96) 25%, rgba(10,5,9,0.55) 55%, transparent); }
-.outnow-hero-top { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 7px; }
-.outnow-hero-title { font-size: 22px; font-weight: 800; color: var(--cream-text); line-height: 1.2; margin-bottom: 4px; }
-.outnow-hero-genres { font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 10px; }
-.outnow-hero-btns { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.hero-btn { padding: 8px 16px; border-radius: 20px; font-size: 12.5px; font-weight: 700; background: var(--marquee-red); color: #fff; border: none; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
-.hero-btn-ghost { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18); }
-.hero-btn-icon { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18); padding: 8px 10px; }
-.hero-btn-active { background: rgba(226,54,54,0.7) !important; border-color: var(--marquee-red) !important; }
-.outnow-all-heroes { display: flex; flex-direction: column; gap: 10px; }
-.outnow-hero-secondary .outnow-hero-img { aspect-ratio: 16/9; }
-.outnow-hero-title-sm { font-size: 17px; }
+/* out now rows */
 .outnow-zip-row { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 .zip-tap { background: none; border: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 0; text-align: left; }
 .zip-tap:hover { color: var(--cream-text); }
@@ -3487,9 +3475,9 @@ input, textarea { font-family: inherit; }
 .td-hero-genres { font-size: 12px; color: rgba(255,255,255,0.55); }
 .td-overview { font-size: 13px; color: var(--muted); line-height: 1.55; margin: 12px 0 4px; }
 
-/* suggestions / search / coming soon shared rows */
-.suggest-list, .coming-list { display: flex; flex-direction: column; gap: 10px; }
-.suggest-row, .coming-row { display: flex; gap: 12px; background: var(--velvet); border-radius: 12px; padding: 10px 12px; position: relative; cursor: pointer; }
+/* suggestions / search / coming soon / out now shared rows */
+.suggest-list, .coming-list, .outnow-list { display: flex; flex-direction: column; gap: 10px; }
+.suggest-row, .coming-row, .outnow-row { display: flex; gap: 12px; background: var(--velvet); border-radius: 12px; padding: 10px 12px; position: relative; cursor: pointer; }
 .suggest-thumb, .coming-thumb { width: 46px; height: 69px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: var(--velvet-2); }
 .suggest-thumb-fallback, .coming-thumb-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); }
 .suggest-info, .coming-info { flex: 1; min-width: 0; }
