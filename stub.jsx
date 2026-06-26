@@ -379,16 +379,6 @@ function badgesFor(item, people, tasteWeights) {
     const sharedActor = (item.credits.cast || []).find((c) => actNames.has(c.id));
     if (sharedActor) out.push({ kind: "actor", text: `Stars ${sharedActor.name}` });
   }
-  const tw = getWeights(tasteWeights);
-  if (tw && item.genreIds) {
-    const topGenre = item.genreIds
-      .map((g) => ({ g, w: tw[g] || 0 }))
-      .sort((a, b) => b.w - a.w)[0];
-    if (topGenre && topGenre.w > 4) {
-      const name = MOVIE_GENRES[topGenre.g] || TV_GENRES[topGenre.g];
-      if (name) out.push({ kind: "genre", text: `Your kind of ${name}` });
-    }
-  }
   return out.slice(0, 2);
 }
 
@@ -589,6 +579,8 @@ const WHERE_PRESETS = ["AMC", "Regal", "Belcourt", "Home", "Plane", "Other"];
 
 function LogForm({ initial, onSave, onCancel, saveLabel }) {
   const [date, setDate] = useState(initial?.date || todayISO());
+  const [approx, setApprox] = useState(false);
+  const [approxYear, setApproxYear] = useState(String(new Date().getFullYear()));
   const initLoc = initial?.location || "";
   const isPreset = WHERE_PRESETS.includes(initLoc);
   const [location, setLocation] = useState(initLoc);
@@ -597,16 +589,31 @@ function LogForm({ initial, onSave, onCancel, saveLabel }) {
   const [rating, setRating] = useState(initial?.rating ?? 0);
   const [notes, setNotes] = useState(initial?.notes || "");
 
+  const effectiveDate = approx ? `${approxYear}-01-01` : date;
+
   function pickPreset(p) {
     setSelectedPreset(p);
     if (p !== "Other") setLocation(p);
     else setLocation(customLoc);
   }
 
+  const yearOptions = [];
+  for (let y = new Date().getFullYear(); y >= 1970; y--) yearOptions.push(y);
+
   return (
     <div className="log-form">
       <label className="field-label">Date watched</label>
-      <input className="field-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      <div className="approx-toggle">
+        <button type="button" className={"approx-chip" + (!approx ? " approx-chip-active" : "")} onClick={() => setApprox(false)}>Exact date</button>
+        <button type="button" className={"approx-chip" + (approx ? " approx-chip-active" : "")} onClick={() => setApprox(true)}>Just the year</button>
+      </div>
+      {!approx ? (
+        <input className="field-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      ) : (
+        <select className="field-input" value={approxYear} onChange={(e) => setApproxYear(e.target.value)}>
+          {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+      )}
 
       <label className="field-label">Where</label>
       <div className="where-presets">
@@ -644,7 +651,7 @@ function LogForm({ initial, onSave, onCancel, saveLabel }) {
         <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
         <button
           className="btn btn-primary"
-          onClick={() => onSave({ id: initial?.id || uid(), date, location, rating, notes, loggedAt: Date.now() })}
+          onClick={() => onSave({ id: initial?.id || uid(), date: effectiveDate, location, rating, notes, loggedAt: Date.now() })}
         >
           {saveLabel || "Save"}
         </button>
@@ -682,6 +689,39 @@ function TicketStub({ ticket, onOpen }) {
       </div>
       <span className="stub-shine" />
     </button>
+  );
+}
+
+/* ---------------------------------------------------------
+   WISHLIST STUB  — grid card for items saved but not watched
+---------------------------------------------------------*/
+
+function WatchlistStub({ item, onClick, onLog, onRemove }) {
+  return (
+    <div className="wl-stub">
+      <button className="wl-poster-btn" onClick={onClick} aria-label={item.title}>
+        {item.posterPath ? (
+          <img src={tmdbImg(item.posterPath, "w342")} alt="" className="wl-poster" loading="lazy" />
+        ) : (
+          <div className="wl-poster wl-poster-fallback">
+            {item.mediaType === "tv" ? <Tv size={28} /> : <Film size={28} />}
+          </div>
+        )}
+        <div className="stub-perf" />
+      </button>
+      <div className="wl-tab">
+        <div className="wl-title">{item.title}</div>
+        <div className="wl-year">{item.year}</div>
+        <div className="wl-actions">
+          <button className="wl-watched-btn" onClick={(e) => { e.stopPropagation(); onLog(); }}>
+            <Check size={12} /> Watched
+          </button>
+          <button className="wl-remove-btn" onClick={(e) => { e.stopPropagation(); onRemove(); }} aria-label="Remove">
+            <X size={13} />
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -993,9 +1033,9 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
 
       {stage === "upload" && (
         <div>
-          <p className="sync-note">Upload a screenshot of your AMC or Regal confirmation — AI will read the title and date.</p>
+          <p className="sync-note">Choose a photo from your Photo Library — a ticket stub, AMC/Regal confirmation, or any image with the movie title. AI reads it automatically.</p>
           <button className="btn btn-primary" style={{ width: "100%", marginTop: 12 }} onClick={() => fileRef.current && fileRef.current.click()}>
-            <Camera size={16} /> Choose screenshot
+            <Camera size={16} /> Choose from Photos
           </button>
           <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFile} />
           <button className="btn btn-ghost" style={{ width: "100%", marginTop: 10 }} onClick={() => setStage("manual")}>
@@ -1080,6 +1120,7 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
 function CollectionView({ collection, watchlist, tmdb, taste, settings, people, onUpdateTicket, onDeleteTicket, onLogFromWatchlist, onAddToWatchlist, onLogNew, onRemoveFromWatchlist, onShowYIR }) {
   const [open, setOpen] = useState(null);
   const [showWatchlist, setShowWatchlist] = useState(false);
+  const [loggingWl, setLoggingWl] = useState(null);
   const [showFavorites, setShowFavorites] = useState(false);
   const [detail, setDetail] = useState(null);
   const [sort, setSort] = useState("recent");
@@ -1234,6 +1275,13 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
         )
       )}
 
+      {loggingWl && (
+        <Modal onClose={() => setLoggingWl(null)}>
+          <h3 className="modal-title">{loggingWl.title}</h3>
+          <LogForm saveLabel="Add to collection" onCancel={() => setLoggingWl(null)} onSave={(entry) => { onLogNew(loggingWl, entry); setLoggingWl(null); }} />
+        </Modal>
+      )}
+
       {showWatchlist && (
         watchlist.length === 0 ? (
           <EmptyState
@@ -1242,29 +1290,15 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
             body="Swipe right on something in Discover, or save it from Search, and it'll wait here until you've watched it."
           />
         ) : (
-          <div className="watchlist-rows">
+          <div className="stub-grid">
             {watchlist.map((w) => (
-              <div className="watch-row" key={w.tmdbId + w.mediaType}>
-                <button className="watch-tap" onClick={() => setDetail(w)} aria-label={`Details for ${w.title}`}>
-                  {w.posterPath ? (
-                    <img src={tmdbImg(w.posterPath, "w154")} alt="" className="watch-thumb" />
-                  ) : (
-                    <div className="watch-thumb watch-thumb-fallback">
-                      {w.mediaType === "tv" ? <Tv size={18} /> : <Film size={18} />}
-                    </div>
-                  )}
-                  <div className="watch-info">
-                    <div className="watch-title">{w.title}</div>
-                    <div className="watch-sub">{w.year} · tap for details</div>
-                  </div>
-                </button>
-                <button className="btn btn-primary btn-sm" onClick={() => onLogFromWatchlist(w)}>
-                  <Check size={14} /> Watched
-                </button>
-                <button className="icon-btn" onClick={() => onRemoveFromWatchlist(w)} aria-label="Remove from watchlist" style={{ marginLeft: 4 }}>
-                  <X size={16} />
-                </button>
-              </div>
+              <WatchlistStub
+                key={w.tmdbId + w.mediaType}
+                item={w}
+                onClick={() => setDetail(w)}
+                onLog={() => setLoggingWl(w)}
+                onRemove={() => onRemoveFromWatchlist(w)}
+              />
             ))}
           </div>
         )
@@ -1339,7 +1373,8 @@ function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo })
     setDrag({ x: 0, active: false });
   }
 
-  function handleAnimEnd() {
+  function handleAnimEnd(e) {
+    if (e.target !== e.currentTarget) return;
     const action = pendingAction.current;
     pendingAction.current = null;
     setFlying(null);
@@ -1399,7 +1434,6 @@ function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo })
             {item.mediaType === "tv" ? <Tv size={40} /> : <Film size={40} />}
           </div>
         )}
-        <span className="swipe-info-hint"><Info size={13} /> Tap for info</span>
       </button>
       <div className="swipe-meta">
         <div className="swipe-title">{item.title} {item.year ? `(${item.year})` : ""}</div>
@@ -1428,6 +1462,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   const [forYouList, setForYouList] = useState([]);
   const [forYouLoading, setForYouLoading] = useState(false);
   const forYouLoadedRef = useRef(false);
+  const autoReloadedRef = useRef(false);
 
   const seenIdSet = useMemo(
     () => new Set([...feedback.skippedIds, ...feedback.wantedIds, ...feedback.seenIds].map((x) => x.tmdbId + x.mediaType)),
@@ -1452,8 +1487,9 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
         tmdb.nowPlaying(1)
       ];
       if (topGenres) {
-        calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "popularity.desc", page: 1 }));
-        calls.push(tmdb.discoverTv({ with_genres: topGenres, sort_by: "popularity.desc", page: 1 }));
+        calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "popularity.desc", page: 1, with_original_language: "en" }));
+        calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "vote_average.desc", page: 1, "vote_count.gte": 200 }));
+        calls.push(tmdb.discoverTv({ with_genres: topGenres, sort_by: "popularity.desc", page: 1, with_original_language: "en" }));
       }
       const pages = await Promise.all(calls);
       const all = pages.flatMap((p) => p.results || []).map(normalize);
@@ -1479,6 +1515,14 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
     loadPool();
     // eslint-disable-next-line
   }, []);
+
+  // Auto-reload when swipe deck is exhausted
+  useEffect(() => {
+    if (!loading && !error && pool.length === 0 && !autoReloadedRef.current) {
+      autoReloadedRef.current = true;
+      loadPool(true);
+    }
+  }, [pool.length, loading, error]);
 
   const loadForYouList = useCallback(async () => {
     setForYouLoading(true);
@@ -1637,7 +1681,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
                 <Undo2 size={14} /> Undo skip
               </button>
             )}
-            <button className="btn btn-ghost btn-sm" onClick={() => loadPool(false)}>
+            <button className="btn btn-ghost btn-sm" onClick={() => { autoReloadedRef.current = false; loadPool(true); }}>
               <RefreshCw size={14} /> Refresh deck
             </button>
             {skippedPool.length > 0 && (
@@ -1679,6 +1723,15 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
                   people={people}
                   settings={settings}
                   tmdb={tmdb}
+                  onSkip={(it) => {
+                    recordFeedback("skippedIds", it);
+                    setForYouList((l) => l.filter((x) => !(x.tmdbId === it.tmdbId && x.mediaType === it.mediaType)));
+                  }}
+                  onSeen={(it, entry) => {
+                    onLogNew(it, entry);
+                    recordFeedback("seenIds", it);
+                    setForYouList((l) => l.filter((x) => !(x.tmdbId === it.tmdbId && x.mediaType === it.mediaType)));
+                  }}
                   onAddToWatchlist={(it) => {
                     want(it);
                     setForYouList((l) => l.filter((x) => !(x.tmdbId === it.tmdbId && x.mediaType === it.mediaType)));
@@ -1742,8 +1795,9 @@ function useExtraInfo(item, settings, tmdb) {
   return { imdb, providers };
 }
 
-function SuggestionRow({ item, matchPct, settings, tmdb, taste, people, onAddToWatchlist, onInfo }) {
+function SuggestionRow({ item, matchPct, settings, tmdb, taste, people, onAddToWatchlist, onSkip, onSeen, onInfo }) {
   const [expanded, setExpanded] = useState(false);
+  const [logging, setLogging] = useState(false);
   const { imdb, providers } = useExtraInfo(item, settings, tmdb);
   const badges = people ? badgesFor(item, people, taste) : [];
 
@@ -1781,8 +1835,16 @@ function SuggestionRow({ item, matchPct, settings, tmdb, taste, people, onAddToW
         )}
       </div>
       <div className="suggest-actions" onClick={(e) => e.stopPropagation()}>
-        <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Save to watchlist"><Bookmark size={16} /></button>
+        {onSkip && <button className="icon-btn" onClick={() => onSkip(item)} aria-label="Skip"><X size={15} /></button>}
+        {onSeen && <button className="icon-btn" onClick={() => setLogging(true)} aria-label="Mark as seen"><Eye size={15} /></button>}
+        <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Save to watchlist"><Bookmark size={15} /></button>
       </div>
+      {logging && (
+        <Modal onClose={() => setLogging(false)}>
+          <h3 className="modal-title">{item.title}</h3>
+          <LogForm saveLabel="Add to collection" onCancel={() => setLogging(false)} onSave={(entry) => { onSeen(item, entry); setLogging(false); }} />
+        </Modal>
+      )}
     </div>
   );
 }
@@ -1899,7 +1961,7 @@ function FavoritesView({ collection, people, tmdb, onUpdateTicket }) {
    COMING SOON TAB
 --------------------------------------------------------- */
 
-function ComingRow({ item, badges, note, enough, added, settings, onInfo, onSave, daysOutText }) {
+function ComingRow({ item, badges, note, enough, added, inWatchlist, settings, onInfo, onSave, daysOutText }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="coming-row" onClick={() => setExpanded((x) => !x)}>
@@ -1913,9 +1975,12 @@ function ComingRow({ item, badges, note, enough, added, settings, onInfo, onSave
       <div className="coming-info">
         <div className="suggest-title-row">
           <button className="suggest-title-btn" onClick={(e) => { e.stopPropagation(); onInfo(); }}>{item.title}</button>
-          {enough && item._pct != null && (
-            <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
-          )}
+          <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
+            {inWatchlist && <span className="watchlist-badge"><Bookmark size={10} /></span>}
+            {enough && item._pct != null && (
+              <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
+            )}
+          </div>
         </div>
         <div className="coming-date">{daysOutText}</div>
         {badges.length > 0 && (
@@ -1935,15 +2000,15 @@ function ComingRow({ item, badges, note, enough, added, settings, onInfo, onSave
       <button
         className={"icon-btn" + (added ? " icon-btn-active" : "")}
         onClick={(e) => { e.stopPropagation(); onSave(); }}
-        aria-label="Add to wishlist"
+        aria-label="Save to wishlist"
       >
-        <Eye size={16} />
+        <Bookmark size={16} />
       </button>
     </div>
   );
 }
 
-function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, onAddToWatchlist, onLogNew }) {
+function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, feedback, onAddToWatchlist, onLogNew }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -1987,7 +2052,8 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
 
   function daysOut(dateStr) {
     const diff = Math.ceil((new Date(dateStr) - new Date()) / 86400000);
-    if (diff <= 0) return "Out now";
+    if (diff < 0) return formatDate(dateStr);
+    if (diff === 0) return "Today";
     if (diff === 1) return "Tomorrow";
     if (diff <= 7) return `In ${diff} days`;
     return formatDate(dateStr);
@@ -1999,9 +2065,10 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
     const days = Math.ceil((d - now) / 86400000);
     const thisYear = now.getFullYear();
     const yr = d.getFullYear();
+    if (days < -7) return false; // exclude movies already out over a week
     if (window === "all") return true;
     if (window === "week") return days >= 0 && days <= 7;
-    if (window === "month") return days >= 0 && days <= 31;
+    if (window === "month") return days >= -7 && days <= 31;
     if (window === "thisyear") return yr === thisYear;
     if (window === "nextyear") return yr === thisYear + 1;
     if (window === "beyond") return yr > thisYear + 1;
@@ -2018,38 +2085,37 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
     const nonOverlapping = itemGenres.filter((g) => !topUserGenres.includes(g));
     const gName = (id) => MOVIE_GENRES[id] || TV_GENRES[id];
     const pick = (arr, seed) => arr[seed % arr.length];
-    const seed = item.tmdbId % 7;
+    const seed = item.tmdbId % 13;
     if (pct >= 70) {
       const g = overlapping.find((id) => gName(id));
       const opts = g ? [
-        `Strong ${gName(g)} match`, `Right in your ${gName(g)} lane`,
-        `Exactly the ${gName(g)} energy you love`, `Hits hard on ${gName(g)}`
-      ] : ["Right in your lane", "Locks into your taste", "High confidence pick"];
+        `Big ${gName(g)} energy`, `This one was made for you — ${gName(g)}`,
+        `Strong ${gName(g)} pull`, `You'll want this one — peak ${gName(g)}`
+      ] : ["Very much your kind of film", "Built for your taste", "High confidence add"];
       return { tone: "hot", text: pick(opts, seed) };
     }
     if (overlapping.length && pct >= 45) {
       const g = gName(overlapping[0]);
-      const opts = g ? [`Solid ${g} match`, `Your kind of ${g}`, `${g} that fits your profile`]
-        : ["Decent match for your taste", "Fits your usual pattern"];
+      const opts = g ? [
+        `Worth a look — good ${g}`, `Decent ${g} that fits`, `${g} angle works for you`
+      ] : ["Reasonable fit for you", "Worth putting on the radar"];
       return { tone: "hot", text: pick(opts, seed) };
     }
     if (!overlapping.length && pct >= 35) {
       const g = nonOverlapping.find((id) => gName(id));
       const opts = g ? [
-        `New territory — ${gName(g)}`, `A ${gName(g)} stretch worth considering`,
-        `Outside your usual, but worth it`
-      ] : ["A stretch from your usual picks", "Not your usual territory"];
+        `${gName(g)} is new territory for you`, `Different vibe — ${gName(g)}`, `Pushes outside your usual ${gName(g)} comfort`
+      ] : ["A curveball — but keep an open mind", "Different from your usual"];
       return { tone: "stretch", text: pick(opts, seed) };
     }
     if (pct < 28) {
       const g = topUserGenres.find((id) => gName(id));
       const opts = g ? [
-        `Far from your ${gName(g)} comfort zone`, `Not your typical ${gName(g)} territory`,
-        `Well outside your usual taste`
-      ] : ["Probably not your style", "A real departure"];
+        `Not really your ${gName(g)} world`, `Pretty far from what you usually watch`, `Outside your usual range`
+      ] : ["Probably not your thing", "Long shot for you"];
       return { tone: "cool", text: pick(opts, seed) };
     }
-    return { tone: "stretch", text: pick(["Decent bet if you're curious", "A bit outside your usual lane", "Could surprise you"], seed) };
+    return { tone: "stretch", text: pick(["Could go either way", "Flip a coin on this one", "Worth a second look maybe", "Might click, might not"], seed) };
   };
 
   const processed = useMemo(() => {
@@ -2064,12 +2130,12 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
 
   const thisYr = new Date().getFullYear();
   const WINDOWS = [
+    { id: "all", label: "All" },
     { id: "week", label: "This week" },
     { id: "month", label: "This month" },
     { id: "thisyear", label: `${thisYr}` },
     { id: "nextyear", label: `${thisYr + 1}` },
     { id: "beyond", label: "Beyond" },
-    { id: "all", label: "All" },
   ];
 
   return (
@@ -2115,6 +2181,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
           {processed.map((item) => {
             const badges = badgesFor(item, people, taste);
             const n = enough ? note(item, item._pct) : null;
+            const inWl = (watchlist || []).some((w) => w.tmdbId === item.tmdbId && w.mediaType === item.mediaType);
             return (
               <ComingRow
                 key={item.tmdbId}
@@ -2123,6 +2190,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
                 note={n}
                 enough={enough}
                 added={added[item.tmdbId]}
+                inWatchlist={inWl || added[item.tmdbId]}
                 settings={settings}
                 onInfo={() => setInfoItem(item)}
                 onSave={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
@@ -2140,7 +2208,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, feedback, o
    OUT NOW TAB  — movies currently in theaters
 --------------------------------------------------------- */
 
-function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, settings, onInfo, onSave }) {
+function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inWatchlist, settings, onInfo, onSave }) {
   return (
     <div className={"outnow-hero" + (idx > 0 ? " outnow-hero-secondary" : "")} onClick={onInfo} style={{ cursor: "pointer" }}>
       {item.backdropPath ? (
@@ -2155,6 +2223,7 @@ function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, sett
           {enough && item._pct != null && (
             <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}% match</span>
           )}
+          {inWatchlist && <span className="watchlist-badge"><Bookmark size={10} /> Saved</span>}
           {itemNote && <span className={"proactive-note note-" + itemNote.tone} style={{ margin: 0 }}>{itemNote.text}</span>}
         </div>
         <div className={"outnow-hero-title" + (idx > 0 ? " outnow-hero-title-sm" : "")}>{item.title}</div>
@@ -2172,7 +2241,7 @@ function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, sett
   );
 }
 
-function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAddToWatchlist, onLogNew, onSaveSettings }) {
+function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feedback, onAddToWatchlist, onLogNew, onSaveSettings }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -2232,32 +2301,42 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
     const nonOverlapping = itemGenres.filter((g) => !topUserGenres.includes(g));
     const gName = (id) => MOVIE_GENRES[id] || TV_GENRES[id];
     const pick = (arr, seed) => arr[seed % arr.length];
-    const seed = item.tmdbId % 7;
+    const seed = item.tmdbId % 13;
     if (pct >= 70) {
       const g = overlapping.find((id) => gName(id));
-      const opts = g ? [`Strong ${gName(g)} match`, `Right in your ${gName(g)} lane`, `Hits hard on ${gName(g)}`]
-        : ["Right in your lane", "High confidence pick", "Locks into your taste"];
+      const opts = g ? [
+        `Nails the ${gName(g)} you like`, `Really strong ${gName(g)} pick`,
+        `This is the ${gName(g)} you came for`, `Made for you — heavy ${gName(g)}`,
+        `Peak ${gName(g)} for your taste`
+      ] : ["Locks hard into your profile", "Exactly what you come for", "Built for your taste"];
       return { tone: "hot", text: pick(opts, seed) };
     }
     if (overlapping.length && pct >= 45) {
       const g = gName(overlapping[0]);
-      return g ? { tone: "hot", text: pick([`Solid ${g} match`, `Your kind of ${g}`], seed) } : null;
+      const opts = g ? [
+        `Decent ${g} — worth your time`, `Checks the ${g} box`, `Good ${g} option`
+      ] : ["Checks most of your boxes", "Generally fits your profile"];
+      return { tone: "hot", text: pick(opts, seed) };
     }
     if (!overlapping.length && pct >= 35) {
       const g = nonOverlapping.find((id) => gName(id));
-      const opts = g ? [`New territory — ${gName(g)}`, `A ${gName(g)} stretch worth it`]
-        : ["Outside your usual, worth considering"];
+      const opts = g ? [
+        `Venturing into ${gName(g)} here`, `Different angle — ${gName(g)}`, `${gName(g)} is new for you`
+      ] : ["Bit of a curveball for you", "Stretches your usual range"];
       return { tone: "stretch", text: pick(opts, seed) };
     }
     if (pct < 28) {
       const g = topUserGenres.find((id) => gName(id));
-      return g ? { tone: "cool", text: `Far from your ${gName(g)} comfort zone` } : null;
+      const opts = g ? [
+        `Very far from your ${gName(g)} world`, `Not your usual ${gName(g)} territory`, `Skip unless you're in a different mood`
+      ] : ["Probably not your scene", "Significant stretch from your usual"];
+      return { tone: "cool", text: pick(opts, seed) };
     }
-    return { tone: "stretch", text: pick(["Decent bet if you're curious", "A bit outside your usual lane", "Could surprise you"], seed) };
+    return { tone: "stretch", text: pick(["Could go either way for you", "Might click, might not", "Middle ground for your taste", "Fair shot if you're open to it"], seed) };
   };
 
   const ownedSet = useMemo(
-    () => new Set([...collection.map((c) => c.tmdbId + c.mediaType), ...[]]),
+    () => new Set([...collection.map((c) => c.tmdbId + c.mediaType)]),
     [collection]
   );
 
@@ -2318,6 +2397,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
             const itemNote = enough ? note(item, item._pct) : null;
             const itemBadges = badgesFor(item, people, taste);
             const isOwned = ownedSet.has(item.tmdbId + item.mediaType);
+            const inWl = (watchlist || []).some((w) => w.tmdbId === item.tmdbId && w.mediaType === item.mediaType);
             return (
               <OutNowHeroCard
                 key={item.tmdbId}
@@ -2327,6 +2407,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, feedback, onAdd
                 itemNote={itemNote}
                 itemBadges={itemBadges}
                 isOwned={isOwned || added[item.tmdbId]}
+                inWatchlist={inWl || added[item.tmdbId]}
                 settings={settings}
                 onInfo={() => setInfoItem(item)}
                 onSave={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
@@ -2954,7 +3035,7 @@ export default function App() {
       {burst && (
         <div className="burst-overlay" key={burst.key}>
           <div className={"burst-icon burst-" + burst.kind}>
-            {burst.kind === "collect" ? <Ticket size={46} /> : <Eye size={46} />}
+            {burst.kind === "collect" ? <Ticket size={46} /> : burst.kind === "want" ? <Bookmark size={46} /> : <Eye size={46} />}
           </div>
         </div>
       )}
@@ -3010,6 +3091,7 @@ export default function App() {
               taste={taste}
               people={people}
               collection={collection}
+              watchlist={watchlist}
               feedback={feedback}
               onAddToWatchlist={addToWatchlist}
               onLogNew={logNew}
@@ -3025,6 +3107,7 @@ export default function App() {
               taste={taste}
               people={people}
               collection={collection}
+              watchlist={watchlist}
               feedback={feedback}
               onAddToWatchlist={addToWatchlist}
               onLogNew={logNew}
@@ -3223,21 +3306,32 @@ input, textarea { font-family: inherit; }
 /* stars */
 .stars { display: flex; gap: 1px; position: relative; }
 .star-slot { position: relative; }
-.star-bg { color: rgba(0,0,0,0.25); position: absolute; top: 0; left: 0; }
+.star-bg { color: rgba(255,255,255,0.18); position: absolute; top: 0; left: 0; }
 .star-fill { position: absolute; top: 0; left: 0; color: var(--brass); overflow: hidden; }
 .star-fg { display: block; }
 .star-hit { position: absolute; top: 0; bottom: 0; width: 50%; background: none; border: none; padding: 0; }
 .star-hit-left { left: 0; }
 .star-hit-right { right: 0; }
 
-/* watchlist rows */
-.watchlist-rows { display: flex; flex-direction: column; gap: 10px; }
-.watch-row { display: flex; align-items: center; gap: 12px; background: var(--velvet); border-radius: 12px; padding: 10px 12px; }
-.watch-thumb { width: 44px; height: 66px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: var(--velvet-2); }
-.watch-thumb-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); }
-.watch-info { flex: 1; min-width: 0; }
-.watch-title { font-weight: 600; font-size: 13.5px; }
-.watch-sub { color: var(--muted); font-size: 11.5px; }
+/* watchlist stub grid */
+.wl-stub { background: var(--stub-cream); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; position: relative; box-shadow: 0 4px 14px rgba(0,0,0,0.3); }
+.wl-poster-btn { display: block; padding: 0; border: none; background: none; cursor: pointer; width: 100%; }
+.wl-poster { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; }
+.wl-poster-fallback { width: 100%; aspect-ratio: 2/3; background: var(--velvet-2); display: flex; align-items: center; justify-content: center; color: var(--brass); }
+.wl-tab { padding: 8px 9px 10px; color: var(--ink); }
+.wl-title { font-size: 12px; font-weight: 700; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 2px; }
+.wl-year { font-size: 10.5px; color: rgba(0,0,0,0.5); margin-bottom: 6px; }
+.wl-actions { display: flex; align-items: center; gap: 5px; }
+.wl-watched-btn { flex: 1; background: var(--marquee-red); color: #fff; border: none; border-radius: 999px; padding: 5px 8px; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 3px; cursor: pointer; }
+.wl-remove-btn { background: rgba(0,0,0,0.1); border: none; color: rgba(0,0,0,0.5); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+
+/* watchlist badge in cards */
+.watchlist-badge { display: inline-flex; align-items: center; gap: 3px; background: rgba(74,240,144,0.2); border: 1px solid rgba(74,240,144,0.4); color: #4af090; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; flex-shrink: 0; }
+
+/* approximate date toggle */
+.approx-toggle { display: flex; gap: 6px; margin-bottom: 8px; }
+.approx-chip { flex: 1; padding: 7px 0; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--velvet-2); border: 1px solid var(--line); color: var(--muted); }
+.approx-chip-active { background: rgba(226,54,54,0.18); border-color: rgba(226,54,54,0.5); color: #ff8080; }
 
 /* buttons */
 .btn { border-radius: 999px; padding: 10px 18px; font-size: 13.5px; font-weight: 600; border: none; display: inline-flex; align-items: center; gap: 6px; justify-content: center; }
@@ -3259,7 +3353,7 @@ input, textarea { font-family: inherit; }
 
 /* forms */
 .field-label { display: block; font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 12px 0 6px; }
-.field-input { width: 100%; background: var(--curtain); border: 1px solid var(--line); color: var(--cream-text); padding: 10px 12px; border-radius: 10px; font-size: 14px; }
+.field-input { width: 100%; background: var(--curtain); border: 1px solid var(--line); color: var(--cream-text); padding: 10px 12px; border-radius: 10px; font-size: 16px; }
 .field-textarea { min-height: 80px; resize: vertical; }
 .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 .settings-link { color: var(--brass-bright); font-size: 12px; display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; text-decoration: none; }
@@ -3318,18 +3412,19 @@ input, textarea { font-family: inherit; }
 .swipe-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
 .swipe-genres { color: var(--muted); font-size: 12px; }
 .swipe-buttons { display: flex; justify-content: center; align-items: center; gap: 20px; padding: 10px 0 14px; }
-.round-btn { width: 50px; height: 50px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; transition: transform 0.12s; }
-.round-btn:active { transform: scale(0.88); }
-.round-btn-skip { background: #1a2a3a; border: 1px solid rgba(80,140,220,0.4); color: #6aabee; }
-.round-btn-seen { background: #3d2800; border: 1.5px solid rgba(220,170,50,0.5); color: #e2b44a; width: 60px; height: 60px; }
-.round-btn-want { background: #0d2e1a; border: 1px solid rgba(60,180,100,0.4); color: #5ad08a; }
+.round-btn { width: 52px; height: 52px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; transition: transform 0.1s, box-shadow 0.1s; }
+.round-btn:active { transform: scale(0.82); box-shadow: 0 0 0 6px rgba(255,255,255,0.1); }
+.round-btn-skip { background: #152535; border: 1.5px solid rgba(80,140,220,0.55); color: #7ec2ff; box-shadow: 0 4px 14px rgba(80,140,220,0.18); }
+.round-btn-seen { background: #3a2200; border: 2px solid rgba(220,170,50,0.6); color: #f0c060; width: 62px; height: 62px; box-shadow: 0 4px 18px rgba(220,170,50,0.22); }
+.round-btn-want { background: #0a2818; border: 1.5px solid rgba(60,200,110,0.55); color: #6ae898; box-shadow: 0 4px 14px rgba(60,200,110,0.18); }
 @keyframes round-btn-burst {
-  0%   { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,255,255,0.35); }
-  35%  { transform: scale(1.4); box-shadow: 0 0 0 10px rgba(255,255,255,0); }
-  65%  { transform: scale(0.88); }
+  0%   { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,255,255,0.6); }
+  20%  { transform: scale(1.45); box-shadow: 0 0 0 14px rgba(255,255,255,0.0); }
+  50%  { transform: scale(1.12); }
+  75%  { transform: scale(0.9); }
   100% { transform: scale(1); }
 }
-.round-btn-burst { animation: round-btn-burst 0.44s ease-out; }
+.round-btn-burst { animation: round-btn-burst 0.5s cubic-bezier(.2,.8,.3,1); }
 .swipe-flag { position: absolute; top: 20px; font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 0.05em; padding: 6px 14px; border-radius: 6px; z-index: 3; transform: rotate(-8deg); }
 .swipe-flag-want { left: 16px; border: 3px solid #6fbf73; color: #6fbf73; }
 .swipe-flag-skip { right: 16px; border: 3px solid #e9695f; color: #e9695f; transform: rotate(8deg); }
@@ -3355,7 +3450,7 @@ input, textarea { font-family: inherit; }
 .outnow-hero-img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; background: var(--velvet-2); }
 .outnow-hero-poster { aspect-ratio: 2/3; max-height: 280px; }
 .outnow-hero-blank { display: flex; align-items: center; justify-content: center; background: var(--velvet-2); color: var(--brass); aspect-ratio: 16/9; }
-.outnow-hero-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 48px 14px 14px; background: linear-gradient(to top, rgba(10,5,9,0.97) 50%, transparent); }
+.outnow-hero-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 36px 14px 12px; background: linear-gradient(to top, rgba(10,5,9,0.96) 25%, rgba(10,5,9,0.55) 55%, transparent); }
 .outnow-hero-top { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 7px; }
 .outnow-hero-title { font-size: 22px; font-weight: 800; color: var(--cream-text); line-height: 1.2; margin-bottom: 4px; }
 .outnow-hero-genres { font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 10px; }
@@ -3371,7 +3466,7 @@ input, textarea { font-family: inherit; }
 .zip-tap { background: none; border: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 0; text-align: left; }
 .zip-tap:hover { color: var(--cream-text); }
 .zip-tap strong { color: var(--cream-text); }
-.zip-input { background: var(--velvet-2); border: 1px solid var(--line); color: var(--cream-text); border-radius: 6px; padding: 3px 7px; font-size: 12px; width: 90px; }
+.zip-input { background: var(--velvet-2); border: 1px solid var(--line); color: var(--cream-text); border-radius: 6px; padding: 3px 7px; font-size: 16px; width: 100px; }
 .zip-save-btn { background: var(--marquee-red); border: none; color: #fff; border-radius: 6px; padding: 3px 9px; font-size: 11px; cursor: pointer; }
 .zip-cancel-btn { background: none; border: none; color: var(--muted); font-size: 13px; cursor: pointer; padding: 0 2px; }
 
@@ -3403,11 +3498,11 @@ input, textarea { font-family: inherit; }
 .coming-date { color: var(--brass-bright); font-size: 11.5px; font-family: 'Space Mono', monospace; margin-bottom: 6px; }
 .suggest-links { display: flex; gap: 6px; flex-wrap: wrap; }
 .link-pill { font-size: 10.5px; color: var(--cream-text); background: var(--velvet-2); padding: 3px 9px; border-radius: 999px; text-decoration: none; }
-.suggest-actions { display: flex; flex-direction: column; gap: 6px; justify-content: center; }
+.suggest-actions { display: flex; flex-direction: column; gap: 5px; justify-content: center; align-items: center; }
 
 /* search bar */
 .search-bar { display: flex; align-items: center; gap: 8px; background: var(--velvet); border-radius: 999px; padding: 10px 16px; margin-bottom: 16px; color: var(--muted); }
-.search-input { flex: 1; background: none; border: none; color: var(--cream-text); font-size: 14px; outline: none; }
+.search-input { flex: 1; background: none; border: none; color: var(--cream-text); font-size: 16px; outline: none; }
 
 /* onboarding */
 .onboarding { flex: 1; display: flex; align-items: center; justify-content: center; padding: 30px; }
@@ -3468,11 +3563,11 @@ input, textarea { font-family: inherit; }
 .badge-genre { background: rgba(226,54,54,0.12); color: #ff9a9a; }
 
 /* match scores */
-.match-badge { position: absolute; top: 14px; right: 14px; z-index: 3; font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; backdrop-filter: blur(4px); }
-.match-pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; flex-shrink: 0; }
-.match-high { background: rgba(47,184,107,0.2); color: #5fd99a; }
-.match-mid { background: rgba(226,168,54,0.2); color: var(--brass-bright); }
-.match-low { background: rgba(154,138,138,0.2); color: var(--muted); }
+.match-badge { position: absolute; top: 14px; right: 14px; z-index: 3; font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; backdrop-filter: blur(8px); }
+.match-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex-shrink: 0; }
+.match-high { background: rgba(47,184,107,0.45); color: #88f0b8; border: 1px solid rgba(47,184,107,0.6); }
+.match-mid { background: rgba(226,168,54,0.45); color: #f5cc6a; border: 1px solid rgba(226,168,54,0.6); }
+.match-low { background: rgba(154,138,138,0.4); color: #d8cccc; border: 1px solid rgba(154,138,138,0.5); }
 
 /* swipe poster tap */
 .swipe-poster-btn { display: block; width: 100%; padding: 0; border: none; background: none; position: relative; cursor: pointer; }
@@ -3558,14 +3653,16 @@ input, textarea { font-family: inherit; }
 
 /* action burst animation */
 .burst-overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 100; }
-.burst-icon { animation: burstPop 0.85s cubic-bezier(.2,.8,.3,1) forwards; }
-.burst-collect { color: var(--marquee-red); }
-.burst-want { color: #2fb86b; }
+.burst-icon { animation: burstPop 0.9s cubic-bezier(.18,.85,.32,1) forwards; }
+.burst-collect { color: var(--marquee-red); filter: drop-shadow(0 0 18px rgba(255,48,48,0.7)); }
+.burst-want { color: #4af090; filter: drop-shadow(0 0 18px rgba(74,240,144,0.7)); }
 @keyframes burstPop {
-  0% { transform: scale(0.3) rotate(-12deg); opacity: 0; }
-  30% { transform: scale(1.25) rotate(4deg); opacity: 1; }
-  60% { transform: scale(1) rotate(0deg); opacity: 1; }
-  100% { transform: scale(0.9) translateY(-30px); opacity: 0; }
+  0%   { transform: scale(0.1) rotate(-20deg); opacity: 0; }
+  18%  { transform: scale(1.55) rotate(6deg); opacity: 1; }
+  40%  { transform: scale(1.15) rotate(-2deg); opacity: 1; }
+  60%  { transform: scale(1.05) rotate(0deg); opacity: 1; }
+  80%  { transform: scale(0.95) translateY(-20px); opacity: 0.7; }
+  100% { transform: scale(0.7) translateY(-60px); opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
