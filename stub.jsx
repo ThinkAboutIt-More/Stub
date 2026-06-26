@@ -327,34 +327,36 @@ function matchPercent(item, taste) {
   const keys = Object.keys(weights);
   if (!keys.length) return null;
 
-  // Factor 1: genre affinity — how well item genres align with your taste (0-100)
+  // Factor 1: personal genre affinity (your ratings + swipes) — the primary signal
   let genreScore = 50;
   if (item.genreIds && item.genreIds.length) {
     const maxAbs = Math.max(...keys.map((k) => Math.abs(weights[k])), 1);
     const raw = scoreItem(item, weights);
-    genreScore = Math.max(1, Math.min(99, Math.round(((raw / maxAbs + 1) / 2) * 100)));
+    // steeper curve: strong alignment pushes toward the ceiling, dislikes toward the floor
+    const norm = Math.max(-1, Math.min(1, raw / maxAbs));
+    genreScore = Math.round(50 + norm * 49); // 0→50, +1→99, -1→1
   }
 
-  // Factor 2: external quality — TMDB vote_average mapped 4.0-9.0 → 0-100
-  // 5.5 → 30, 6.5 → 50, 7.0 → 60, 7.5 → 70, 8.0 → 80, 8.5 → 90
-  let qualityScore = 65; // neutral when vote data absent/sparse
+  // Factor 2: external quality — a secondary sanity signal, NOT the main driver
+  let qualityScore = 60; // neutral when vote data absent/sparse
   if (item.voteAverage != null && (item.voteCount ?? 0) > 50) {
     const clamped = Math.max(4.0, Math.min(9.0, item.voteAverage));
     qualityScore = Math.round(((clamped - 4.0) / 5.0) * 100);
   }
 
-  // Factor 3: personal calibration — your historical rating delta vs TMDB for this genre
-  // positive = you rate this genre higher than consensus → score bump; negative → penalty
+  // Factor 3: personal calibration — do YOU rate these genres above/below TMDB consensus?
+  // you over-rate this genre → bump; under-rate → penalty
   let calibBonus = 0;
   if (item.genreIds && item.genreIds.length) {
     const deltas = item.genreIds.map((g) => gc[g]).filter((d) => d != null);
     if (deltas.length) {
       const avg = deltas.reduce((s, d) => s + d, 0) / deltas.length;
-      calibBonus = Math.max(-15, Math.min(15, avg * 1.5));
+      calibBonus = Math.max(-18, Math.min(18, avg * 2));
     }
   }
 
-  const blended = genreScore * 0.40 + qualityScore * 0.55 + calibBonus;
+  // your taste dominates (66%); external quality is a minor adjustment (34%)
+  const blended = genreScore * 0.66 + qualityScore * 0.34 + calibBonus;
   return Math.max(1, Math.min(99, Math.round(blended)));
 }
 
@@ -2296,7 +2298,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
    OUT NOW TAB  — movies currently in theaters
 --------------------------------------------------------- */
 
-function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inWatchlist, onInfo, onSave }) {
+function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCollection, ownedRating, inWatchlist, onInfo, onSave }) {
   return (
     <div className="outnow-hero" onClick={onInfo} style={{ cursor: "pointer" }}>
       {item.backdropPath ? (
@@ -2316,10 +2318,18 @@ function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inWa
       <div className="outnow-hero-overlay">
         <div className="outnow-hero-top">
           {inWatchlist && <span className="watchlist-badge"><Bookmark size={10} /></span>}
-          {enough && item._pct != null && (
-            <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
+          {inCollection ? (
+            <span className="match-pill match-seen" title="In your collection">
+              {ownedRating != null ? <>Seen · {ownedRating}<Star size={9} style={{ marginLeft: 2, verticalAlign: "-1px" }} fill="currentColor" /></> : "Seen"}
+            </span>
+          ) : (
+            <>
+              {enough && item._pct != null && (
+                <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
+              )}
+              {itemNote && <span className={"proactive-note note-" + itemNote.tone} style={{ margin: 0 }}>{itemNote.text}</span>}
+            </>
           )}
-          {itemNote && <span className={"proactive-note note-" + itemNote.tone} style={{ margin: 0 }}>{itemNote.text}</span>}
         </div>
         <div className={"outnow-hero-title" + (idx > 0 ? " outnow-hero-title-sm" : "")}>{item.title}</div>
         <div className="outnow-hero-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 2).join(" · ")}</div>
@@ -2443,6 +2453,15 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
     [collection]
   );
 
+  const ownedRatingMap = useMemo(() => {
+    const m = {};
+    collection.forEach((c) => {
+      const last = c.viewings && c.viewings.length ? c.viewings[c.viewings.length - 1] : null;
+      m[c.tmdbId + c.mediaType] = last && last.rating != null ? last.rating : null;
+    });
+    return m;
+  }, [collection]);
+
   return (
     <div className="view">
       {infoItem && (
@@ -2519,6 +2538,8 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
                 itemNote={itemNote}
                 itemBadges={itemBadges}
                 isOwned={isOwned || added[item.tmdbId]}
+                inCollection={isOwned}
+                ownedRating={ownedRatingMap[item.tmdbId + item.mediaType]}
                 inWatchlist={inWl || added[item.tmdbId]}
                 onInfo={() => setInfoItem(item)}
                 onSave={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
@@ -3772,6 +3793,7 @@ input, textarea { font-family: inherit; }
 .match-badge { position: absolute; top: 14px; right: 14px; z-index: 3; font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; backdrop-filter: blur(8px); }
 .match-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex-shrink: 0; }
 .match-high { background: rgba(34,150,86,0.88); color: #eafff3; border: 1px solid rgba(120,240,170,0.9); }
+.match-seen { background: rgba(196,140,40,0.92); color: #fff6e6; border: 1px solid rgba(240,200,120,0.9); display: inline-flex; align-items: center; }
 .match-mid { background: rgba(198,140,30,0.9); color: #fff7e6; border: 1px solid rgba(245,204,106,0.95); }
 .match-low { background: rgba(90,80,80,0.9); color: #ffffff; border: 1px solid rgba(210,200,200,0.7); }
 
