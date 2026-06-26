@@ -26,9 +26,9 @@ Status: [x] done & deployed, [~] in progress, [ ] todo, [?] verify (may already 
 - [?] 2. "All" filter should be first on the left (appears already first — verify)
 
 ## Batch 5 — copy / descriptions / feed diversity
-- [ ] 9. "Your kind of adventure" repeated across most movies
+- [x] 9. "Your kind of adventure" repeated across most movies
 - [ ] 10. Coming Soon shows "your kind of adventure" AND "right in your adventure lane"; keep concise
-- [ ] 15. Repetitive descriptions; same 3-4 phrases shared everywhere; should vary as it learns
+- [x] 15. Repetitive descriptions; same 3-4 phrases shared everywhere; should vary as it learns
 - [ ] 6. Lots of Indian movies; ensure notable films in other languages are represented too
 
 ## Batch 6 — wishlist + TV logging
@@ -46,3 +46,5 @@ Status: [x] done & deployed, [~] in progress, [ ] todo, [?] verify (may already 
 
 ## Found during testing
 - [x] Search ran AI recommendations for everything; plain title search now hits TMDB directly, AI only for natural-language asks
+- [x] Discover card description lagged (live AI call per card); now generated instantly & varies per movie
+- [x] Swipe poster now fills its space at full size (responsive, buttons still fit)

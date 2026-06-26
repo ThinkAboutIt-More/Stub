@@ -2676,22 +2676,89 @@ Write ONE frank opinion sentence, max 16 words. No quotation marks.`
   return text;
 }
 
+// Instant, varied "why watch" line — generated locally so there's no per-card
+// API lag, and seeded by the title so different movies get different phrasings
+// instead of the same line everywhere.
+function buildWhyWatch(item, taste, matchPct, voteAvg) {
+  if (matchPct == null) return null;
+  const pct = matchPct;
+  const weights = getWeights(taste);
+  const topUserGenres = Object.entries(weights).filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
+  const gName = (id) => MOVIE_GENRES[id] || TV_GENRES[id];
+  const itemGenres = item.genreIds || [];
+  const overlap = itemGenres.filter((g) => topUserGenres.includes(g)).map(gName).filter(Boolean);
+  const offGenre = itemGenres.map(gName).filter(Boolean).find((g) => !overlap.includes(g));
+  const g = overlap[0];
+  const good = voteAvg != null && voteAvg >= 7;
+  const weak = voteAvg != null && voteAvg < 5.5;
+  const seed = Math.abs(item.tmdbId || 0) % 4;
+  const pick = (arr) => arr[seed % arr.length];
+
+  if (pct >= 75) {
+    const base = pick(g ? [
+      `Right up your alley — that ${g} streak runs strong here`,
+      `Lands square in your ${g} wheelhouse`,
+      `Trust your ${g} taste on this one`,
+      `Peak ${g} for someone like you`,
+    ] : [
+      `Squarely your kind of thing`,
+      `Strong match — you'll click with this`,
+      `Hard to picture you not liking this`,
+      `Green light, this fits you`,
+    ]);
+    return base + (good ? ", and it actually delivers." : ".");
+  }
+  if (pct >= 55) {
+    return pick(g ? [
+      `Solid ${g} that should work for you.`,
+      `Leans into the ${g} you tend to enjoy.`,
+      `Comfortable fit — good ${g} angle.`,
+      `Worth a look, the ${g} side suits you.`,
+    ] : [
+      `A reasonable fit for your taste.`,
+      `Probably a good time for you.`,
+      `Worth putting on the list.`,
+      `Lines up decently with what you like.`,
+    ]);
+  }
+  if (pct >= 38) {
+    const base = pick(offGenre ? [
+      `A stretch — ${offGenre} isn't your usual, but maybe`,
+      `Different lane with that ${offGenre} bent`,
+      `Outside your comfort zone, ${offGenre}-wise`,
+      `Not the obvious pick, but ${offGenre} could surprise you`,
+    ] : [
+      `A bit of a curveball for your taste`,
+      `Different from your usual — open mind needed`,
+      `Not a sure thing, but could click`,
+      `Coin flip for someone like you`,
+    ]);
+    return base + (good ? " (it is well-reviewed)." : ".");
+  }
+  return pick(weak ? [
+    `Skip it — weak film and not your lane.`,
+    `Probably a pass on both counts.`,
+    `Hard to recommend this one to you.`,
+    `Not your thing, and not a strong film.`,
+  ] : good ? [
+    `Not your usual, though critics rate it.`,
+    `Outside your taste but genuinely well-made.`,
+    `Critically solid, just not aimed at you.`,
+    `Good film, wrong fit for your taste.`,
+  ] : [
+    `Probably not your thing.`,
+    `Pretty far from what you reach for.`,
+    `Doubtful fit for your taste.`,
+    `Likely a pass for you.`,
+  ]);
+}
+
 function WhyWatch({ item, taste, matchPct }) {
-  const [reason, setReason] = useState(null);
-  const cacheKey = item.tmdbId + item.mediaType + (matchPct ?? "");
-
-  useEffect(() => {
-    if (whyWatchCache[cacheKey]) { setReason(whyWatchCache[cacheKey]); return; }
-    const tasteGenres = Object.entries(getWeights(taste))
-      .filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 4)
-      .map(([g]) => MOVIE_GENRES[g] || TV_GENRES[g]).filter(Boolean);
-    if (!tasteGenres.length) return;
-    const genres = genreNames(item.genreIds, item.mediaType).slice(0, 2).join(", ");
-    getWhyWatch(cacheKey, item.title, item.year, genres, tasteGenres.join(", "), matchPct, item.voteAverage)
-      .then((r) => { if (r) setReason(r); })
-      .catch(() => {});
-  }, [cacheKey]);
-
+  const reason = useMemo(
+    () => buildWhyWatch(item, taste, matchPct, item.voteAverage),
+    [item.tmdbId, item.mediaType, matchPct]
+  );
   if (!reason) return null;
   return <div className="why-watch">{reason}</div>;
 }
@@ -3453,7 +3520,7 @@ input, textarea { font-family: inherit; }
   touch-action: none; user-select: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
   border: 1px solid rgba(226,54,54,0.1);
 }
-.swipe-poster { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; max-height: min(360px, 42vh); }
+.swipe-poster { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; max-height: min(510px, calc(100dvh - 380px)); }
 .swipe-poster-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); background: var(--velvet-2); }
 .swipe-meta { padding: 10px 12px 4px; }
 .swipe-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
