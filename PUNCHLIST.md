@@ -16,13 +16,13 @@ Status: [x] done & deployed, [~] in progress, [ ] todo, [?] verify (may already 
 - [x] 21. "For you" tab should show the same 3 icons on the right of each movie
 
 ## Batch 3 — layout / overflow
-- [ ] 3. Collection + discover content larger than allowed; 3 buttons cut off
-- [ ] 8. Out Now cards waste ~half their space (black space); make clean
+- [x] 3. Collection + discover content larger than allowed; 3 buttons cut off
+- [x] 8. Out Now cards waste ~half their space (black space); make clean
 
 ## Batch 4 — out now / coming soon logic + badges
-- [ ] 13. Coming Soon items show the eye; should only show save (can't have watched it)
-- [ ] 12. Out Now / Coming Soon movies saved in watchlist need a badge to signify it
-- [ ] 23. Some movies in 2026 tab say "out now"; those should be in Out Now
+- [x] 13. Coming Soon items show the eye; should only show save (can't have watched it)
+- [x] 12. Out Now / Coming Soon movies saved in watchlist need a badge to signify it
+- [x] 23. Some movies in 2026 tab say "out now"; those should be in Out Now
 - [?] 2. "All" filter should be first on the left (appears already first — verify)
 
 ## Batch 5 — copy / descriptions / feed diversity

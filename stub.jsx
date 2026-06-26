@@ -2071,7 +2071,8 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
     const days = Math.ceil((d - now) / 86400000);
     const thisYear = now.getFullYear();
     const yr = d.getFullYear();
-    if (days < -7) return false; // exclude movies already out over a week
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (dateStr < todayStr) return false; // only today + upcoming, never already-released
     if (window === "all") return true;
     if (window === "week") return days >= 0 && days <= 7;
     if (window === "month") return days >= -7 && days <= 31;
@@ -3441,7 +3442,7 @@ input, textarea { font-family: inherit; }
   touch-action: none; user-select: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
   border: 1px solid rgba(226,54,54,0.1);
 }
-.swipe-poster { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; max-height: 360px; }
+.swipe-poster { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; max-height: min(360px, 42vh); }
 .swipe-poster-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); background: var(--velvet-2); }
 .swipe-meta { padding: 10px 12px 4px; }
 .swipe-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
