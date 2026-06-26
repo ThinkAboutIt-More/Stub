@@ -319,6 +319,21 @@ function scoreItem(item, tasteWeights) {
   return total / item.genreIds.length;
 }
 
+/* continuous red -> amber -> green scale for a match %, so adjacent
+   percentages read differently (47% warm, 64% green). neutral sits ~55%. */
+function matchStyle(pct) {
+  const p = Math.max(30, Math.min(80, pct));
+  let hue;
+  if (p <= 55) hue = ((p - 30) / 25) * 45;          // 30% red(0) -> 55% amber(45)
+  else hue = 45 + ((p - 55) / 25) * 95;             // 55% amber(45) -> 80% green(140)
+  hue = Math.round(hue);
+  return {
+    background: `hsl(${hue}, 62%, 42%)`,
+    border: `1px solid hsl(${hue}, 70%, 60%)`,
+    color: `hsl(${hue}, 88%, 92%)`,
+  };
+}
+
 /* 0..100 match score blending genre affinity, external quality, and
    personal calibration so a mediocre film in a liked genre still scores low */
 function matchPercent(item, taste) {
@@ -1479,7 +1494,7 @@ function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo })
       {drag.x > 40 && <div className="swipe-flag swipe-flag-want">SAVE IT</div>}
       {drag.x < -40 && <div className="swipe-flag swipe-flag-skip">SKIP</div>}
       {matchPct != null && (
-        <div className={"match-badge " + (matchPct >= 70 ? "match-high" : matchPct >= 40 ? "match-mid" : "match-low")}>
+        <div className="match-badge" style={matchStyle(matchPct)}>
           {matchPct}% match
         </div>
       )}
@@ -1890,7 +1905,7 @@ function SuggestionRow({ item, matchPct, settings, tmdb, taste, people, onAddToW
       <div className="suggest-info">
         <div className="suggest-title-row">
           <button className="suggest-title-btn" onClick={(e) => { e.stopPropagation(); onInfo(); }}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
-          {matchPct != null && <span className={"match-pill " + (matchPct >= 70 ? "match-high" : matchPct >= 40 ? "match-mid" : "match-low")}>{matchPct}%</span>}
+          {matchPct != null && <span className="match-pill" style={matchStyle(matchPct)}>{matchPct}%</span>}
         </div>
         <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ")}</div>
         {badges.length > 0 && (
@@ -2055,7 +2070,7 @@ function ComingRow({ item, badges, note, enough, added, inWatchlist, settings, o
           <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
             {inWatchlist && <span className="watchlist-badge"><Bookmark size={10} /></span>}
             {enough && item._pct != null && (
-              <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
+              <span className="match-pill" style={matchStyle(item._pct)}>{item._pct}%</span>
             )}
           </div>
         </div>
@@ -2325,7 +2340,7 @@ function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCo
           ) : (
             <>
               {enough && item._pct != null && (
-                <span className={"match-pill " + (item._pct >= 70 ? "match-high" : item._pct >= 40 ? "match-mid" : "match-low")}>{item._pct}%</span>
+                <span className="match-pill" style={matchStyle(item._pct)}>{item._pct}%</span>
               )}
               {itemNote && <span className={"proactive-note note-" + itemNote.tone} style={{ margin: 0 }}>{itemNote.text}</span>}
             </>
