@@ -990,6 +990,7 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
   const [candidates, setCandidates] = useState([]);
   const [chosen, setChosen] = useState(null);
   const [guessedDate, setGuessedDate] = useState(todayISO());
+  const [scanRating, setScanRating] = useState(0);
   const [manualQuery, setManualQuery] = useState("");
   const [manualSearching, setManualSearching] = useState(false);
   const fileRef = useRef(null);
@@ -1120,6 +1121,9 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
           <label className="field-label">Date watched</label>
           <input className="field-input" type="date" value={guessedDate} onChange={(e) => setGuessedDate(e.target.value)} />
 
+          <label className="field-label" style={{ marginTop: 12 }}>Your rating {scanRating ? `(${scanRating}/10)` : "(optional)"}</label>
+          <Stars value={scanRating} onChange={setScanRating} size={24} />
+
           <div className="form-actions">
             <button className="btn btn-ghost" onClick={() => setStage("upload")}>Back</button>
             <button
@@ -1127,7 +1131,7 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
               disabled={!chosen}
               onClick={() => {
                 if (!chosen) return;
-                onLogNew(chosen, { id: uid(), date: guessedDate, location: "", rating: 8, notes: "", loggedAt: Date.now() });
+                onLogNew(chosen, { id: uid(), date: guessedDate, location: "", rating: scanRating || null, notes: "", loggedAt: Date.now() });
                 onClose();
               }}
             >
@@ -1261,6 +1265,14 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
         </Modal>
       )}
 
+      <div className="collection-top-actions">
+        <button className="collection-icon-btn" onClick={() => setScanning(true)} aria-label="Scan ticket" title="Scan ticket"><Camera size={16} /></button>
+        <button className="collection-icon-btn" onClick={() => setShowFavorites(true)} aria-label="Favorites" title="Favorites"><Heart size={16} /></button>
+        {collection.length > 0 && (
+          <button className="collection-icon-btn" onClick={onShowYIR} aria-label="Recap" title={`${new Date().getFullYear()} Recap`}><Sparkles size={16} /></button>
+        )}
+      </div>
+
       <div className="view-toggle">
         <button className={!showWatchlist ? "toggle-pill active" : "toggle-pill"} onClick={() => setShowWatchlist(false)}>
           Collected ({collection.length})
@@ -1386,23 +1398,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
         )
       )}
 
-      <div style={{ height: "56px" }} />
-      <div className="collection-footer-strip">
-        <button className="cta-icon-btn" onClick={() => setShowFavorites(true)}>
-          <Heart size={17} />
-          <span>Favorites</span>
-        </button>
-        <button className="cta-icon-btn" onClick={() => setScanning(true)}>
-          <Camera size={17} />
-          <span>Scan ticket</span>
-        </button>
-        {collection.length > 0 && (
-          <button className="cta-icon-btn" onClick={onShowYIR}>
-            <Sparkles size={17} />
-            <span>{new Date().getFullYear()} Recap</span>
-          </button>
-        )}
-      </div>
+      <div style={{ height: "24px" }} />
     </div>
   );
 }
@@ -1548,6 +1544,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   const forYouLoadedRef = useRef(false);
   const pageRef = useRef(1);
   const reloadAttemptsRef = useRef(0);
+  const servedRef = useRef(new Set());
 
   const seenIdSet = useMemo(
     () => new Set([...feedback.skippedIds, ...feedback.wantedIds, ...feedback.seenIds].map((x) => x.tmdbId + x.mediaType)),
@@ -1596,7 +1593,12 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
         : seenIdSet;
       const fresh = all.filter((a) => !skipSet.has(a.tmdbId + a.mediaType) && !ownedSet.has(a.tmdbId + a.mediaType));
       const dedup = Array.from(new Map(fresh.map((f) => [f.tmdbId + f.mediaType, f])).values());
-      const scored = dedup.map((x) => ({ ...x, _pct: matchPercent(x, taste) }));
+      // don't resurface anything already shown this session; only when we've genuinely
+      // run dry do we clear the memory so the deck can loop rather than sit empty
+      let unserved = dedup.filter((x) => !servedRef.current.has(x.tmdbId + x.mediaType));
+      if (unserved.length === 0) { servedRef.current.clear(); unserved = dedup; }
+      unserved.forEach((x) => servedRef.current.add(x.tmdbId + x.mediaType));
+      const scored = unserved.map((x) => ({ ...x, _pct: matchPercent(x, taste) }));
       // Fisher-Yates shuffle — truly random deck every load
       for (let i = scored.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -2091,8 +2093,7 @@ function ComingRow({ item, badges, note, enough, added, inWatchlist, settings, o
         {note && <div className={"proactive-note note-" + note.tone}>{note.text}</div>}
         {expanded && (
           <div className="suggest-links" onClick={(e) => e.stopPropagation()}>
-            <a className="link-pill" href={buildAmcLink(item.title, settings.zip)} target="_blank" rel="noreferrer">AMC</a>
-            <a className="link-pill" href={buildRegalLink(item.title, settings.zip)} target="_blank" rel="noreferrer">Regal</a>
+            <a className="link-pill" href={`https://www.youtube.com/results?search_query=${encodeURIComponent(item.title + " trailer")}`} target="_blank" rel="noreferrer">Trailer</a>
             <a className="link-pill" href={buildRedditLink(item.title, item.year)} target="_blank" rel="noreferrer">Reddit</a>
           </div>
         )}
@@ -2114,7 +2115,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
   const [error, setError] = useState(null);
   const [added, setAdded] = useState({});
   const [window, setWindow] = useState("all");
-  const [sort, setSort] = useState("soonest");
+  const [sort, setSort] = useState("highest");
   const [genreFilter, setGenreFilter] = useState("all");
   const [infoItem, setInfoItem] = useState(null);
 
@@ -2234,11 +2235,11 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
       .map((x) => ({ ...x, _pct: matchPercent(x, taste) }))
       .filter((x) => inWindow(x.releaseDate));
     if (genreFilter !== "all") list = list.filter((x) => (x.genreIds || []).includes(Number(genreFilter)));
-    if (sort === "soonest") list.sort((a, b) => (a.releaseDate < b.releaseDate ? -1 : 1));
-    if (sort === "highest") list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
-    if (sort === "lowest") list.sort((a, b) => (a._pct || 0) - (b._pct || 0));
+    if (!enough) list.sort((a, b) => (a.releaseDate < b.releaseDate ? -1 : 1));
+    else if (sort === "lowest") list.sort((a, b) => (a._pct || 0) - (b._pct || 0));
+    else list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
     return list;
-  }, [items, window, sort, taste, genreFilter]);
+  }, [items, window, sort, taste, genreFilter, enough]);
 
   const thisYr = new Date().getFullYear();
   const WINDOWS = [
@@ -2276,7 +2277,6 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
         )}
         {enough && (
           <select className="filter-select" value={sort} onChange={(e) => setSort(e.target.value)}>
-            <option value="soonest">Soonest first</option>
             <option value="highest">Highest match</option>
             <option value="lowest">Lowest match</option>
           </select>
@@ -2321,7 +2321,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
    OUT NOW TAB  — movies currently in theaters
 --------------------------------------------------------- */
 
-function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCollection, ownedRating, availability, inWatchlist, onInfo, onSave }) {
+function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCollection, ownedRating, availability, inWatchlist, onInfo, onSave, onSeen }) {
   return (
     <div className="outnow-hero" onClick={onInfo} style={{ cursor: "pointer" }}>
       {item.backdropPath ? (
@@ -2331,6 +2331,13 @@ function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCo
       ) : (
         <div className="outnow-hero-img outnow-hero-blank"><Film size={28} /></div>
       )}
+      <button
+        className="outnow-seen-btn"
+        onClick={(e) => { e.stopPropagation(); onSeen(); }}
+        aria-label="Mark as seen"
+      >
+        <Eye size={15} />
+      </button>
       <button
         className={"outnow-save-btn" + (isOwned ? " outnow-save-btn-active" : "")}
         onClick={(e) => { e.stopPropagation(); onSave(); }}
@@ -2377,6 +2384,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
   const [error, setError] = useState(null);
   const [added, setAdded] = useState({});
   const [infoItem, setInfoItem] = useState(null);
+  const [logging, setLogging] = useState(null);
   const [sort, setSort] = useState("match");
   const [genreFilter, setGenreFilter] = useState("all");
   const [availMap, setAvailMap] = useState({});
@@ -2524,6 +2532,13 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
         />
       )}
 
+      {logging && (
+        <Modal onClose={() => setLogging(null)}>
+          <h3 className="modal-title">{logging.title}</h3>
+          <LogForm saveLabel="Add to collection" onCancel={() => setLogging(null)} onSave={(entry) => { onLogNew(logging, entry); setLogging(null); }} />
+        </Modal>
+      )}
+
       <div className="chip-scroll" style={{ marginBottom: 12 }}>
         <button className={"chip" + (sort === "match" ? " chip-active" : "")} onClick={() => setSort("match")}>Highest match</button>
         <button className={"chip" + (sort === "lowest" ? " chip-active" : "")} onClick={() => setSort("lowest")}>Lowest match</button>
@@ -2567,6 +2582,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
                 inWatchlist={inWl || added[item.tmdbId]}
                 onInfo={() => setInfoItem(item)}
                 onSave={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
+                onSeen={() => setLogging(item)}
               />
             );
           })}
@@ -3502,6 +3518,9 @@ input, textarea { font-family: inherit; }
 
 .view { padding-top: 4px; }
 .view-toggle { display: flex; gap: 8px; margin-bottom: 12px; }
+.collection-top-actions { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 10px; }
+.collection-icon-btn { width: 34px; height: 34px; border-radius: 10px; background: var(--velvet-2); border: 1px solid var(--line); color: var(--brass); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.collection-icon-btn:active { transform: scale(0.92); }
 .toggle-pill {
   flex: 1; background: var(--velvet); border: 1px solid var(--line); color: var(--muted);
   padding: 9px 0; border-radius: 999px; font-size: 13px; font-weight: 600;
@@ -3664,7 +3683,8 @@ input, textarea { font-family: inherit; }
 .edit-log-time { font-family: 'Space Mono', monospace; font-size: 10.5px; flex-shrink: 0; }
 
 /* discover swipe */
-.view-discover { display: flex; flex-direction: column; align-items: center; }
+.view-discover { display: flex; flex-direction: column; align-items: center; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.view-discover * { user-select: none; -webkit-user-select: none; }
 .swipe-stack { width: 100%; max-width: 340px; height: calc(100dvh - 240px); display: flex; flex-direction: column; }
 .swipe-card {
   background: var(--velvet); border-radius: 18px; overflow: hidden; position: relative;
@@ -3719,6 +3739,8 @@ input, textarea { font-family: inherit; }
 .outnow-hero-genres { font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 4px; }
 .outnow-save-btn { position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; border-radius: 50%; background: rgba(10,5,9,0.65); border: 1px solid rgba(255,255,255,0.25); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; backdrop-filter: blur(6px); }
 .outnow-save-btn-active { background: rgba(226,54,54,0.75) !important; border-color: var(--marquee-red) !important; }
+.outnow-seen-btn { position: absolute; top: 10px; right: 50px; width: 32px; height: 32px; border-radius: 50%; background: rgba(10,5,9,0.65); border: 1px solid rgba(255,255,255,0.25); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; backdrop-filter: blur(6px); }
+.outnow-seen-btn:active { transform: scale(0.9); }
 .outnow-all-heroes { display: flex; flex-direction: column; gap: 8px; }
 .outnow-zip-row { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 .zip-tap { background: none; border: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 0; text-align: left; }
