@@ -1152,12 +1152,10 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
   const [open, setOpen] = useState(null);
   const [showWatchlist, setShowWatchlist] = useState(false);
   const [loggingWl, setLoggingWl] = useState(null);
-  const [showFavorites, setShowFavorites] = useState(false);
   const [detail, setDetail] = useState(null);
   const [sort, setSort] = useState("recent");
   const [genreFilter, setGenreFilter] = useState("all");
   const [query, setQuery] = useState("");
-  const [scanning, setScanning] = useState(false);
   const [yearFilter, setYearFilter] = useState("all");
   const [wlQuery, setWlQuery] = useState("");
   const [wlGenre, setWlGenre] = useState("all");
@@ -1249,29 +1247,6 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
           onLogNew={(it, entry, credits) => { onLogNew(it, entry, credits); onRemoveFromWatchlist(it); }}
         />
       )}
-
-      {scanning && (
-        <TicketScanner
-          tmdb={tmdb}
-          onClose={() => setScanning(false)}
-          onLogNew={(it, entry) => { onLogNew(it, entry); }}
-        />
-      )}
-
-      {showFavorites && (
-        <Modal onClose={() => setShowFavorites(false)} wide>
-          <h3 className="modal-title">Favorites</h3>
-          <FavoritesView collection={collection} people={people} tmdb={tmdb} onUpdateTicket={onUpdateTicket} />
-        </Modal>
-      )}
-
-      <div className="collection-top-actions">
-        <button className="collection-icon-btn" onClick={() => setScanning(true)} aria-label="Scan ticket" title="Scan ticket"><Camera size={16} /></button>
-        <button className="collection-icon-btn" onClick={() => setShowFavorites(true)} aria-label="Favorites" title="Favorites"><Heart size={16} /></button>
-        {collection.length > 0 && (
-          <button className="collection-icon-btn" onClick={onShowYIR} aria-label="Recap" title={`${new Date().getFullYear()} Recap`}><Sparkles size={16} /></button>
-        )}
-      </div>
 
       <div className="view-toggle">
         <button className={!showWatchlist ? "toggle-pill active" : "toggle-pill"} onClick={() => setShowWatchlist(false)}>
@@ -2713,7 +2688,7 @@ function SearchView({ tmdb, taste, onAddToWatchlist, onLogNew }) {
    SETTINGS
 --------------------------------------------------------- */
 
-function SettingsPanel({ settings, conn, collection, watchlist, feedback, onSave, onClose, onSaveConnection, onImport }) {
+function SettingsPanel({ settings, conn, collection, watchlist, feedback, onSave, onClose, onSaveConnection, onImport, onEnrich, enrichStatus }) {
   const [tmdbKey, setTmdbKey] = useState(settings.tmdbKey);
   const [omdbKey, setOmdbKey] = useState(settings.omdbKey);
   const [zip, setZip] = useState(settings.zip);
@@ -2808,6 +2783,14 @@ function SettingsPanel({ settings, conn, collection, watchlist, feedback, onSave
         <button className="btn btn-outline btn-sm" onClick={() => importRef.current && importRef.current.click()}><Upload size={14} /> Restore from file</button>
         <input ref={importRef} type="file" accept="application/json,.json" style={{ display: "none" }} onChange={handleImportFile} />
       </div>
+
+      <label className="field-label" style={{ marginTop: 18 }}>Enrich your collection</label>
+      <p className="sync-note">
+        Fetches cast, directors, and themes for everything you've logged, so the taste engine sees more than genre.
+        Runs once, takes a moment. New logs are enriched automatically from now on.
+      </p>
+      <button className="btn btn-outline btn-sm" onClick={onEnrich}><Sparkles size={14} /> Fetch cast, directors and themes</button>
+      {enrichStatus && <p className="sync-note" style={{ marginTop: 8, color: "var(--brass)" }}>{enrichStatus}</p>}
 
       <div className="form-actions">
         <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
@@ -3229,6 +3212,9 @@ export default function App() {
   const [mountedTabs, setMountedTabs] = useState(() => new Set(["discover"]));
   const [showSettings, setShowSettings] = useState(false);
   const [showYIR, setShowYIR] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [showFavorites, setShowFavorites] = useState(false);
+  const [enrichStatus, setEnrichStatus] = useState("");
 
   function switchTab(id) {
     setTab(id);
@@ -3329,6 +3315,43 @@ export default function App() {
     setCollection((c) => [...c, ticket]);
     setWatchlist((w) => w.filter((x) => !(x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)));
     fireBurst("collect");
+    if (!ticket.credits || !ticket.tmdbKeywords) enrichTicket(ticket);
+  }
+
+  // pull cast/director + themes for one ticket in the background and cache them,
+  // so the taste engine can see more than genre. non-blocking, fails silently.
+  function enrichTicket(ticket) {
+    if (!settings.tmdbKey) return;
+    tmdb.detailsFull(ticket.mediaType, ticket.tmdbId).then((full) => {
+      const credits = slimCredits(full.credits);
+      const kwRaw = (full.keywords && (full.keywords.keywords || full.keywords.results)) || [];
+      const tmdbKeywords = kwRaw.map((k) => ({ id: k.id, name: k.name }));
+      setCollection((c) => c.map((x) => x.id === ticket.id
+        ? { ...x, credits: x.credits || credits, tmdbKeywords: (x.tmdbKeywords && x.tmdbKeywords.length) ? x.tmdbKeywords : tmdbKeywords }
+        : x));
+    }).catch(() => {});
+  }
+
+  // one-time backfill: enrich every collected title that's missing cast/themes.
+  async function runEnrich() {
+    if (!settings.tmdbKey) { setEnrichStatus("Set your TMDB key first."); return; }
+    const need = collection.filter((t) => !t.credits || !(t.tmdbKeywords && t.tmdbKeywords.length));
+    if (!need.length) { setEnrichStatus("Everything's already enriched."); return; }
+    for (let i = 0; i < need.length; i++) {
+      const t = need[i];
+      setEnrichStatus(`Enriching ${i + 1} of ${need.length}...`);
+      try {
+        const full = await tmdb.detailsFull(t.mediaType, t.tmdbId);
+        const credits = slimCredits(full.credits);
+        const kwRaw = (full.keywords && (full.keywords.keywords || full.keywords.results)) || [];
+        const tmdbKeywords = kwRaw.map((k) => ({ id: k.id, name: k.name }));
+        setCollection((c) => c.map((x) => x.id === t.id
+          ? { ...x, credits: x.credits || credits, tmdbKeywords: (x.tmdbKeywords && x.tmdbKeywords.length) ? x.tmdbKeywords : tmdbKeywords }
+          : x));
+      } catch { /* skip this one */ }
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    setEnrichStatus(`Done. Enriched ${need.length} titles with cast, directors, and themes.`);
   }
 
   function updateTicket(t) {
@@ -3371,6 +3394,11 @@ export default function App() {
       <header className="app-header">
         <div className="wordmark">WATCH<span className="wordmark-dot">LIST</span></div>
         <div className="header-right">
+          <button className="icon-btn" onClick={() => setScanning(true)} aria-label="Scan ticket" title="Scan ticket"><Camera size={17} /></button>
+          <button className="icon-btn" onClick={() => setShowFavorites(true)} aria-label="Favorites" title="Favorites"><Heart size={17} /></button>
+          {collection.length > 0 && (
+            <button className="icon-btn" onClick={() => setShowYIR(true)} aria-label="Recap" title="Recap"><Sparkles size={17} /></button>
+          )}
           <span className={"sync-pill" + (hasCloud(conn) ? " sync-on" : "")}>
             {hasCloud(conn) ? "Synced" : "This device only"}
           </span>
@@ -3483,7 +3511,24 @@ export default function App() {
             if (Array.isArray(data.watchlist)) setWatchlist(data.watchlist);
             if (data.feedback && typeof data.feedback === "object") setFeedback(data.feedback);
           }}
+          onEnrich={runEnrich}
+          enrichStatus={enrichStatus}
         />
+      )}
+
+      {scanning && (
+        <TicketScanner
+          tmdb={tmdb}
+          onClose={() => setScanning(false)}
+          onLogNew={(it, entry) => { logNew(it, entry); }}
+        />
+      )}
+
+      {showFavorites && (
+        <Modal onClose={() => setShowFavorites(false)} wide>
+          <h3 className="modal-title">Favorites</h3>
+          <FavoritesView collection={collection} people={people} tmdb={tmdb} onUpdateTicket={updateTicket} />
+        </Modal>
       )}
     </div>
   );
