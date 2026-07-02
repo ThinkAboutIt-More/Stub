@@ -4,7 +4,7 @@ import {
   Ticket, Search, Sparkles, CalendarDays, Settings, X, Star, Pencil,
   Undo2, Trash2, Plus, Check, Heart, ChevronLeft, ChevronRight, Eye,
   Clapperboard, MapPin, Tv, Film, RefreshCw, ExternalLink, Info,
-  Bookmark, Camera
+  Bookmark, Camera, Download, Upload
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -2713,13 +2713,54 @@ function SearchView({ tmdb, taste, onAddToWatchlist, onLogNew }) {
    SETTINGS
 --------------------------------------------------------- */
 
-function SettingsPanel({ settings, conn, onSave, onClose, onSaveConnection }) {
+function SettingsPanel({ settings, conn, collection, watchlist, feedback, onSave, onClose, onSaveConnection, onImport }) {
   const [tmdbKey, setTmdbKey] = useState(settings.tmdbKey);
   const [omdbKey, setOmdbKey] = useState(settings.omdbKey);
   const [zip, setZip] = useState(settings.zip);
   const [country, setCountry] = useState(settings.country || "US");
   const [supabaseUrl, setSupabaseUrl] = useState(conn.supabaseUrl);
   const [supabaseKey, setSupabaseKey] = useState(conn.supabaseKey);
+  const importRef = useRef(null);
+
+  function downloadBackup() {
+    const payload = {
+      schema: "watchlist-backup-v1",
+      exportedAt: new Date().toISOString(),
+      collection: collection || [],
+      watchlist: watchlist || [],
+      feedback: feedback || {},
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `watchlist-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImportFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!Array.isArray(data.collection)) { alert("That file doesn't look like a Watchlist backup."); return; }
+        const ok = window.confirm(
+          `Restore ${data.collection.length} collected and ${(data.watchlist || []).length} wishlist items? This replaces what's on this device.`
+        );
+        if (!ok) return;
+        onImport(data);
+        onClose();
+      } catch {
+        alert("Couldn't read that file. Make sure it's a Watchlist backup JSON.");
+      }
+    };
+    reader.readAsText(file);
+  }
 
   return (
     <Modal onClose={onClose}>
@@ -2756,6 +2797,17 @@ function SettingsPanel({ settings, conn, onSave, onClose, onSaveConnection }) {
       </p>
       <input className="field-input" value={supabaseUrl} onChange={(e) => setSupabaseUrl(e.target.value)} placeholder="https://yourproject.supabase.co" />
       <input className="field-input" style={{ marginTop: 8 }} value={supabaseKey} onChange={(e) => setSupabaseKey(e.target.value)} placeholder="Supabase publishable or anon key" />
+
+      <label className="field-label" style={{ marginTop: 18 }}>Backup and restore</label>
+      <p className="sync-note">
+        Download a copy of your whole collection to your device. It survives cache clears, updates, and anything else.
+        Restore it any time, or hand the file to the taste engine. Do this before any big change.
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button className="btn btn-outline btn-sm" onClick={downloadBackup}><Download size={14} /> Download backup</button>
+        <button className="btn btn-outline btn-sm" onClick={() => importRef.current && importRef.current.click()}><Upload size={14} /> Restore from file</button>
+        <input ref={importRef} type="file" accept="application/json,.json" style={{ display: "none" }} onChange={handleImportFile} />
+      </div>
 
       <div className="form-actions">
         <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
@@ -3420,9 +3472,17 @@ export default function App() {
         <SettingsPanel
           settings={settings}
           conn={conn}
+          collection={collection}
+          watchlist={watchlist}
+          feedback={feedback}
           onClose={() => setShowSettings(false)}
           onSave={(s) => setSettings(s)}
           onSaveConnection={(c) => { updateConnection(c); setShowSettings(false); }}
+          onImport={(data) => {
+            if (Array.isArray(data.collection)) setCollection(data.collection);
+            if (Array.isArray(data.watchlist)) setWatchlist(data.watchlist);
+            if (data.feedback && typeof data.feedback === "object") setFeedback(data.feedback);
+          }}
         />
       )}
     </div>
