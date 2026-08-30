@@ -334,45 +334,107 @@ function matchStyle(pct) {
   };
 }
 
-/* 0..100 match score blending genre affinity, external quality, and
-   personal calibration so a mediocre film in a liked genre still scores low */
-function matchPercent(item, taste) {
+/* how much does the TMDB crowd average predict HIS ratings? learned from
+   his own history - if the crowd never calls his taste, the model discounts it */
+function learnCrowdWeight(collection) {
+  const pairs = [];
+  collection.forEach((t) => {
+    if (t.voteAverage == null || (t.voteCount ?? 0) < 50) return;
+    t.viewings.forEach((v) => { if (v.rating) pairs.push([t.voteAverage, v.rating]); });
+  });
+  if (pairs.length < 8) return { weight: 0.2, n: pairs.length };
+  const mx = pairs.reduce((s, p) => s + p[0], 0) / pairs.length;
+  const my = pairs.reduce((s, p) => s + p[1], 0) / pairs.length;
+  let cov = 0, vx = 0;
+  pairs.forEach(([x, y]) => { cov += (x - mx) * (y - my); vx += (x - mx) * (x - mx); });
+  const slope = vx > 0 ? cov / vx : 0;
+  // slope ~0 (crowd useless for him) -> 0.12 floor; slope >= 2.5 (crowd tracks him) -> 0.45 cap
+  const weight = Math.max(0.12, Math.min(0.45, 0.12 + (slope / 2.5) * 0.33));
+  return { weight, n: pairs.length };
+}
+
+/* how strongly does this item connect to the people HE has rated?
+   the people profile was always built from his ratings - now it drives the score */
+function peopleAffinity(item, people) {
+  if (!people || !item.credits) return null;
+  const find = (list, id) => (list || []).find((p) => p.id === id);
+  let best = null;
+  (item.credits.directors || []).forEach((d) => {
+    const p = find(people.directors, d.id);
+    if (p && (best === null || p.score > best)) best = p.score;
+  });
+  (item.credits.writers || []).forEach((w) => {
+    const p = find(people.writers, w.id);
+    if (p && (best === null || p.score > best)) best = p.score;
+  });
+  (item.credits.cast || []).slice(0, 5).forEach((c) => {
+    const p = find(people.actors, c.id);
+    if (p && (best === null || p.score > best)) best = p.score;
+  });
+  return best;
+}
+
+/* full match computation: his ratings anchor everything.
+   people (directors/writers/cast he loves) > genre affinity > crowd average
+   (weight learned from his history) + per-genre calibration vs consensus */
+function matchMeta(item, taste, people, crowd) {
   const weights = getWeights(taste);
   const gc = taste?.genreCalibration || {};
   const keys = Object.keys(weights);
-  if (!keys.length) return null;
+  if (!keys.length) return { pct: null, conf: "low" };
+  const crowdW = (crowd && crowd.weight) || 0.2;
 
-  // Factor 1: personal genre affinity (your ratings + swipes) — the primary signal
+  // genre affinity (tiebreaker term)
   let genreScore = 50;
   if (item.genreIds && item.genreIds.length) {
     const maxAbs = Math.max(...keys.map((k) => Math.abs(weights[k])), 1);
     const raw = scoreItem(item, weights);
-    // steeper curve: strong alignment pushes toward the ceiling, dislikes toward the floor
     const norm = Math.max(-1, Math.min(1, raw / maxAbs));
-    genreScore = Math.round(50 + norm * 49); // 0→50, +1→99, -1→1
+    genreScore = Math.round(50 + norm * 49);
   }
 
-  // Factor 2: external quality — a secondary sanity signal, NOT the main driver
-  let qualityScore = 60; // neutral when vote data absent/sparse
+  // people affinity (the anchor term)
+  const aff = peopleAffinity(item, people);
+  let peopleScore = null;
+  if (aff != null) {
+    const allScores = [ ...(people.directors||[]), ...(people.writers||[]), ...(people.actors||[]) ].map((p) => p.score);
+    const maxP = Math.max(...allScores.map(Math.abs), 1);
+    const norm = Math.max(-1, Math.min(1, aff / maxP));
+    peopleScore = Math.round(50 + norm * 49);
+  }
+
+  // crowd quality (weight learned, not hardwired)
+  let qualityScore = 60;
   if (item.voteAverage != null && (item.voteCount ?? 0) > 50) {
     const clamped = Math.max(4.0, Math.min(9.0, item.voteAverage));
     qualityScore = Math.round(((clamped - 4.0) / 5.0) * 100);
   }
 
-  // Factor 3: personal calibration — do YOU rate these genres above/below TMDB consensus?
-  // you over-rate this genre → bump; under-rate → penalty
+  // per-genre calibration vs consensus
   let calibBonus = 0;
   if (item.genreIds && item.genreIds.length) {
     const deltas = item.genreIds.map((g) => gc[g]).filter((d) => d != null);
     if (deltas.length) {
-      const avg = deltas.reduce((s, d) => s + d, 0) / deltas.length;
-      calibBonus = Math.max(-18, Math.min(18, avg * 2));
+      const avg = deltas.reduce((sum, d) => sum + d, 0) / deltas.length;
+      calibBonus = Math.max(-12, Math.min(12, avg * 2));
     }
   }
 
-  // your taste dominates (66%); external quality is a minor adjustment (34%)
-  const blended = genreScore * 0.66 + qualityScore * 0.34 + calibBonus;
-  return Math.max(1, Math.min(99, Math.round(blended)));
+  let blended, conf;
+  if (peopleScore != null) {
+    const wPeople = 0.5, wGenre = 0.5 - crowdW;
+    blended = peopleScore * wPeople + genreScore * wGenre + qualityScore * crowdW + calibBonus;
+    conf = "high";
+  } else {
+    const wGenre = 1 - crowdW;
+    blended = genreScore * wGenre + qualityScore * crowdW + calibBonus;
+    conf = crowd && crowd.n >= 20 ? "medium" : "low";
+  }
+  return { pct: Math.max(1, Math.min(99, Math.round(blended))), conf };
+}
+
+function matchPercent(item, taste, people, crowd) {
+  return matchMeta(item, taste, people, crowd).pct;
 }
 
 /* enough signal to start trusting the percentages */
@@ -1408,7 +1470,7 @@ function SwipeButtons({ onSkip, onSeen, onWant }) {
   );
 }
 
-function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo }) {
+function SwipeCard({ item, matchPct, matchConf, taste, onSkip, onWant, onSeen, onTapInfo }) {
   const [drag, setDrag] = useState({ x: 0, active: false });
   const [flying, setFlying] = useState(null);
   const [flyFrom, setFlyFrom] = useState(0);
@@ -1474,7 +1536,7 @@ function SwipeCard({ item, matchPct, taste, onSkip, onWant, onSeen, onTapInfo })
       {drag.x < 0 && <div className="swipe-flag swipe-flag-skip" style={{ opacity: dragPct, transform: `rotate(8deg) scale(${0.55 + dragPct * 0.55})` }}>SKIP</div>}
       {matchPct != null && (
         <div className="match-badge" style={matchStyle(matchPct)}>
-          {matchPct}% match
+          {matchPct}% match{matchConf ? ` \u00b7 ${matchConf.toUpperCase()}` : ""}
         </div>
       )}
       <button
@@ -1573,7 +1635,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
       let unserved = dedup.filter((x) => !servedRef.current.has(x.tmdbId + x.mediaType));
       if (unserved.length === 0) { servedRef.current.clear(); unserved = dedup; }
       unserved.forEach((x) => servedRef.current.add(x.tmdbId + x.mediaType));
-      const scored = unserved.map((x) => ({ ...x, _pct: matchPercent(x, taste) }));
+      const scored = unserved.map((x) => { const m = matchMeta(x, taste, people, crowdRef.current); return { ...x, _pct: m.pct, _conf: m.conf }; });
       // Fisher-Yates shuffle — truly random deck every load
       for (let i = scored.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -1602,6 +1664,10 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
     // eslint-disable-next-line
   }, [pool.length, loading, error]);
 
+  const crowdRef = useRef(null);
+  if (crowdRef.current === null || crowdRef.current._for !== collection) {
+    crowdRef.current = { ...learnCrowdWeight(collection), _for: collection };
+  }
   const loadForYouList = useCallback(async () => {
     setForYouLoading(true);
     try {
@@ -1622,7 +1688,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
         const all = pages.flatMap((p) => (p.results || []).map(normalize));
         const dedup = Array.from(new Map(all.map((f) => [f.tmdbId + f.mediaType, f])).values());
         const fresh = dedup.filter((x) => !ownedSet.has(x.tmdbId + x.mediaType) && !seenIdSet.has(x.tmdbId + x.mediaType));
-        const scored = fresh.map((x) => ({ ...x, _pct: matchPercent(x, taste) }));
+        const scored = fresh.map((x) => { const m = matchMeta(x, taste, people, crowdRef.current); return { ...x, _pct: m.pct, _conf: m.conf }; });
         scored.sort((a, b) => (b._pct || 50) - (a._pct || 50));
         setForYouList(scored.slice(0, 30));
       }
@@ -1735,6 +1801,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
               <SwipeCard
                 item={current}
                 matchPct={enough ? current._pct : null}
+                matchConf={enough ? current._conf : null}
                 taste={taste}
                 onSkip={() => skip(current)}
                 onWant={() => want(current)}
@@ -1796,6 +1863,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
                   key={item.tmdbId + item.mediaType}
                   item={item}
                   matchPct={enough ? item._pct : null}
+                  matchConf={enough ? item._conf : null}
                   taste={taste}
                   people={people}
                   settings={settings}
@@ -1872,7 +1940,7 @@ function useExtraInfo(item, settings, tmdb) {
   return { imdb, providers };
 }
 
-function SuggestionRow({ item, matchPct, settings, tmdb, taste, people, onAddToWatchlist, onSkip, onSeen, onInfo }) {
+function SuggestionRow({ item, matchPct, matchConf, settings, tmdb, taste, people, onAddToWatchlist, onSkip, onSeen, onInfo }) {
   const [expanded, setExpanded] = useState(false);
   const [logging, setLogging] = useState(false);
   const { imdb, providers } = useExtraInfo(item, settings, tmdb);
@@ -1890,7 +1958,7 @@ function SuggestionRow({ item, matchPct, settings, tmdb, taste, people, onAddToW
       <div className="suggest-info">
         <div className="suggest-title-row">
           <button className="suggest-title-btn" onClick={(e) => { e.stopPropagation(); onInfo(); }}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
-          {matchPct != null && <span className="match-pill" style={matchStyle(matchPct)}>{matchPct}%</span>}
+          {matchPct != null && <span className="match-pill" style={matchStyle(matchPct)}>{matchPct}%{matchConf ? ` \u00b7 ${matchConf.toUpperCase()}` : ""}</span>}
         </div>
         <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ")}</div>
         {badges.length > 0 && (
@@ -2085,6 +2153,7 @@ function ComingRow({ item, badges, note, enough, added, inWatchlist, settings, o
 }
 
 function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, feedback, onAddToWatchlist, onLogNew }) {
+  const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -2207,7 +2276,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
 
   const processed = useMemo(() => {
     let list = items
-      .map((x) => ({ ...x, _pct: matchPercent(x, taste) }))
+      .map((x) => { const m = matchMeta(x, taste, people, crowd); return { ...x, _pct: m.pct, _conf: m.conf }; })
       .filter((x) => inWindow(x.releaseDate));
     if (genreFilter !== "all") list = list.filter((x) => (x.genreIds || []).includes(Number(genreFilter)));
     if (!enough) list.sort((a, b) => (a.releaseDate < b.releaseDate ? -1 : 1));
@@ -2354,6 +2423,7 @@ function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCo
 }
 
 function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feedback, onAddToWatchlist, onLogNew, onSaveSettings }) {
+  const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -2423,7 +2493,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
   }, [items]);
 
   const processed = useMemo(() => {
-    let list = items.map((x) => ({ ...x, _pct: matchPercent(x, taste) }));
+    let list = items.map((x) => { const m = matchMeta(x, taste, people, crowd); return { ...x, _pct: m.pct, _conf: m.conf }; });
     if (genreFilter !== "all") list = list.filter((x) => (x.genreIds || []).includes(Number(genreFilter)));
     if (sort === "match") list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
     else if (sort === "lowest") list.sort((a, b) => (a._pct || 0) - (b._pct || 0));
