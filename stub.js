@@ -4228,9 +4228,9 @@ function buildWhyWatch(item, taste, matchPct, voteAvg) {
   }
   if (pct >= 38) {
     const base = pick(offGenre ? [`A stretch — ${offGenre} isn't your usual, but maybe`, `Different lane with that ${offGenre} bent`, `Outside your comfort zone, ${offGenre}-wise`, `Not the obvious pick, but ${offGenre} could surprise you`] : [`A bit of a curveball for your taste`, `Different from your usual — open mind needed`, `Not a sure thing, but could click`, `Coin flip for someone like you`]);
-    return base + (good ? " (it is well-reviewed)." : ".");
+    return base + (good ? " (the crowd’s into it)." : ".");
   }
-  return pick(weak ? [`Skip it — weak film and not your lane.`, `Probably a pass on both counts.`, `Hard to recommend this one to you.`, `Not your thing, and not a strong film.`] : good ? [`Not your usual, though critics rate it.`, `Outside your taste but genuinely well-made.`, `Critically solid, just not aimed at you.`, `Good film, wrong fit for your taste.`] : [`Probably not your thing.`, `Pretty far from what you reach for.`, `Doubtful fit for your taste.`, `Likely a pass for you.`]);
+  return pick(weak ? [`Skip it — weak film and not your lane.`, `Probably a pass on both counts.`, `Hard to recommend this one to you.`, `Not your thing, and not a strong film.`] : good ? [`Not your usual, but fans rate it high.`, `Outside your taste but genuinely well-made.`, `Crowd favorite, just not aimed at you.`, `Good film, wrong fit for your taste.`] : [`Probably not your thing.`, `Pretty far from what you reach for.`, `Doubtful fit for your taste.`, `Likely a pass for you.`]);
 }
 
 /* nearest-neighbor reason: which of HIS rated films does this sit closest to,
@@ -5299,6 +5299,14 @@ input, textarea { font-family: inherit; }
 .swipe-fly-left  { animation: swipe-fly-left  0.3s cubic-bezier(0.45,0,0.7,0.2) forwards; pointer-events: none; z-index: 5; }
 .swipe-fly-right { animation: swipe-fly-right 0.3s cubic-bezier(0.45,0,0.7,0.2) forwards; pointer-events: none; z-index: 5; }
 .swipe-fly-up    { animation: swipe-fly-up    0.3s cubic-bezier(0.45,0,0.7,0.2) forwards; pointer-events: none; z-index: 5; }
+
+/* tap + entrance polish (v52) */
+.btn, .icon-btn, .td-tool-btn { transition: transform 0.14s cubic-bezier(.34,1.56,.64,1), background 0.15s, box-shadow 0.15s, color 0.15s; }
+.btn:active, .icon-btn:active, .td-tool-btn:active { transform: scale(0.9); }
+@keyframes card-enter { 0% { transform: translateY(16px) scale(0.95); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
+.swipe-card { animation: card-enter 0.28s cubic-bezier(.22,.9,.32,1.15); }
+@keyframes match-pop { 0% { transform: scale(0.4); opacity: 0; } 70% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+.match-badge, .match-pill { animation: match-pop 0.32s cubic-bezier(.34,1.56,.64,1) 0.04s both; }
 
 /* out now cards */
 .outnow-hero { position: relative; border-radius: 14px; overflow: hidden; cursor: pointer; }
