@@ -61,9 +61,9 @@ const CONNECTION_KEY = "stub-connection";
 function getConnection() {
   try {
     const raw = localStorage.getItem(CONNECTION_KEY);
-    return raw ? JSON.parse(raw) : { supabaseUrl: "", supabaseKey: "" };
+    return raw ? JSON.parse(raw) : { supabaseUrl: "https://pmgmtjmilcjrxsalnuxr.supabase.co", supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBtZ210am1pbGNqcnhzYWxudXhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxNTM1OTEsImV4cCI6MjA5NzcyOTU5MX0.TB-T0_LMG50z_jOfq1LwFWbwiYIvkAkgfPW7WwP5LmA" };
   } catch (e) {
-    return { supabaseUrl: "", supabaseKey: "" };
+    return { supabaseUrl: "https://pmgmtjmilcjrxsalnuxr.supabase.co", supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBtZ210am1pbGNqcnhzYWxudXhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxNTM1OTEsImV4cCI6MjA5NzcyOTU5MX0.TB-T0_LMG50z_jOfq1LwFWbwiYIvkAkgfPW7WwP5LmA" };
   }
 }
 
