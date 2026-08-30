@@ -53,7 +53,7 @@ const STORAGE_KEYS = {
 };
 const DEFAULT_SETTINGS = {
   tmdbKey: "",
-  omdbKey: "",
+  omdbKey: "5f3a67c7",
   zip: "",
   country: "US"
 };
@@ -2018,6 +2018,7 @@ function SwipeCard({
   matchPct,
   matchConf,
   taste,
+  collection,
   onSkip,
   onWant,
   onSeen,
@@ -2151,7 +2152,8 @@ function SwipeCard({
       }), /*#__PURE__*/_jsx(WhyWatch, {
         item: item,
         taste: taste,
-        matchPct: matchPct
+        matchPct: matchPct,
+        collection: collection
       })]
     }), /*#__PURE__*/_jsx(SwipeButtons, {
       onSkip: () => fly("left", onSkip),
@@ -2485,6 +2487,7 @@ function DiscoverView({
           matchPct: enough ? current._pct : null,
           matchConf: enough ? current._conf : null,
           taste: taste,
+          collection: collection,
           onSkip: () => skip(current),
           onWant: () => want(current),
           onSeen: () => seen(current),
@@ -2582,6 +2585,7 @@ function DiscoverView({
           item: item,
           matchPct: enough ? item._pct : null,
           matchConf: enough ? item._conf : null,
+          collection: collection,
           taste: taste,
           people: people,
           settings: settings,
@@ -2658,6 +2662,7 @@ function SuggestionRow({
   tmdb,
   taste,
   people,
+  collection,
   onAddToWatchlist,
   onSkip,
   onSeen,
@@ -2723,7 +2728,8 @@ function SuggestionRow({
       }), taste && !item.aiReason && /*#__PURE__*/_jsx(WhyWatch, {
         item: item,
         taste: taste,
-        matchPct: matchPct
+        matchPct: matchPct,
+        collection: collection
       }), expanded && /*#__PURE__*/_jsxs("div", {
         className: "suggest-links",
         onClick: e => e.stopPropagation(),
@@ -4226,12 +4232,62 @@ function buildWhyWatch(item, taste, matchPct, voteAvg) {
   }
   return pick(weak ? [`Skip it — weak film and not your lane.`, `Probably a pass on both counts.`, `Hard to recommend this one to you.`, `Not your thing, and not a strong film.`] : good ? [`Not your usual, though critics rate it.`, `Outside your taste but genuinely well-made.`, `Critically solid, just not aimed at you.`, `Good film, wrong fit for your taste.`] : [`Probably not your thing.`, `Pretty far from what you reach for.`, `Doubtful fit for your taste.`, `Likely a pass for you.`]);
 }
+
+/* nearest-neighbor reason: which of HIS rated films does this sit closest to,
+   and what did he give it. people links beat genre links; his rating of the
+   neighbor decides the tone. titles only - no plot, no cast names, spoiler-free */
+function nearestReason(item, collection) {
+  if (!collection || !collection.length || !item) return null;
+  const itemDirs = new Set((item.credits && item.credits.directors || []).map(p => p.id));
+  const itemWriters = new Set((item.credits && item.credits.writers || []).map(p => p.id));
+  const itemCast = new Set((item.credits && item.credits.cast || []).slice(0, 8).map(p => p.id));
+  let best = null;
+  collection.forEach(t => {
+    if (t.tmdbId === item.tmdbId && t.mediaType === item.mediaType) return;
+    const r = t.viewings && t.viewings.length ? t.viewings[t.viewings.length - 1].rating : null;
+    if (!r) return;
+    const c = t.credits || {};
+    let link = 0,
+      kind = null;
+    if ((c.directors || []).some(p => itemDirs.has(p.id))) {
+      link += 3;
+      kind = kind || "director";
+    }
+    if ((c.writers || []).some(p => itemWriters.has(p.id))) {
+      link += 2.5;
+      kind = kind || "writer";
+    }
+    const sharedCast = (c.cast || []).slice(0, 8).filter(p => itemCast.has(p.id)).length;
+    if (sharedCast) {
+      link += Math.min(sharedCast, 2) * 1.5;
+      kind = kind || "cast";
+    }
+    const gShared = (t.genreIds || []).filter(g => (item.genreIds || []).includes(g)).length;
+    link += gShared * 0.5;
+    if (link < 1) return;
+    const score = link * 10 + r;
+    if (!best || score > best.score) best = {
+      title: t.title,
+      rating: r,
+      link,
+      kind,
+      score
+    };
+  });
+  if (!best) return null;
+  const y = best.rating >= 7 ? "high" : best.rating <= 4 ? "low" : "mid";
+  if (best.kind === "director") return y === "high" ? `Same director as your ${best.rating}/10 ${best.title}` : y === "low" ? `Same director as ${best.title} - which you gave ${best.rating}/10` : `Same director as your ${best.rating}/10 ${best.title}`;
+  if (best.kind === "writer") return y === "high" ? `From a writer on your ${best.rating}/10 ${best.title}` : y === "low" ? `From a writer on ${best.title} - which you gave ${best.rating}/10` : `From a writer on your ${best.rating}/10 ${best.title}`;
+  if (best.kind === "cast") return y === "high" ? `Cast overlap with your ${best.rating}/10 ${best.title}` : y === "low" ? `Cast overlap with ${best.title} - which you gave ${best.rating}/10` : `Cast overlap with your ${best.rating}/10 ${best.title}`;
+  return y === "high" ? `Sits closest to your ${best.rating}/10 ${best.title}` : y === "low" ? `Sits closest to ${best.title} - which you gave ${best.rating}/10` : `In the neighborhood of your ${best.rating}/10 ${best.title}`;
+}
 function WhyWatch({
   item,
   taste,
-  matchPct
+  matchPct,
+  collection
 }) {
-  const reason = useMemo(() => buildWhyWatch(item, taste, matchPct, item.voteAverage), [item.tmdbId, item.mediaType, matchPct]);
+  const reason = useMemo(() => nearestReason(item, collection) || buildWhyWatch(item, taste, matchPct, item.voteAverage), [item.tmdbId, item.mediaType, matchPct, collection]);
   if (!reason) return null;
   return /*#__PURE__*/_jsx("div", {
     className: "why-watch",

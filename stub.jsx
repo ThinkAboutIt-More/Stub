@@ -32,7 +32,7 @@ const STORAGE_KEYS = {
   feedback: "stub-discover-feedback"
 };
 
-const DEFAULT_SETTINGS = { tmdbKey: "", omdbKey: "", zip: "", country: "US" };
+const DEFAULT_SETTINGS = { tmdbKey: "", omdbKey: "5f3a67c7", zip: "", country: "US" };
 
 const PROXY_URL = "https://watchlist-proxy.xphazemusic.workers.dev";
 
@@ -1470,7 +1470,7 @@ function SwipeButtons({ onSkip, onSeen, onWant }) {
   );
 }
 
-function SwipeCard({ item, matchPct, matchConf, taste, onSkip, onWant, onSeen, onTapInfo }) {
+function SwipeCard({ item, matchPct, matchConf, taste, collection, onSkip, onWant, onSeen, onTapInfo }) {
   const [drag, setDrag] = useState({ x: 0, active: false });
   const [flying, setFlying] = useState(null);
   const [flyFrom, setFlyFrom] = useState(0);
@@ -1555,7 +1555,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, onSkip, onWant, onSeen, o
       <div className="swipe-meta">
         <div className="swipe-title">{item.title} {item.year ? `(${item.year})` : ""}</div>
         <div className="swipe-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ") || (item.mediaType === "tv" ? "TV series" : "Film")}</div>
-        <WhyWatch item={item} taste={taste} matchPct={matchPct} />
+        <WhyWatch item={item} taste={taste} matchPct={matchPct} collection={collection} />
       </div>
       <SwipeButtons
         onSkip={() => fly("left", onSkip)}
@@ -1803,6 +1803,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
                 matchPct={enough ? current._pct : null}
                 matchConf={enough ? current._conf : null}
                 taste={taste}
+                collection={collection}
                 onSkip={() => skip(current)}
                 onWant={() => want(current)}
                 onSeen={() => seen(current)}
@@ -1864,6 +1865,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
                   item={item}
                   matchPct={enough ? item._pct : null}
                   matchConf={enough ? item._conf : null}
+                  collection={collection}
                   taste={taste}
                   people={people}
                   settings={settings}
@@ -1940,7 +1942,7 @@ function useExtraInfo(item, settings, tmdb) {
   return { imdb, providers };
 }
 
-function SuggestionRow({ item, matchPct, matchConf, settings, tmdb, taste, people, onAddToWatchlist, onSkip, onSeen, onInfo }) {
+function SuggestionRow({ item, matchPct, matchConf, settings, tmdb, taste, people, collection, onAddToWatchlist, onSkip, onSeen, onInfo }) {
   const [expanded, setExpanded] = useState(false);
   const [logging, setLogging] = useState(false);
   const { imdb, providers } = useExtraInfo(item, settings, tmdb);
@@ -1967,7 +1969,7 @@ function SuggestionRow({ item, matchPct, matchConf, settings, tmdb, taste, peopl
           </div>
         )}
         {item.aiReason && <div className="why-watch">{item.aiReason}</div>}
-        {taste && !item.aiReason && <WhyWatch item={item} taste={taste} matchPct={matchPct} />}
+        {taste && !item.aiReason && <WhyWatch item={item} taste={taste} matchPct={matchPct} collection={collection} />}
         {expanded && (
           <div className="suggest-links" onClick={(e) => e.stopPropagation()}>
             {providers && providers.names.map((name) => (
@@ -3022,10 +3024,43 @@ function buildWhyWatch(item, taste, matchPct, voteAvg) {
   ]);
 }
 
-function WhyWatch({ item, taste, matchPct }) {
+/* nearest-neighbor reason: which of HIS rated films does this sit closest to,
+   and what did he give it. people links beat genre links; his rating of the
+   neighbor decides the tone. titles only - no plot, no cast names, spoiler-free */
+function nearestReason(item, collection) {
+  if (!collection || !collection.length || !item) return null;
+  const itemDirs = new Set(((item.credits && item.credits.directors) || []).map((p) => p.id));
+  const itemWriters = new Set(((item.credits && item.credits.writers) || []).map((p) => p.id));
+  const itemCast = new Set(((item.credits && item.credits.cast) || []).slice(0, 8).map((p) => p.id));
+  let best = null;
+  collection.forEach((t) => {
+    if (t.tmdbId === item.tmdbId && t.mediaType === item.mediaType) return;
+    const r = t.viewings && t.viewings.length ? t.viewings[t.viewings.length - 1].rating : null;
+    if (!r) return;
+    const c = t.credits || {};
+    let link = 0, kind = null;
+    if ((c.directors || []).some((p) => itemDirs.has(p.id))) { link += 3; kind = kind || "director"; }
+    if ((c.writers || []).some((p) => itemWriters.has(p.id))) { link += 2.5; kind = kind || "writer"; }
+    const sharedCast = (c.cast || []).slice(0, 8).filter((p) => itemCast.has(p.id)).length;
+    if (sharedCast) { link += Math.min(sharedCast, 2) * 1.5; kind = kind || "cast"; }
+    const gShared = (t.genreIds || []).filter((g) => (item.genreIds || []).includes(g)).length;
+    link += gShared * 0.5;
+    if (link < 1) return;
+    const score = link * 10 + r;
+    if (!best || score > best.score) best = { title: t.title, rating: r, link, kind, score };
+  });
+  if (!best) return null;
+  const y = best.rating >= 7 ? "high" : best.rating <= 4 ? "low" : "mid";
+  if (best.kind === "director") return y === "high" ? `Same director as your ${best.rating}/10 ${best.title}` : y === "low" ? `Same director as ${best.title} - which you gave ${best.rating}/10` : `Same director as your ${best.rating}/10 ${best.title}`;
+  if (best.kind === "writer") return y === "high" ? `From a writer on your ${best.rating}/10 ${best.title}` : y === "low" ? `From a writer on ${best.title} - which you gave ${best.rating}/10` : `From a writer on your ${best.rating}/10 ${best.title}`;
+  if (best.kind === "cast") return y === "high" ? `Cast overlap with your ${best.rating}/10 ${best.title}` : y === "low" ? `Cast overlap with ${best.title} - which you gave ${best.rating}/10` : `Cast overlap with your ${best.rating}/10 ${best.title}`;
+  return y === "high" ? `Sits closest to your ${best.rating}/10 ${best.title}` : y === "low" ? `Sits closest to ${best.title} - which you gave ${best.rating}/10` : `In the neighborhood of your ${best.rating}/10 ${best.title}`;
+}
+
+function WhyWatch({ item, taste, matchPct, collection }) {
   const reason = useMemo(
-    () => buildWhyWatch(item, taste, matchPct, item.voteAverage),
-    [item.tmdbId, item.mediaType, matchPct]
+    () => nearestReason(item, collection) || buildWhyWatch(item, taste, matchPct, item.voteAverage),
+    [item.tmdbId, item.mediaType, matchPct, collection]
   );
   if (!reason) return null;
   return <div className="why-watch">{reason}</div>;
