@@ -1685,7 +1685,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "76";
+const APP_VERSION = "77";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -2161,7 +2161,6 @@ function SuggestionRow({ item, matchPct, matchConf, settings, tmdb, taste, peopl
           <button className="suggest-title-btn" onClick={(e) => { e.stopPropagation(); onInfo(); }}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
           {matchPct != null && <span className="match-pill" style={matchStyle(matchPct)}>{matchPct}%{matchConf ? ` \u00b7 ${matchConf.toUpperCase()}` : ""}</span>}
         </div>
-        <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ")}</div>
         {badges.length > 0 && (
           <div className="badge-row">
             {badges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
@@ -2672,7 +2671,6 @@ function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCo
           )}
         </div>
         <div className={"outnow-hero-title" + (idx > 0 ? " outnow-hero-title-sm" : "")}>{item.title}</div>
-        <div className="outnow-hero-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 2).join(" · ")}</div>
         {itemBadges.length > 0 && (
           <div className="badge-row">
             {itemBadges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}

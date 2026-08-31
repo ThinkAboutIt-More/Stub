@@ -2396,7 +2396,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "76";
+const APP_VERSION = "77";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
@@ -3064,9 +3064,6 @@ function SuggestionRow({
           style: matchStyle(matchPct),
           children: [matchPct, "%", matchConf ? ` \u00b7 ${matchConf.toUpperCase()}` : ""]
         })]
-      }), /*#__PURE__*/_jsx("div", {
-        className: "suggest-genres",
-        children: genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ")
       }), badges.length > 0 && /*#__PURE__*/_jsx("div", {
         className: "badge-row",
         children: badges.map((b, i) => /*#__PURE__*/_jsx("span", {
@@ -3873,9 +3870,6 @@ function OutNowHeroCard({
       }), /*#__PURE__*/_jsx("div", {
         className: "outnow-hero-title" + (idx > 0 ? " outnow-hero-title-sm" : ""),
         children: item.title
-      }), /*#__PURE__*/_jsx("div", {
-        className: "outnow-hero-genres",
-        children: genreNames(item.genreIds, item.mediaType).slice(0, 2).join(" · ")
       }), itemBadges.length > 0 && /*#__PURE__*/_jsx("div", {
         className: "badge-row",
         children: itemBadges.map((b, i) => /*#__PURE__*/_jsx("span", {
