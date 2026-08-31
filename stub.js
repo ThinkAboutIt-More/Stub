@@ -2259,7 +2259,7 @@ function SwipeCard({
   const flyClass = flying ? ` swipe-fly-${flying}` : "";
   return /*#__PURE__*/_jsxs("div", {
     ref: cardRef,
-    className: "swipe-card" + flyClass,
+    className: "swipe-card" + (drag.active && !flying ? " dragging" : "") + flyClass,
     style: flying ? {
       "--fly-from": flyFrom + "px"
     } : {
@@ -2406,7 +2406,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "78";
+const APP_VERSION = "79";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
@@ -2546,10 +2546,29 @@ function DiscoverView({
   const reloadAttemptsRef = useRef(0);
   const servedRef = useRef(new Set());
   const grad = usePosterGradient(pool[0]);
+  const washTimer = useRef(null);
   useEffect(() => {
-    const rs = document.documentElement.style;
-    rs.setProperty("--wash-a", grad.a);
-    rs.setProperty("--wash-b", grad.b);
+    const app = document.querySelector(".app");
+    if (!app) return;
+    let fade = app.querySelector(".wash-fade");
+    if (!fade) {
+      fade = document.createElement("div");
+      fade.className = "wash-fade";
+      app.insertBefore(fade, app.firstChild);
+    }
+    // incoming colors on the fade layer, crossfade in, then commit to the base
+    fade.style.background = `linear-gradient(180deg, ${grad.a} 0%, ${grad.a} 24%, ${grad.b} 76%, ${grad.b} 100%)`;
+    fade.style.opacity = "1";
+    if (washTimer.current) clearTimeout(washTimer.current);
+    washTimer.current = setTimeout(() => {
+      const rs = document.documentElement.style;
+      rs.setProperty("--wash-a", grad.a);
+      rs.setProperty("--wash-b", grad.b);
+      fade.style.opacity = "0";
+    }, 680);
+    return () => {
+      if (washTimer.current) clearTimeout(washTimer.current);
+    };
   }, [grad]);
   const seenIdSet = useMemo(() => {
     const now = Date.now();
@@ -4762,7 +4781,7 @@ async function smartSearch(query, tmdb) {
     max_tokens: 500,
     messages: [{
       role: "user",
-      content: `The user searched for: "${query}". Return 10 movie or TV show recommendations that best match this query. For each, provide the exact title and approximate year. Reply ONLY with a valid JSON array, no other text: [{"title":"...","year":"YYYY"}]`
+      content: `The user searched for: "${query}". Return 12 movie or TV show recommendations that best match this query. For each, provide the exact title and approximate year. Reply ONLY with a valid JSON array, no other text: [{"title":"...","year":"YYYY"}]`
     }]
   });
   const text = data.content?.[0]?.text?.trim() || "";
@@ -4771,8 +4790,12 @@ async function smartSearch(query, tmdb) {
   const suggestions = JSON.parse(match[0]);
   const hydrated = await Promise.all(suggestions.map(async s => {
     try {
-      const res = await tmdb.searchMulti(`${s.title} ${s.year || ""}`.trim());
-      const hit = (res.results || []).find(r => r.media_type === "movie" || r.media_type === "tv");
+      let res = await tmdb.searchMulti(`${s.title} ${s.year || ""}`.trim());
+      let hit = (res.results || []).find(r => r.media_type === "movie" || r.media_type === "tv");
+      if (!hit) {
+        res = await tmdb.searchMulti(s.title);
+        hit = (res.results || []).find(r => r.media_type === "movie" || r.media_type === "tv");
+      }
       if (hit) return normalize(hit);
     } catch {/* skip */}
     return null;
@@ -5762,6 +5785,7 @@ input, textarea { font-family: inherit; }
   touch-action: none; user-select: none;
   border: 1px solid rgba(226,54,54,0.1);
   flex: 1; display: flex; flex-direction: column; min-height: 0;
+  transition: transform 0.24s cubic-bezier(.22,.9,.32,1);
   --notch-y: 62%;
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
@@ -5787,6 +5811,8 @@ input, textarea { font-family: inherit; }
 .marquee-bulbs i:nth-child(2n) { animation-delay: 1.1s; opacity: 0.6; }
 @keyframes bulb-glow { to { opacity: 0.55; box-shadow: 0 0 6px 1.5px rgba(245,205,110,0.45); } }
 .app.wash-on { background: linear-gradient(180deg, var(--wash-a, #c98f2e) 0%, var(--wash-a, #c98f2e) 24%, var(--wash-b, #503a72) 76%, var(--wash-b, #503a72) 100%); }
+.wash-fade { display: none; position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0; transition: opacity 0.65s ease; }
+.app.wash-on .wash-fade { display: block; }
 .discover-bg { position: absolute; top: -150px; right: -130px; width: 440px; height: 440px; border-radius: 50%; background-size: cover; background-position: center; filter: blur(90px) brightness(1.0) saturate(1.5); opacity: 0.65; pointer-events: none; z-index: 0; }
 .discover-bg-b { top: auto; right: auto; bottom: -120px; left: -150px; opacity: 0.45; filter: blur(90px) brightness(0.9) saturate(1.4); }
 .view-discover::after { content: none; }
@@ -5800,6 +5826,7 @@ input, textarea { font-family: inherit; }
 .choice-btn-seen { background: var(--stub-cream); color: var(--ink); }
 .choice-dismiss { background: none; border: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 4px 10px; text-decoration: underline; }
 .choice-stars { padding: 4px 0 8px; }
+.swipe-card.dragging { transition: none; }
 .swipe-buttons { display: flex; justify-content: center; align-items: center; gap: 20px; padding: 10px 0 14px; flex-shrink: 0; }
 .round-btn { width: 52px; height: 52px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; transition: transform 0.16s cubic-bezier(.34,1.56,.64,1), box-shadow 0.16s; }
 .round-btn:active { transform: scale(0.86); }
