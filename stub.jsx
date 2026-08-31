@@ -1740,6 +1740,8 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   const servedRef = useRef(new Set());
 
   const grad = usePosterGradient(pool[0]);
+  window.__gradLog = window.__gradLog || [];
+  window.__gradLog.push("render grad=" + grad.a);
   const seenIdSet = useMemo(
     () => {
       const now = Date.now();

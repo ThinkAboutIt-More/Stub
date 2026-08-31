@@ -2459,6 +2459,8 @@ function DiscoverView({
   const reloadAttemptsRef = useRef(0);
   const servedRef = useRef(new Set());
   const grad = usePosterGradient(pool[0]);
+  window.__gradLog = window.__gradLog || [];
+  window.__gradLog.push("render grad=" + grad.a);
   const seenIdSet = useMemo(() => {
     const now = Date.now();
     // skips cool down: hidden for SKIP_COOLDOWN_MS, then free to resurface.
