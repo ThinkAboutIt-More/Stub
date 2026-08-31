@@ -1651,11 +1651,9 @@ function usePosterGradient(item) {
   const [grad, setGrad] = useState(DEFAULT_GRAD);
   useEffect(() => {
     let dead = false;
-    window.__gradLog = window.__gradLog || [];
-    window.__gradLog.push("effect item=" + (item && item.tmdbId) + "/" + (item && item.mediaType) + " poster=" + (item && item.posterPath));
-    if (!item || !item.posterPath) { window.__gradLog.push("no-item"); setGrad(DEFAULT_GRAD); return; }
+    if (!item || !item.posterPath) { setGrad(DEFAULT_GRAD); return; }
     const key = item.tmdbId + item.mediaType;
-    if (key in posterGradCache) { window.__gradLog.push("cache " + key); setGrad(posterGradCache[key] || DEFAULT_GRAD); return; }
+    if (key in posterGradCache) { setGrad(posterGradCache[key] || DEFAULT_GRAD); return; }
     setGrad(DEFAULT_GRAD);
     const finish = (g) => { posterGradCache[key] = g; if (!dead) setGrad(g || DEFAULT_GRAD); };
     // fetch -> blob -> bitmap: blob URLs are same-origin, so the canvas can
@@ -1663,13 +1661,11 @@ function usePosterGradient(item) {
     (async () => {
       try {
         const res = await fetch(tmdbImg(item.posterPath, "w342"), { mode: "cors", credentials: "omit" });
-        window.__gradLog.push("fetched " + res.status);
         if (!res.ok) throw new Error("poster fetch " + res.status);
         const blob = await res.blob();
         const objUrl = URL.createObjectURL(blob);
         const img = new Image();
         img.onload = () => {
-          window.__gradLog.push("onload");
           URL.revokeObjectURL(objUrl);
           try {
             const cv = document.createElement("canvas");
@@ -1684,6 +1680,8 @@ function usePosterGradient(item) {
               }
               return [r / n, g / n, b / n];
             };
+            // vivid() must return HEX: the gradient template appends a 2-digit
+            // alpha suffix (${a}59), which is only valid CSS for #rrggbb colors
             const vivid = (c) => {
               let [r, g, b] = c.map((v) => v / 255);
               const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
@@ -1707,16 +1705,15 @@ function usePosterGradient(item) {
                 if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
                 return p;
               };
-              return `rgb(${Math.round(hue(h + 1 / 3) * 255)},${Math.round(hue(h) * 255)},${Math.round(hue(h - 1 / 3) * 255)})`;
+              const toHex = (v) => Math.round(v * 255).toString(16).padStart(2, "0");
+              return "#" + toHex(hue(h + 1 / 3)) + toHex(hue(h)) + toHex(hue(h - 1 / 3));
             };
-            const gg = { a: vivid(avg(0, 6)), b: vivid(avg(6, 12)) };
-            window.__gradLog.push("extracted " + gg.a + "/" + gg.b + " dead=" + dead);
-            finish(gg);
-          } catch (e) { window.__gradLog.push("canvas-err " + e); finish(null); }
+            finish({ a: vivid(avg(0, 6)), b: vivid(avg(6, 12)) });
+          } catch { finish(null); }
         };
-        img.onerror = () => { window.__gradLog.push("imgerr"); URL.revokeObjectURL(objUrl); finish(null); };
+        img.onerror = () => { URL.revokeObjectURL(objUrl); finish(null); };
         img.src = objUrl;
-      } catch (e) { window.__gradLog.push("outer-err " + e); finish(null); }
+      } catch { finish(null); }
     })();
     return () => { dead = true; };
   }, [item && item.tmdbId, item && item.mediaType]);
@@ -1740,8 +1737,6 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   const servedRef = useRef(new Set());
 
   const grad = usePosterGradient(pool[0]);
-  window.__gradLog = window.__gradLog || [];
-  window.__gradLog.push("render grad=" + grad.a);
   const seenIdSet = useMemo(
     () => {
       const now = Date.now();
