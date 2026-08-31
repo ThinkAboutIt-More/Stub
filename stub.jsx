@@ -212,7 +212,8 @@ function makeTmdb(apiKey) {
     detailsFull: (mediaType, id) =>
       call(`/${mediaType}/${id}`, { append_to_response: "credits,keywords" }),
     recommendations: (mediaType, id) => call(`/${mediaType}/${id}/recommendations`),
-    keywords: (mediaType, id) => call(`/${mediaType}/${id}/keywords`)
+    keywords: (mediaType, id) => call(`/${mediaType}/${id}/keywords`),
+    personCredits: (personId) => call(`/person/${personId}/combined_credits`)
   };
 }
 
@@ -645,6 +646,7 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
           <Modal onClose={() => setLogging(false)}>
             <h3 className="modal-title">{item.title}</h3>
             <LogForm
+              mediaType={item.mediaType}
               saveLabel="Add to collection"
               onCancel={() => setLogging(false)}
               onSave={(entry) => {
@@ -666,10 +668,11 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
 
 const WHERE_PRESETS = ["AMC", "Regal", "Belcourt", "Home", "Plane", "Other"];
 
-function LogForm({ initial, onSave, onCancel, saveLabel }) {
+function LogForm({ initial, onSave, onCancel, saveLabel, mediaType }) {
+  const isTv = mediaType === "tv";
   const [date, setDate] = useState(initial?.date || todayISO());
-  const [dateMode, setDateMode] = useState(initial?.undated ? "anytime" : "exact");
-  const [approxYear, setApproxYear] = useState(String(new Date().getFullYear()));
+  const [dateMode, setDateMode] = useState(initial?.undated ? "anytime" : (isTv ? "year" : "exact"));
+  const [approxYear, setApproxYear] = useState(initial?.date ? initial.date.slice(0, 4) : String(new Date().getFullYear()));
   const initLoc = initial?.location || "";
   const isPreset = WHERE_PRESETS.includes(initLoc);
   const [location, setLocation] = useState(initLoc);
@@ -691,7 +694,16 @@ function LogForm({ initial, onSave, onCancel, saveLabel }) {
 
   return (
     <div className="log-form">
-      <label className="field-label">Date watched</label>
+      <label className="field-label">{isTv ? "Year watched" : "Date watched"}</label>
+      {isTv ? (
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <select className="field-input" value={approxYear} disabled={dateMode === "anytime"} onChange={(e) => { setApproxYear(e.target.value); setDateMode("year"); }} style={{ flex: 1 }}>
+            {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <button type="button" className={"approx-chip" + (dateMode === "anytime" ? " approx-chip-active" : "")} onClick={() => setDateMode(dateMode === "anytime" ? "year" : "anytime")}>{"Don't know"}</button>
+        </div>
+      ) : (
+      <>
       <div className="approx-toggle">
         <button type="button" className={"approx-chip" + (dateMode === "exact" ? " approx-chip-active" : "")} onClick={() => setDateMode("exact")}>Exact date</button>
         <button type="button" className={"approx-chip" + (dateMode === "year" ? " approx-chip-active" : "")} onClick={() => setDateMode("year")}>Just the year</button>
@@ -708,6 +720,8 @@ function LogForm({ initial, onSave, onCancel, saveLabel }) {
         </select>
       ) : (
         <div className="anytime-hint">No specific date. Good for shows you've watched on and off, like a long-running series.</div>
+      )}
+      </>
       )}
 
       <label className="field-label">Where</label>
@@ -1006,6 +1020,7 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
                     {editingViewingId === v.id ? (
                       <LogForm
                         initial={v}
+                        mediaType={ticket.mediaType}
                         saveLabel="Save changes"
                         onSave={handleSaveViewing}
                         onCancel={() => setEditingViewingId(null)}
@@ -1038,7 +1053,7 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
               {logging && (
                 <div className="viewing-row viewing-row-new">
                   <div className="field-label" style={{ marginTop: 0 }}>New viewing</div>
-                  <LogForm saveLabel="Add to ticket" onSave={handleSaveViewing} onCancel={() => setLogging(false)} />
+                  <LogForm mediaType={ticket.mediaType} saveLabel="Add to ticket" onSave={handleSaveViewing} onCancel={() => setLogging(false)} />
                 </div>
               )}
             </div>
@@ -1387,7 +1402,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
       {loggingWl && (
         <Modal onClose={() => setLoggingWl(null)}>
           <h3 className="modal-title">{loggingWl.title}</h3>
-          <LogForm saveLabel="Add to collection" onCancel={() => setLoggingWl(null)} onSave={(entry) => { onLogNew(loggingWl, entry); setLoggingWl(null); }} />
+          <LogForm mediaType={loggingWl.mediaType} saveLabel="Add to collection" onCancel={() => setLoggingWl(null)} onSave={(entry) => { onLogNew(loggingWl, entry); setLoggingWl(null); }} />
         </Modal>
       )}
 
@@ -1670,7 +1685,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "75";
+const APP_VERSION = "76";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -2173,7 +2188,7 @@ function SuggestionRow({ item, matchPct, matchConf, settings, tmdb, taste, peopl
       {logging && (
         <Modal onClose={() => setLogging(false)}>
           <h3 className="modal-title">{item.title}</h3>
-          <LogForm saveLabel="Add to collection" onCancel={() => setLogging(false)} onSave={(entry) => { onSeen(item, entry); setLogging(false); }} />
+          <LogForm mediaType={item.mediaType} saveLabel="Add to collection" onCancel={() => setLogging(false)} onSave={(entry) => { onSeen(item, entry); setLogging(false); }} />
         </Modal>
       )}
     </div>
@@ -2186,7 +2201,33 @@ function SuggestionRow({ item, matchPct, matchConf, settings, tmdb, taste, peopl
    credits cached on the movies you've collected and rated
 --------------------------------------------------------- */
 
-function FavoritesView({ collection, people, tmdb, onUpdateTicket }) {
+function FavoritesView({ collection, people, taste, crowd, tmdb, onUpdateTicket }) {
+  const [person, setPerson] = useState(null);
+  const [filmo, setFilmo] = useState(null);
+  const [filmoLoading, setFilmoLoading] = useState(false);
+
+  async function openPerson(p, kind) {
+    setPerson({ ...p, kind });
+    setFilmo(null);
+    setFilmoLoading(true);
+    try {
+      const data = await tmdb.personCredits(p.id);
+      let raw = [];
+      if (kind === "actor") raw = data.cast || [];
+      else if (kind === "director") raw = (data.crew || []).filter((c) => c.job === "Director");
+      else raw = (data.crew || []).filter((c) => c.department === "Writing");
+      const seen = new Set();
+      const items = raw
+        .filter((r) => r.media_type === "movie" || r.media_type === "tv")
+        .map(normalize)
+        .filter((it) => { const k = it.tmdbId + it.mediaType; if (seen.has(k)) return false; seen.add(k); return true; })
+        .map((it) => ({ ...it, _pct: matchMeta(it, taste, people, crowd).pct }))
+        .sort((a, b) => (b._pct ?? 0) - (a._pct ?? 0))
+        .slice(0, 30);
+      setFilmo(items);
+    } catch { setFilmo([]); }
+    setFilmoLoading(false);
+  }
   const [enriching, setEnriching] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
 
@@ -2233,17 +2274,51 @@ function FavoritesView({ collection, people, tmdb, onUpdateTicket }) {
     );
   }
 
-  const Section = ({ title, list, suffix }) =>
+  const Section = ({ title, list, kind }) =>
     list && list.length > 0 ? (
       <div className="fav-section">
         <div className="fav-section-title">{title}</div>
         <div className="fav-chips">
           {list.slice(0, 8).map((p) => (
-            <span key={p.id} className="fav-chip">{p.name}{suffix ? ` ${suffix}` : ""}</span>
+            <button key={p.id} className="fav-chip fav-chip-btn" onClick={() => openPerson(p, kind)}>{p.name}</button>
           ))}
         </div>
       </div>
     ) : null;
+
+  if (person) {
+    return (
+      <div className="view">
+        <button className="btn btn-outline btn-sm" onClick={() => { setPerson(null); setFilmo(null); }} style={{ marginBottom: 12 }}>
+          <ChevronLeft size={14} /> All favorites
+        </button>
+        <div className="fav-section-title">{person.name}</div>
+        {filmoLoading && <EmptyState icon={<RefreshCw size={28} className="spin" />} title="Pulling filmography" body="One second." />}
+        {!filmoLoading && filmo && filmo.length === 0 && (
+          <EmptyState icon={<Film size={28} />} title="Nothing found" body="No credits on file for this person yet." />
+        )}
+        {!filmoLoading && filmo && filmo.length > 0 && (
+          <div className="suggest-list">
+            {filmo.map((item) => (
+              <div className="suggest-row" key={item.tmdbId + item.mediaType}>
+                {item.posterPath ? (
+                  <img src={tmdbImg(item.posterPath, "w154")} alt="" className="suggest-thumb" />
+                ) : (
+                  <div className="suggest-thumb suggest-thumb-fallback">{item.mediaType === "tv" ? <Tv size={18} /> : <Film size={18} />}</div>
+                )}
+                <div className="suggest-info">
+                  <div className="suggest-title-row">
+                    <span className="suggest-title-btn" style={{ textAlign: "left" }}>{item.title} {item.year ? `· ${item.year}` : ""}</span>
+                    {item._pct != null && <span className="match-pill" style={matchStyle(item._pct)}>{item._pct}%</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="view">
@@ -2275,9 +2350,9 @@ function FavoritesView({ collection, people, tmdb, onUpdateTicket }) {
         </div>
       )}
 
-      <Section title="Favorite directors" list={people.directors} />
-      <Section title="Favorite writers" list={people.writers} />
-      <Section title="Actors you keep watching" list={people.actors} />
+      <Section title="Favorite directors" list={people.directors} kind="director" />
+      <Section title="Favorite writers" list={people.writers} kind="writer" />
+      <Section title="Actors you keep watching" list={people.actors} kind="actor" />
 
       {(people.directors.length > 0 || people.actors.length > 0) && missingCredits.length > 0 && (
         <button className="btn btn-outline btn-sm" style={{ marginTop: 8 }} onClick={enrich} disabled={enriching}>
@@ -2766,7 +2841,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
       {logging && (
         <Modal onClose={() => setLogging(null)}>
           <h3 className="modal-title">{logging.title}</h3>
-          <LogForm saveLabel="Add to collection" onCancel={() => setLogging(null)} onSave={(entry) => { onLogNew(logging, entry); setLogging(null); }} />
+          <LogForm mediaType={logging.mediaType} saveLabel="Add to collection" onCancel={() => setLogging(null)} onSave={(entry) => { onLogNew(logging, entry); setLogging(null); }} />
         </Modal>
       )}
 
@@ -2827,7 +2902,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
    SEARCH TAB
 --------------------------------------------------------- */
 
-function SearchView({ tmdb, taste, onAddToWatchlist, onLogNew }) {
+function SearchView({ tmdb, taste, people, crowd, onAddToWatchlist, onLogNew }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -2941,9 +3016,10 @@ function SearchView({ tmdb, taste, onAddToWatchlist, onLogNew }) {
                 ) : (
                   <>
                     <div className="suggest-info">
-                      <button className="suggest-title-btn" onClick={() => setDetail(item)}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
-                      <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ")}</div>
-                      {item.aiReason && <div className="why-watch">{item.aiReason}</div>}
+                      <div className="suggest-title-row">
+                        <button className="suggest-title-btn" onClick={() => setDetail(item)}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
+                        {aiMode && (() => { const m = matchMeta(item, taste, people, crowd); return m.pct != null ? <span className="match-pill" style={matchStyle(m.pct)}>{m.pct}%</span> : null; })()}
+                      </div>
                     </div>
                     <div className="suggest-actions">
                       {loggedMarks[item.tmdbId + item.mediaType] ? (
@@ -2966,7 +3042,7 @@ function SearchView({ tmdb, taste, onAddToWatchlist, onLogNew }) {
       {logging && (
         <Modal onClose={() => setLogging(null)}>
           <h3 className="modal-title">{logging.title}</h3>
-          <LogForm saveLabel="Add to collection" onCancel={() => setLogging(null)} onSave={(entry) => { onLogNew(logging, entry); setLogging(null); }} />
+          <LogForm mediaType={logging.mediaType} saveLabel="Add to collection" onCancel={() => setLogging(null)} onSave={(entry) => { onLogNew(logging, entry); setLogging(null); }} />
         </Modal>
       )}
     </div>
@@ -3270,7 +3346,7 @@ async function smartSearch(query, tmdb) {
     max_tokens: 500,
     messages: [{
       role: "user",
-      content: `The user searched for: "${query}". Return 5 movie or TV show recommendations that best match this query. For each, provide the exact title, approximate year, and a one-sentence reason (max 15 words) why someone who asked this would enjoy it. Reply ONLY with a valid JSON array, no other text: [{"title":"...","year":"YYYY","reason":"..."}]`
+      content: `The user searched for: "${query}". Return 10 movie or TV show recommendations that best match this query. For each, provide the exact title and approximate year. Reply ONLY with a valid JSON array, no other text: [{"title":"...","year":"YYYY"}]`
     }]
   });
   const text = data.content?.[0]?.text?.trim() || "";
@@ -3282,7 +3358,7 @@ async function smartSearch(query, tmdb) {
       try {
         const res = await tmdb.searchMulti(`${s.title} ${s.year || ""}`.trim());
         const hit = (res.results || []).find((r) => r.media_type === "movie" || r.media_type === "tv");
-        if (hit) return { ...normalize(hit), aiReason: s.reason };
+        if (hit) return normalize(hit);
       } catch { /* skip */ }
       return null;
     })
@@ -3588,6 +3664,7 @@ export default function App() {
   const tmdb = useMemo(() => makeTmdb(settings.tmdbKey), [settings.tmdbKey]);
   const taste = useMemo(() => buildTasteProfile(collection, feedback), [collection, feedback]);
   const people = useMemo(() => buildPeopleProfile(collection), [collection]);
+  const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
   const [burst, setBurst] = useState(null);
 
   function fireBurst(kind) {
@@ -3786,7 +3863,7 @@ export default function App() {
         )}
         {mountedTabs.has("search") && (
           <div style={{ display: tab === "search" ? "" : "none" }}>
-            <SearchView tmdb={tmdb} taste={taste} onAddToWatchlist={addToWatchlist} onLogNew={logNew} />
+            <SearchView tmdb={tmdb} taste={taste} people={people} crowd={crowd} onAddToWatchlist={addToWatchlist} onLogNew={logNew} />
           </div>
         )}
       </main>
@@ -3840,7 +3917,7 @@ export default function App() {
       {showFavorites && (
         <Modal onClose={() => setShowFavorites(false)} wide>
           <h3 className="modal-title">Favorites</h3>
-          <FavoritesView collection={collection} people={people} tmdb={tmdb} onUpdateTicket={updateTicket} />
+          <FavoritesView collection={collection} people={people} taste={taste} crowd={crowd} tmdb={tmdb} onUpdateTicket={updateTicket} />
         </Modal>
       )}
     </div>
@@ -4340,6 +4417,8 @@ input, textarea { font-family: inherit; }
 .fav-section-title { font-family: 'Bebas Neue', sans-serif; font-size: 17px; letter-spacing: 0.03em; color: var(--cream-text); margin-bottom: 10px; }
 .fav-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .fav-chip { font-size: 13px; background: var(--velvet); border: 1px solid var(--line); color: var(--cream-text); padding: 7px 12px; border-radius: 999px; }
+.fav-chip-btn { cursor: pointer; font-family: inherit; }
+.fav-chip-btn:active { background: var(--brass); color: var(--ink); }
 .fav-poster-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 .fav-poster { width: 72px; flex-shrink: 0; }
 .fav-poster img { width: 72px; height: 108px; border-radius: 8px; object-fit: cover; }

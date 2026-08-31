@@ -256,7 +256,8 @@ function makeTmdb(apiKey) {
       append_to_response: "credits,keywords"
     }),
     recommendations: (mediaType, id) => call(`/${mediaType}/${id}/recommendations`),
-    keywords: (mediaType, id) => call(`/${mediaType}/${id}/keywords`)
+    keywords: (mediaType, id) => call(`/${mediaType}/${id}/keywords`),
+    personCredits: personId => call(`/person/${personId}/combined_credits`)
   };
 }
 function normalize(item) {
@@ -837,6 +838,7 @@ function DetailModal({
           className: "modal-title",
           children: item.title
         }), /*#__PURE__*/_jsx(LogForm, {
+          mediaType: item.mediaType,
           saveLabel: "Add to collection",
           onCancel: () => setLogging(false),
           onSave: entry => {
@@ -862,11 +864,13 @@ function LogForm({
   initial,
   onSave,
   onCancel,
-  saveLabel
+  saveLabel,
+  mediaType
 }) {
+  const isTv = mediaType === "tv";
   const [date, setDate] = useState(initial?.date || todayISO());
-  const [dateMode, setDateMode] = useState(initial?.undated ? "anytime" : "exact");
-  const [approxYear, setApproxYear] = useState(String(new Date().getFullYear()));
+  const [dateMode, setDateMode] = useState(initial?.undated ? "anytime" : isTv ? "year" : "exact");
+  const [approxYear, setApproxYear] = useState(initial?.date ? initial.date.slice(0, 4) : String(new Date().getFullYear()));
   const initLoc = initial?.location || "";
   const isPreset = WHERE_PRESETS.includes(initLoc);
   const [location, setLocation] = useState(initLoc);
@@ -885,60 +889,89 @@ function LogForm({
     className: "log-form",
     children: [/*#__PURE__*/_jsx("label", {
       className: "field-label",
-      children: "Date watched"
-    }), /*#__PURE__*/_jsxs("div", {
-      className: "approx-toggle",
-      children: [/*#__PURE__*/_jsx("button", {
-        type: "button",
-        className: "approx-chip" + (dateMode === "exact" ? " approx-chip-active" : ""),
-        onClick: () => setDateMode("exact"),
-        children: "Exact date"
-      }), /*#__PURE__*/_jsx("button", {
-        type: "button",
-        className: "approx-chip" + (dateMode === "year" ? " approx-chip-active" : ""),
-        onClick: () => setDateMode("year"),
-        children: "Just the year"
-      }), /*#__PURE__*/_jsx("button", {
-        type: "button",
-        className: "approx-chip" + (dateMode === "anytime" ? " approx-chip-active" : ""),
-        onClick: () => setDateMode("anytime"),
-        children: "Anytime"
-      })]
-    }), dateMode === "exact" ? /*#__PURE__*/_jsxs("div", {
+      children: isTv ? "Year watched" : "Date watched"
+    }), isTv ? /*#__PURE__*/_jsxs("div", {
       style: {
         display: "flex",
         gap: 8,
         alignItems: "center"
       },
-      children: [/*#__PURE__*/_jsx("input", {
+      children: [/*#__PURE__*/_jsx("select", {
         className: "field-input",
-        type: "date",
-        value: date,
-        onChange: e => setDate(e.target.value),
+        value: approxYear,
+        disabled: dateMode === "anytime",
+        onChange: e => {
+          setApproxYear(e.target.value);
+          setDateMode("year");
+        },
         style: {
           flex: 1
-        }
+        },
+        children: yearOptions.map(y => /*#__PURE__*/_jsx("option", {
+          value: y,
+          children: y
+        }, y))
       }), /*#__PURE__*/_jsx("button", {
         type: "button",
-        className: "approx-chip approx-chip-active",
-        onClick: () => setDate(todayISO()),
-        style: {
-          whiteSpace: "nowrap",
-          flexShrink: 0
-        },
-        children: "Today"
+        className: "approx-chip" + (dateMode === "anytime" ? " approx-chip-active" : ""),
+        onClick: () => setDateMode(dateMode === "anytime" ? "year" : "anytime"),
+        children: "Don't know"
       })]
-    }) : dateMode === "year" ? /*#__PURE__*/_jsx("select", {
-      className: "field-input",
-      value: approxYear,
-      onChange: e => setApproxYear(e.target.value),
-      children: yearOptions.map(y => /*#__PURE__*/_jsx("option", {
-        value: y,
-        children: y
-      }, y))
-    }) : /*#__PURE__*/_jsx("div", {
-      className: "anytime-hint",
-      children: "No specific date. Good for shows you've watched on and off, like a long-running series."
+    }) : /*#__PURE__*/_jsxs(_Fragment, {
+      children: [/*#__PURE__*/_jsxs("div", {
+        className: "approx-toggle",
+        children: [/*#__PURE__*/_jsx("button", {
+          type: "button",
+          className: "approx-chip" + (dateMode === "exact" ? " approx-chip-active" : ""),
+          onClick: () => setDateMode("exact"),
+          children: "Exact date"
+        }), /*#__PURE__*/_jsx("button", {
+          type: "button",
+          className: "approx-chip" + (dateMode === "year" ? " approx-chip-active" : ""),
+          onClick: () => setDateMode("year"),
+          children: "Just the year"
+        }), /*#__PURE__*/_jsx("button", {
+          type: "button",
+          className: "approx-chip" + (dateMode === "anytime" ? " approx-chip-active" : ""),
+          onClick: () => setDateMode("anytime"),
+          children: "Anytime"
+        })]
+      }), dateMode === "exact" ? /*#__PURE__*/_jsxs("div", {
+        style: {
+          display: "flex",
+          gap: 8,
+          alignItems: "center"
+        },
+        children: [/*#__PURE__*/_jsx("input", {
+          className: "field-input",
+          type: "date",
+          value: date,
+          onChange: e => setDate(e.target.value),
+          style: {
+            flex: 1
+          }
+        }), /*#__PURE__*/_jsx("button", {
+          type: "button",
+          className: "approx-chip approx-chip-active",
+          onClick: () => setDate(todayISO()),
+          style: {
+            whiteSpace: "nowrap",
+            flexShrink: 0
+          },
+          children: "Today"
+        })]
+      }) : dateMode === "year" ? /*#__PURE__*/_jsx("select", {
+        className: "field-input",
+        value: approxYear,
+        onChange: e => setApproxYear(e.target.value),
+        children: yearOptions.map(y => /*#__PURE__*/_jsx("option", {
+          value: y,
+          children: y
+        }, y))
+      }) : /*#__PURE__*/_jsx("div", {
+        className: "anytime-hint",
+        children: "No specific date. Good for shows you've watched on and off, like a long-running series."
+      })]
     }), /*#__PURE__*/_jsx("label", {
       className: "field-label",
       children: "Where"
@@ -1392,6 +1425,7 @@ function TicketDetail({
             className: "viewing-row",
             children: editingViewingId === v.id ? /*#__PURE__*/_jsx(LogForm, {
               initial: v,
+              mediaType: ticket.mediaType,
               saveLabel: "Save changes",
               onSave: handleSaveViewing,
               onCancel: () => setEditingViewingId(null)
@@ -1443,6 +1477,7 @@ function TicketDetail({
               },
               children: "New viewing"
             }), /*#__PURE__*/_jsx(LogForm, {
+              mediaType: ticket.mediaType,
               saveLabel: "Add to ticket",
               onSave: handleSaveViewing,
               onCancel: () => setLogging(false)
@@ -1898,6 +1933,7 @@ function CollectionView({
         className: "modal-title",
         children: loggingWl.title
       }), /*#__PURE__*/_jsx(LogForm, {
+        mediaType: loggingWl.mediaType,
         saveLabel: "Add to collection",
         onCancel: () => setLoggingWl(null),
         onSave: entry => {
@@ -2360,7 +2396,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "75";
+const APP_VERSION = "76";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
@@ -3103,6 +3139,7 @@ function SuggestionRow({
         className: "modal-title",
         children: item.title
       }), /*#__PURE__*/_jsx(LogForm, {
+        mediaType: item.mediaType,
         saveLabel: "Add to collection",
         onCancel: () => setLogging(false),
         onSave: entry => {
@@ -3123,9 +3160,41 @@ function SuggestionRow({
 function FavoritesView({
   collection,
   people,
+  taste,
+  crowd,
   tmdb,
   onUpdateTicket
 }) {
+  const [person, setPerson] = useState(null);
+  const [filmo, setFilmo] = useState(null);
+  const [filmoLoading, setFilmoLoading] = useState(false);
+  async function openPerson(p, kind) {
+    setPerson({
+      ...p,
+      kind
+    });
+    setFilmo(null);
+    setFilmoLoading(true);
+    try {
+      const data = await tmdb.personCredits(p.id);
+      let raw = [];
+      if (kind === "actor") raw = data.cast || [];else if (kind === "director") raw = (data.crew || []).filter(c => c.job === "Director");else raw = (data.crew || []).filter(c => c.department === "Writing");
+      const seen = new Set();
+      const items = raw.filter(r => r.media_type === "movie" || r.media_type === "tv").map(normalize).filter(it => {
+        const k = it.tmdbId + it.mediaType;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      }).map(it => ({
+        ...it,
+        _pct: matchMeta(it, taste, people, crowd).pct
+      })).sort((a, b) => (b._pct ?? 0) - (a._pct ?? 0)).slice(0, 30);
+      setFilmo(items);
+    } catch {
+      setFilmo([]);
+    }
+    setFilmoLoading(false);
+  }
   const [enriching, setEnriching] = useState(false);
   const [progress, setProgress] = useState({
     done: 0,
@@ -3176,7 +3245,7 @@ function FavoritesView({
   const Section = ({
     title,
     list,
-    suffix
+    kind
   }) => list && list.length > 0 ? /*#__PURE__*/_jsxs("div", {
     className: "fav-section",
     children: [/*#__PURE__*/_jsx("div", {
@@ -3184,12 +3253,80 @@ function FavoritesView({
       children: title
     }), /*#__PURE__*/_jsx("div", {
       className: "fav-chips",
-      children: list.slice(0, 8).map(p => /*#__PURE__*/_jsxs("span", {
-        className: "fav-chip",
-        children: [p.name, suffix ? ` ${suffix}` : ""]
+      children: list.slice(0, 8).map(p => /*#__PURE__*/_jsx("button", {
+        className: "fav-chip fav-chip-btn",
+        onClick: () => openPerson(p, kind),
+        children: p.name
       }, p.id))
     })]
   }) : null;
+  if (person) {
+    return /*#__PURE__*/_jsxs("div", {
+      className: "view",
+      children: [/*#__PURE__*/_jsxs("button", {
+        className: "btn btn-outline btn-sm",
+        onClick: () => {
+          setPerson(null);
+          setFilmo(null);
+        },
+        style: {
+          marginBottom: 12
+        },
+        children: [/*#__PURE__*/_jsx(ChevronLeft, {
+          size: 14
+        }), " All favorites"]
+      }), /*#__PURE__*/_jsx("div", {
+        className: "fav-section-title",
+        children: person.name
+      }), filmoLoading && /*#__PURE__*/_jsx(EmptyState, {
+        icon: /*#__PURE__*/_jsx(RefreshCw, {
+          size: 28,
+          className: "spin"
+        }),
+        title: "Pulling filmography",
+        body: "One second."
+      }), !filmoLoading && filmo && filmo.length === 0 && /*#__PURE__*/_jsx(EmptyState, {
+        icon: /*#__PURE__*/_jsx(Film, {
+          size: 28
+        }),
+        title: "Nothing found",
+        body: "No credits on file for this person yet."
+      }), !filmoLoading && filmo && filmo.length > 0 && /*#__PURE__*/_jsx("div", {
+        className: "suggest-list",
+        children: filmo.map(item => /*#__PURE__*/_jsxs("div", {
+          className: "suggest-row",
+          children: [item.posterPath ? /*#__PURE__*/_jsx("img", {
+            src: tmdbImg(item.posterPath, "w154"),
+            alt: "",
+            className: "suggest-thumb"
+          }) : /*#__PURE__*/_jsx("div", {
+            className: "suggest-thumb suggest-thumb-fallback",
+            children: item.mediaType === "tv" ? /*#__PURE__*/_jsx(Tv, {
+              size: 18
+            }) : /*#__PURE__*/_jsx(Film, {
+              size: 18
+            })
+          }), /*#__PURE__*/_jsx("div", {
+            className: "suggest-info",
+            children: /*#__PURE__*/_jsxs("div", {
+              className: "suggest-title-row",
+              children: [/*#__PURE__*/_jsxs("span", {
+                className: "suggest-title-btn",
+                style: {
+                  textAlign: "left"
+                },
+                children: [item.title, " ", item.year ? `· ${item.year}` : ""]
+              }), item._pct != null && /*#__PURE__*/_jsxs("span", {
+                className: "match-pill",
+                style: matchStyle(item._pct),
+                children: [item._pct, "%"]
+              })]
+            })
+          })]
+        }, item.tmdbId + item.mediaType))
+      })]
+    });
+  }
   return /*#__PURE__*/_jsxs("div", {
     className: "view",
     children: [topMovies.length > 0 && /*#__PURE__*/_jsxs("div", {
@@ -3233,13 +3370,16 @@ function FavoritesView({
       })]
     }), /*#__PURE__*/_jsx(Section, {
       title: "Favorite directors",
-      list: people.directors
+      list: people.directors,
+      kind: "director"
     }), /*#__PURE__*/_jsx(Section, {
       title: "Favorite writers",
-      list: people.writers
+      list: people.writers,
+      kind: "writer"
     }), /*#__PURE__*/_jsx(Section, {
       title: "Actors you keep watching",
-      list: people.actors
+      list: people.actors,
+      kind: "actor"
     }), (people.directors.length > 0 || people.actors.length > 0) && missingCredits.length > 0 && /*#__PURE__*/_jsx("button", {
       className: "btn btn-outline btn-sm",
       style: {
@@ -3934,6 +4074,7 @@ function OutNowView({
         className: "modal-title",
         children: logging.title
       }), /*#__PURE__*/_jsx(LogForm, {
+        mediaType: logging.mediaType,
         saveLabel: "Add to collection",
         onCancel: () => setLogging(null),
         onSave: entry => {
@@ -4035,6 +4176,8 @@ function OutNowView({
 function SearchView({
   tmdb,
   taste,
+  people,
+  crowd,
   onAddToWatchlist,
   onLogNew
 }) {
@@ -4200,19 +4343,23 @@ function SearchView({
               children: "more options"
             })]
           }) : /*#__PURE__*/_jsxs(_Fragment, {
-            children: [/*#__PURE__*/_jsxs("div", {
+            children: [/*#__PURE__*/_jsx("div", {
               className: "suggest-info",
-              children: [/*#__PURE__*/_jsxs("button", {
-                className: "suggest-title-btn",
-                onClick: () => setDetail(item),
-                children: [item.title, " ", item.year ? `· ${item.year}` : ""]
-              }), /*#__PURE__*/_jsx("div", {
-                className: "suggest-genres",
-                children: genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ")
-              }), item.aiReason && /*#__PURE__*/_jsx("div", {
-                className: "why-watch",
-                children: item.aiReason
-              })]
+              children: /*#__PURE__*/_jsxs("div", {
+                className: "suggest-title-row",
+                children: [/*#__PURE__*/_jsxs("button", {
+                  className: "suggest-title-btn",
+                  onClick: () => setDetail(item),
+                  children: [item.title, " ", item.year ? `· ${item.year}` : ""]
+                }), aiMode && (() => {
+                  const m = matchMeta(item, taste, people, crowd);
+                  return m.pct != null ? /*#__PURE__*/_jsxs("span", {
+                    className: "match-pill",
+                    style: matchStyle(m.pct),
+                    children: [m.pct, "%"]
+                  }) : null;
+                })()]
+              })
             }), /*#__PURE__*/_jsx("div", {
               className: "suggest-actions",
               children: loggedMarks[item.tmdbId + item.mediaType] ? /*#__PURE__*/_jsxs("span", {
@@ -4247,6 +4394,7 @@ function SearchView({
         className: "modal-title",
         children: logging.title
       }), /*#__PURE__*/_jsx(LogForm, {
+        mediaType: logging.mediaType,
         saveLabel: "Add to collection",
         onCancel: () => setLogging(null),
         onSave: entry => {
@@ -4642,7 +4790,7 @@ async function smartSearch(query, tmdb) {
     max_tokens: 500,
     messages: [{
       role: "user",
-      content: `The user searched for: "${query}". Return 5 movie or TV show recommendations that best match this query. For each, provide the exact title, approximate year, and a one-sentence reason (max 15 words) why someone who asked this would enjoy it. Reply ONLY with a valid JSON array, no other text: [{"title":"...","year":"YYYY","reason":"..."}]`
+      content: `The user searched for: "${query}". Return 10 movie or TV show recommendations that best match this query. For each, provide the exact title and approximate year. Reply ONLY with a valid JSON array, no other text: [{"title":"...","year":"YYYY"}]`
     }]
   });
   const text = data.content?.[0]?.text?.trim() || "";
@@ -4653,10 +4801,7 @@ async function smartSearch(query, tmdb) {
     try {
       const res = await tmdb.searchMulti(`${s.title} ${s.year || ""}`.trim());
       const hit = (res.results || []).find(r => r.media_type === "movie" || r.media_type === "tv");
-      if (hit) return {
-        ...normalize(hit),
-        aiReason: s.reason
-      };
+      if (hit) return normalize(hit);
     } catch {/* skip */}
     return null;
   }));
@@ -5031,6 +5176,7 @@ export default function App() {
   const tmdb = useMemo(() => makeTmdb(settings.tmdbKey), [settings.tmdbKey]);
   const taste = useMemo(() => buildTasteProfile(collection, feedback), [collection, feedback]);
   const people = useMemo(() => buildPeopleProfile(collection), [collection]);
+  const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
   const [burst, setBurst] = useState(null);
   function fireBurst(kind) {
     setBurst({
@@ -5308,6 +5454,8 @@ export default function App() {
         children: /*#__PURE__*/_jsx(SearchView, {
           tmdb: tmdb,
           taste: taste,
+          people: people,
+          crowd: crowd,
           onAddToWatchlist: addToWatchlist,
           onLogNew: logNew
         })
@@ -5367,6 +5515,8 @@ export default function App() {
       }), /*#__PURE__*/_jsx(FavoritesView, {
         collection: collection,
         people: people,
+        taste: taste,
+        crowd: crowd,
         tmdb: tmdb,
         onUpdateTicket: updateTicket
       })]
@@ -5868,6 +6018,8 @@ input, textarea { font-family: inherit; }
 .fav-section-title { font-family: 'Bebas Neue', sans-serif; font-size: 17px; letter-spacing: 0.03em; color: var(--cream-text); margin-bottom: 10px; }
 .fav-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .fav-chip { font-size: 13px; background: var(--velvet); border: 1px solid var(--line); color: var(--cream-text); padding: 7px 12px; border-radius: 999px; }
+.fav-chip-btn { cursor: pointer; font-family: inherit; }
+.fav-chip-btn:active { background: var(--brass); color: var(--ink); }
 .fav-poster-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 .fav-poster { width: 72px; flex-shrink: 0; }
 .fav-poster img { width: 72px; height: 108px; border-radius: 8px; object-fit: cover; }
