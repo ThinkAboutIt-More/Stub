@@ -2074,6 +2074,21 @@ function SwipeCard({
   const startX = useRef(0);
   const moved = useRef(false);
   const pendingAction = useRef(null);
+  const cardRef = useRef(null);
+  React.useLayoutEffect(() => {
+    function measure() {
+      const card = cardRef.current;
+      if (!card) return;
+      const meta = card.querySelector(".swipe-meta");
+      const perf = card.querySelector(".swipe-perf");
+      if (!meta || !perf) return;
+      // layout offsets, immune to the card-enter transform
+      card.style.setProperty("--notch-y", `${meta.offsetTop + perf.offsetTop + 1}px`);
+    }
+    measure();
+    const t = setTimeout(measure, 400); // re-measure once fonts settle
+    return () => clearTimeout(t);
+  }, [item]);
   function fly(dir, action) {
     setFlyFrom(drag.x);
     pendingAction.current = action;
@@ -2084,6 +2099,15 @@ function SwipeCard({
     });
     setChoice(null);
     setRateVal(0);
+    // safety net: fire the action even if animationend never arrives
+    setTimeout(() => {
+      const a = pendingAction.current;
+      if (a) {
+        pendingAction.current = null;
+        setFlying(null);
+        a();
+      }
+    }, 420);
   }
   function askChoice() {
     setDrag({
@@ -2137,6 +2161,7 @@ function SwipeCard({
   const dragScale = drag.active && Math.abs(drag.x) > 4 ? 1.015 : 1;
   const flyClass = flying ? ` swipe-fly-${flying}` : "";
   return /*#__PURE__*/_jsxs("div", {
+    ref: cardRef,
     className: "swipe-card" + flyClass,
     style: flying ? {
       "--fly-from": flyFrom + "px"
@@ -2151,6 +2176,10 @@ function SwipeCard({
     onTouchStart: down,
     onTouchMove: move,
     onTouchEnd: up,
+    onTouchCancel: () => setDrag({
+      x: 0,
+      active: false
+    }),
     children: [drag.x !== 0 && !flying && /*#__PURE__*/_jsx("div", {
       className: "swipe-glow " + (drag.x > 0 ? "swipe-glow-want" : "swipe-glow-skip"),
       style: {
@@ -2207,9 +2236,8 @@ function SwipeCard({
       }), /*#__PURE__*/_jsxs("div", {
         className: "swipe-sub",
         children: [item.year ? `${item.year} \u00b7 ` : "", item.mediaType === "tv" ? "TV SHOW" : "MOVIE"]
-      }), /*#__PURE__*/_jsxs("div", {
-        className: "swipe-perf",
-        children: [/*#__PURE__*/_jsx("i", {}), /*#__PURE__*/_jsx("i", {})]
+      }), /*#__PURE__*/_jsx("div", {
+        className: "swipe-perf"
       }), /*#__PURE__*/_jsx(WhyWatch, {
         item: item,
         taste: taste,
@@ -4695,7 +4723,41 @@ const TABS = [{
   label: "Search",
   icon: Search
 }];
+const BUILD_V = (() => {
+  try {
+    const m = (document.querySelector('script[src*="stub.js"]') || {}).src.match(/[?&]v=(\d+)/);
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+})();
+function useAutoRefresh() {
+  useEffect(() => {
+    if (!BUILD_V) return;
+    let stopped = false;
+    async function check() {
+      try {
+        const html = await (await fetch(location.pathname, {
+          cache: "no-store"
+        })).text();
+        const m = html.match(/stub\.js\?v=(\d+)/);
+        if (!stopped && m && m[1] !== BUILD_V) location.reload();
+      } catch {/* offline - try next tick */}
+    }
+    const t = setInterval(check, 5 * 60 * 1000);
+    const onVis = () => {
+      if (!document.hidden) check();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+}
 export default function App() {
+  useAutoRefresh();
   const [ready, setReady] = useState(false);
   const [conn, setConn] = useState(() => getConnection());
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -5387,12 +5449,17 @@ input, textarea { font-family: inherit; }
 /* discover swipe */
 .view-discover { display: flex; flex-direction: column; align-items: center; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .view-discover * { user-select: none; -webkit-user-select: none; }
-.swipe-stack { width: 100%; max-width: 320px; height: calc(100dvh - 258px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; position: relative; z-index: 1; }
+.swipe-stack { width: 100%; max-width: 354px; height: calc(100dvh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; position: relative; z-index: 1; margin: 2px auto 0; border-radius: 19px; box-shadow: 0 14px 34px rgba(0,0,0,0.55); }
 .swipe-card {
   background: var(--velvet); border-radius: 18px; overflow: hidden; position: relative;
-  touch-action: none; user-select: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  touch-action: none; user-select: none;
   border: 1px solid rgba(226,54,54,0.1);
   flex: 1; display: flex; flex-direction: column; min-height: 0;
+  --notch-y: 62%;
+  -webkit-mask-image: radial-gradient(circle 18px at 0px var(--notch-y), transparent 17px, #000 18px), radial-gradient(circle 18px at 100% var(--notch-y), transparent 17px, #000 18px));
+  -webkit-mask-composite: destination-in;
+  mask-image: radial-gradient(circle 18px at 0px var(--notch-y), transparent 17px, #000 18px), radial-gradient(circle 18px at 100% var(--notch-y), transparent 17px, #000 18px));
+  mask-composite: intersect;
 }
 .swipe-poster { position: relative; width: 100%; height: 100%; object-fit: contain; display: block; z-index: 1; }
 .swipe-poster-blur { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(30px) brightness(0.38) saturate(0.8); transform: scale(1.3); }
@@ -5401,9 +5468,6 @@ input, textarea { font-family: inherit; }
 .swipe-title { font-weight: 800; font-size: 16px; margin-bottom: 3px; color: var(--ink); }
 .swipe-sub { font-family: 'Space Mono', monospace; font-weight: 700; font-size: 10px; letter-spacing: 0.18em; color: #8a5a2a; }
 .swipe-perf { border-top: 2px dashed rgba(22,8,0,0.22); margin: 9px -14px 2px; position: relative; }
-.swipe-perf i { position: absolute; top: -13px; width: 26px; height: 26px; border-radius: 50%; background: var(--curtain); }
-.swipe-perf i:first-child { left: -27px; }
-.swipe-perf i:last-child { right: -27px; }
 .swipe-meta .why-watch { color: #6b4213; font-style: normal; font-weight: 600; font-size: 12px; margin-top: 7px; }
 .swipe-buttons-wrap { background: var(--stub-cream); flex-shrink: 0; border-radius: 0 0 18px 18px; }
 .match-ring { position: absolute; top: 12px; right: 12px; z-index: 3; width: 72px; height: 72px; }
@@ -5465,7 +5529,7 @@ input, textarea { font-family: inherit; }
 .btn, .icon-btn, .td-tool-btn { transition: transform 0.14s cubic-bezier(.34,1.56,.64,1), background 0.15s, box-shadow 0.15s, color 0.15s; }
 .btn:active, .icon-btn:active, .td-tool-btn:active { transform: scale(0.9); }
 @keyframes card-enter { 0% { transform: translateY(16px) scale(0.95); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
-.swipe-card { animation: card-enter 0.28s cubic-bezier(.22,.9,.32,1.15); }
+.swipe-card:not(.swipe-fly-left):not(.swipe-fly-right):not(.swipe-fly-up) { animation: card-enter 0.28s cubic-bezier(.22,.9,.32,1.15); }
 @keyframes match-pop { 0% { transform: scale(0.4); opacity: 0; } 70% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
 .match-badge, .match-pill { animation: match-pop 0.32s cubic-bezier(.34,1.56,.64,1) 0.04s both; }
 
@@ -5702,7 +5766,7 @@ input, textarea { font-family: inherit; }
   .modal-card { max-width: 560px; border-radius: 20px; max-height: 84vh; }
   .modal-wide { max-width: 860px; }
   .outnow-hero-img { aspect-ratio: 16/6; }
-  .swipe-stack { max-width: 340px; }
+  .swipe-stack { max-width: 380px; }
   .empty-body { max-width: 340px; }
   .onboarding-card { max-width: 400px; }
 }
