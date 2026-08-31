@@ -5,7 +5,7 @@ import { Ticket, Search, Sparkles, CalendarDays, Settings, X, Star, Pencil, Undo
 /* ---------------------------------------------------------
    CONSTANTS
 --------------------------------------------------------- */
-import { jsx as _jsx, Fragment as _Fragment, jsxs as _jsxs } from "react/jsx-runtime";
+import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 const MOVIE_GENRES = {
   28: "Action",
   12: "Adventure",
@@ -567,6 +567,7 @@ function Stars({
   onChange,
   size = 18
 }) {
+  const lpRef = useRef(null);
   const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   return /*#__PURE__*/_jsx("div", {
     className: "stars",
@@ -596,18 +597,41 @@ function Stars({
             fill: "currentColor",
             strokeWidth: 1.5
           })
-        }), onChange && /*#__PURE__*/_jsxs(_Fragment, {
-          children: [/*#__PURE__*/_jsx("button", {
-            type: "button",
-            className: "star-hit star-hit-left",
-            "aria-label": `Rate ${n - 0.5} of 10`,
-            onClick: () => onChange(n - 0.5)
-          }), /*#__PURE__*/_jsx("button", {
-            type: "button",
-            className: "star-hit star-hit-right",
-            "aria-label": `Rate ${n} of 10`,
-            onClick: () => onChange(n)
-          })]
+        }), onChange && /*#__PURE__*/_jsx("button", {
+          type: "button",
+          className: "star-hit star-hit-full",
+          "aria-label": `Rate ${n} of 10 (hold for ${n - 0.5})`,
+          onTouchStart: () => {
+            lpRef.current = {
+              fired: false,
+              t: setTimeout(() => {
+                lpRef.current.fired = true;
+                onChange(n - 0.5);
+              }, 420)
+            };
+          },
+          onTouchEnd: () => {
+            if (lpRef.current) clearTimeout(lpRef.current.t);
+          },
+          onMouseDown: () => {
+            lpRef.current = {
+              fired: false,
+              t: setTimeout(() => {
+                lpRef.current.fired = true;
+                onChange(n - 0.5);
+              }, 420)
+            };
+          },
+          onMouseUp: () => {
+            if (lpRef.current) clearTimeout(lpRef.current.t);
+          },
+          onClick: () => {
+            if (lpRef.current && lpRef.current.fired) {
+              lpRef.current.fired = false;
+              return;
+            }
+            onChange(n);
+          }
         })]
       }, n);
     })
@@ -1001,7 +1025,7 @@ function LogForm({
     }), /*#__PURE__*/_jsx(Stars, {
       value: rating,
       onChange: setRating,
-      size: 24
+      size: 28
     }), /*#__PURE__*/_jsx("label", {
       className: "field-label",
       children: "Notes"
@@ -1698,7 +1722,7 @@ function TicketScanner({
       }), /*#__PURE__*/_jsx(Stars, {
         value: scanRating,
         onChange: setScanRating,
-        size: 24
+        size: 28
       }), /*#__PURE__*/_jsxs("div", {
         className: "form-actions",
         children: [/*#__PURE__*/_jsx("button", {
@@ -2407,7 +2431,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "84";
+const APP_VERSION = "85";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
@@ -4298,7 +4322,7 @@ function SearchView({
               children: "Rate it"
             }), /*#__PURE__*/_jsx(Stars, {
               value: 0,
-              size: 24,
+              size: 26,
               onChange: n => {
                 onLogNew(item, {
                   id: uid(),
@@ -5745,8 +5769,8 @@ input, textarea { font-family: inherit; }
 .star-fill { position: absolute; top: 0; left: 0; color: var(--brass-bright); overflow: hidden; }
 .star-fg { display: block; }
 .star-hit { position: absolute; top: 0; bottom: 0; width: 50%; background: none; border: none; padding: 0; }
-.star-hit-left { left: 0; }
-.star-hit-right { right: 0; }
+.star-hit-full { left: 0; right: 0; width: 100%; }
+.star-slot { margin: 0 1px; }
 
 /* watchlist stub grid */
 .wl-stub { background: var(--stub-cream); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; position: relative; box-shadow: 0 4px 14px rgba(0,0,0,0.3); }

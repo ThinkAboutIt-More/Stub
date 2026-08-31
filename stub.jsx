@@ -469,6 +469,7 @@ function badgesFor(item, people, tasteWeights) {
 --------------------------------------------------------- */
 
 function Stars({ value = 0, onChange, size = 18 }) {
+  const lpRef = useRef(null);
   const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   return (
     <div className="stars" style={{ height: size }}>
@@ -482,20 +483,23 @@ function Stars({ value = 0, onChange, size = 18 }) {
               <Star className="star-fg" size={size} fill="currentColor" strokeWidth={1.5} />
             </div>
             {onChange && (
-              <>
-                <button
-                  type="button"
-                  className="star-hit star-hit-left"
-                  aria-label={`Rate ${n - 0.5} of 10`}
-                  onClick={() => onChange(n - 0.5)}
-                />
-                <button
-                  type="button"
-                  className="star-hit star-hit-right"
-                  aria-label={`Rate ${n} of 10`}
-                  onClick={() => onChange(n)}
-                />
-              </>
+              <button
+                type="button"
+                className="star-hit star-hit-full"
+                aria-label={`Rate ${n} of 10 (hold for ${n - 0.5})`}
+                onTouchStart={() => {
+                  lpRef.current = { fired: false, t: setTimeout(() => { lpRef.current.fired = true; onChange(n - 0.5); }, 420) };
+                }}
+                onTouchEnd={() => { if (lpRef.current) clearTimeout(lpRef.current.t); }}
+                onMouseDown={() => {
+                  lpRef.current = { fired: false, t: setTimeout(() => { lpRef.current.fired = true; onChange(n - 0.5); }, 420) };
+                }}
+                onMouseUp={() => { if (lpRef.current) clearTimeout(lpRef.current.t); }}
+                onClick={() => {
+                  if (lpRef.current && lpRef.current.fired) { lpRef.current.fired = false; return; }
+                  onChange(n);
+                }}
+              />
             )}
           </div>
         );
@@ -746,7 +750,7 @@ function LogForm({ initial, onSave, onCancel, saveLabel, mediaType }) {
       )}
 
       <label className="field-label">Your rating</label>
-      <Stars value={rating} onChange={setRating} size={24} />
+      <Stars value={rating} onChange={setRating} size={28} />
 
       <label className="field-label">Notes</label>
       <textarea
@@ -1207,7 +1211,7 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
           <input className="field-input" type="date" value={guessedDate} onChange={(e) => setGuessedDate(e.target.value)} />
 
           <label className="field-label" style={{ marginTop: 12 }}>Your rating {scanRating ? `(${scanRating}/10)` : "(optional)"}</label>
-          <Stars value={scanRating} onChange={setScanRating} size={24} />
+          <Stars value={scanRating} onChange={setScanRating} size={28} />
 
           <div className="form-actions">
             <button className="btn btn-ghost" onClick={() => setStage("upload")}>Back</button>
@@ -1693,7 +1697,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "84";
+const APP_VERSION = "85";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -2983,7 +2987,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
                 {quickRateKey === item.tmdbId + item.mediaType && !loggedMarks[item.tmdbId + item.mediaType] ? (
                   <div className="quick-rate">
                     <div className="quick-rate-label">Rate it</div>
-                    <Stars value={0} size={24} onChange={(n) => {
+                    <Stars value={0} size={26} onChange={(n) => {
                       onLogNew(item, { id: uid(), date: todayISO(), undated: false, location: "", rating: n, notes: "", loggedAt: Date.now() });
                       setLoggedMarks((m) => ({ ...m, [item.tmdbId + item.mediaType]: n }));
                       setQuickRateKey(null);
@@ -4104,8 +4108,8 @@ input, textarea { font-family: inherit; }
 .star-fill { position: absolute; top: 0; left: 0; color: var(--brass-bright); overflow: hidden; }
 .star-fg { display: block; }
 .star-hit { position: absolute; top: 0; bottom: 0; width: 50%; background: none; border: none; padding: 0; }
-.star-hit-left { left: 0; }
-.star-hit-right { right: 0; }
+.star-hit-full { left: 0; right: 0; width: 100%; }
+.star-slot { margin: 0 1px; }
 
 /* watchlist stub grid */
 .wl-stub { background: var(--stub-cream); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; position: relative; box-shadow: 0 4px 14px rgba(0,0,0,0.3); }
