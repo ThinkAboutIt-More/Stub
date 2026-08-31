@@ -1482,7 +1482,6 @@ function MatchRing({ pct, conf }) {
           strokeDasharray={c} strokeDashoffset={off} transform="rotate(-90 36 36)" className="match-ring-arc" />
       </svg>
       <div className="match-ring-label"><b>{pct}%</b><span>match</span></div>
-      {conf && <div className="match-ring-conf">{conf.toUpperCase()}</div>}
     </div>
   );
 }
@@ -1830,7 +1829,6 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
           {!loading && current && current.posterPath && (
             <div className="discover-bg" style={{ backgroundImage: `url(${tmdbImg(current.posterPath, "w500")})` }} />
           )}
-          {!loading && current && <div className="deck-label">TONIGHT'S FEATURE</div>}
           {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Shuffling the deck" body="Pulling titles you haven't seen yet." />}
           {!loading && error && (
             <EmptyState icon={<Info size={32} />} title="Couldn't load new titles" body={`TMDB said: ${error}. Check your API key in settings, then tap refresh.`} />
@@ -3699,8 +3697,8 @@ const CSS = `
   --curtain: #140a06;
   --velvet: #211309;
   --velvet-2: #301d0f;
-  --brass: #e2a836;
-  --brass-bright: #f0c060;
+  --brass: #f5b301;
+  --brass-bright: #ffd24d;
   --marquee-red: #ff3030;
   --stub-cream: #f3eeec;
   --ink: #0d0000;
@@ -3956,9 +3954,9 @@ input, textarea { font-family: inherit; }
 .swipe-title { font-weight: 800; font-size: 16px; margin-bottom: 3px; color: var(--ink); }
 .swipe-sub { font-family: 'Space Mono', monospace; font-weight: 700; font-size: 10px; letter-spacing: 0.18em; color: #8a5a2a; }
 .swipe-perf { border-top: 2px dashed rgba(22,8,0,0.22); margin: 9px -14px 2px; position: relative; }
-.swipe-perf i { position: absolute; top: -11px; width: 22px; height: 22px; border-radius: 50%; background: var(--curtain); }
-.swipe-perf i:first-child { left: -25px; }
-.swipe-perf i:last-child { right: -25px; }
+.swipe-perf i { position: absolute; top: -13px; width: 26px; height: 26px; border-radius: 50%; background: var(--curtain); }
+.swipe-perf i:first-child { left: -27px; }
+.swipe-perf i:last-child { right: -27px; }
 .swipe-meta .why-watch { color: #6b4213; font-style: normal; font-weight: 600; font-size: 12px; margin-top: 7px; }
 .swipe-buttons-wrap { background: var(--stub-cream); flex-shrink: 0; border-radius: 0 0 18px 18px; }
 .match-ring { position: absolute; top: 12px; right: 12px; z-index: 3; width: 72px; height: 72px; }
