@@ -5502,7 +5502,7 @@ input, textarea { font-family: inherit; }
 /* discover swipe */
 .view-discover { display: flex; flex-direction: column; align-items: center; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .view-discover * { user-select: none; -webkit-user-select: none; }
-.swipe-stack { width: 100%; max-width: 354px; height: calc(100dvh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; position: relative; z-index: 1; margin: 2px auto 0; border-radius: 19px; box-shadow: 0 14px 34px rgba(0,0,0,0.55); }
+.swipe-stack { width: 100%; max-width: 354px; height: calc(100dvh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; position: relative; z-index: 1; margin: 2px auto 0; border-radius: 19px; box-shadow: 0 26px 44px -14px rgba(0,0,0,0.38); }
 .swipe-card {
   background: var(--velvet); border-radius: 18px; overflow: hidden; position: relative;
   touch-action: none; user-select: none;
