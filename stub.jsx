@@ -578,7 +578,7 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
           <div className="detail-head-info">
             <h2 className="detail-title">{item.title}</h2>
             <div className="detail-genres">
-              {genreNames(item.genreIds, item.mediaType).join(" · ") || (item.mediaType === "tv" ? "TV" : "Film")}
+              {item.mediaType === "tv" ? "TV SHOW" : "MOVIE"}
             </div>
             {badges && badges.length > 0 && (
               <div className="badge-row">
@@ -944,7 +944,7 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
                 <img src={tmdbImg(backdrop, "w780")} alt="" className="td-hero-img" />
                 <div className="td-hero-overlay">
                   <div className="td-hero-title">{ticket.title}</div>
-                  <div className="td-hero-genres">{genreNames(ticket.genreIds, ticket.mediaType).slice(0, 1).join(" · ")}</div>
+                  <div className="td-hero-genres">{ticket.mediaType === "tv" ? "TV SHOW" : "MOVIE"}</div>
                 </div>
               </div>
             ) : null}
@@ -963,9 +963,7 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
               <div className="td-back-meta">
                 {!backdrop && <h2 className="td-back-title">{ticket.title}</h2>}
                 {!backdrop && (
-                  <div className="td-back-genres">
-                    {genreNames(ticket.genreIds, ticket.mediaType).join(" · ") || (ticket.mediaType === "tv" ? "TV" : "Film")}
-                  </div>
+                  <div className="td-back-genres">{ticket.mediaType === "tv" ? "TV SHOW" : "MOVIE"}</div>
                 )}
                 {ticket.viewings.length > 1 && (
                   <div className="td-rewatch-count"><RefreshCw size={12} /> Watched {ticket.viewings.length}×</div>
@@ -1547,7 +1545,16 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
       const perf = card.querySelector(".swipe-perf");
       if (!meta || !perf) return;
       // layout offsets, immune to the card-enter transform
-      card.style.setProperty("--notch-y", `${meta.offsetTop + perf.offsetTop + 1}px`);
+      const y = meta.offsetTop + perf.offsetTop + 1;
+      card.style.setProperty("--notch-y", `${y}px`);
+      // engine-proof punched notches: single-layer SVG mask, exact px dims (mask-composite is unreliable in WebKit/iOS)
+      const W = Math.round(card.offsetWidth), H = Math.round(card.offsetHeight);
+      if (W > 0 && H > 0) {
+        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${W}' height='${H}' viewBox='0 0 ${W} ${H}'><rect width='${W}' height='${H}' rx='18' fill='#fff'/><circle cx='0' cy='${y}' r='17' fill='#000'/><circle cx='${W}' cy='${y}' r='17' fill='#000'/></svg>`;
+        const uri = `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`;
+        card.style.maskImage = uri;
+        card.style.webkitMaskImage = uri;
+      }
     }
     measure();
     const t = setTimeout(measure, 400);   // re-measure once fonts settle
@@ -1685,7 +1692,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "77";
+const APP_VERSION = "78";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -2573,12 +2580,6 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
         <select className="filter-select" value={window} onChange={(e) => setWindow(e.target.value)}>
           {WINDOWS.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
         </select>
-        {genreOpts.length > 0 && (
-          <select className="filter-select" value={genreFilter} onChange={(e) => setGenreFilter(e.target.value)}>
-            <option value="all">All genres</option>
-            {genreOpts.map((g) => <option key={g.id} value={String(g.id)}>{g.name}</option>)}
-          </select>
-        )}
         {enough && (
           <select className="filter-select" value={sort} onChange={(e) => setSort(e.target.value)}>
             <option value="highest">Highest match</option>
@@ -2846,17 +2847,8 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
       <div className="chip-scroll" style={{ marginBottom: 12 }}>
         <button className={"chip" + (sort === "match" ? " chip-active" : "")} onClick={() => setSort("match")}>Highest match</button>
         <button className={"chip" + (sort === "lowest" ? " chip-active" : "")} onClick={() => setSort("lowest")}>Lowest match</button>
-        <button className={"chip" + (sort === "genre" ? " chip-active" : "")} onClick={() => setSort("genre")}>Genre A–Z</button>
       </div>
 
-      {genreOpts.length > 0 && (
-        <div className="filter-row" style={{ marginBottom: 12 }}>
-          <select className="filter-select" value={genreFilter} onChange={(e) => setGenreFilter(e.target.value)}>
-            <option value="all">All genres</option>
-            {genreOpts.map((g) => <option key={g.id} value={String(g.id)}>{g.name}</option>)}
-          </select>
-        </div>
-      )}
 
       {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Loading theaters" body="Pulling what's playing right now." />}
       {!loading && error && <EmptyState icon={<Info size={32} />} title="Couldn't load" body={`TMDB said: ${error}`} />}
@@ -4188,20 +4180,18 @@ input, textarea { font-family: inherit; }
   border: 1px solid rgba(226,54,54,0.1);
   flex: 1; display: flex; flex-direction: column; min-height: 0;
   --notch-y: 62%;
-  -webkit-mask-image: radial-gradient(circle 18px at 0px var(--notch-y), transparent 17px, #000 18px), radial-gradient(circle 18px at 100% var(--notch-y), transparent 17px, #000 18px));
-  -webkit-mask-composite: destination-in;
-  mask-image: radial-gradient(circle 18px at 0px var(--notch-y), transparent 17px, #000 18px), radial-gradient(circle 18px at 100% var(--notch-y), transparent 17px, #000 18px));
-  mask-composite: intersect;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
 }
 .swipe-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; z-index: 1; }
 .swipe-poster-blur { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(30px) brightness(0.72) saturate(1.15); transform: scale(1.3); }
 .swipe-poster-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); background: var(--velvet-2); }
-.swipe-meta { padding: 12px 14px 6px; flex-shrink: 0; background: var(--stub-cream); color: var(--ink); position: relative; }
-.swipe-title { font-weight: 800; font-size: 16px; margin-bottom: 3px; color: var(--ink); }
-.swipe-sub { font-family: 'Space Mono', monospace; font-weight: 700; font-size: 10px; letter-spacing: 0.18em; color: #8a5a2a; }
-.swipe-perf { border-top: 2px dashed rgba(22,8,0,0.22); margin: 9px -14px 2px; position: relative; }
-.swipe-meta .why-watch { color: #6b4213; font-style: normal; font-weight: 600; font-size: 12px; margin-top: 7px; }
-.swipe-buttons-wrap { background: var(--stub-cream); flex-shrink: 0; border-radius: 0 0 18px 18px; }
+.swipe-meta { padding: 12px 14px 6px; flex-shrink: 0; background: var(--velvet); color: var(--cream-text); position: relative; }
+.swipe-title { font-weight: 800; font-size: 16px; margin-bottom: 3px; color: var(--cream-text); }
+.swipe-sub { font-family: 'Space Mono', monospace; font-weight: 700; font-size: 10px; letter-spacing: 0.18em; color: var(--brass); }
+.swipe-perf { border-top: 2px dashed rgba(255,249,240,0.28); margin: 9px -14px 2px; position: relative; }
+.swipe-meta .why-watch { color: var(--brass-bright); font-style: normal; font-weight: 600; font-size: 12px; margin-top: 7px; }
+.swipe-buttons-wrap { background: var(--velvet); flex-shrink: 0; border-radius: 0 0 18px 18px; }
 .match-ring { position: absolute; top: 12px; right: 12px; z-index: 3; width: 72px; height: 72px; }
 .match-ring-arc { filter: drop-shadow(0 0 5px rgba(245,205,110,0.75)); }
 .match-ring-label { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; line-height: 1; }
