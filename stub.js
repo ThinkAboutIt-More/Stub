@@ -2545,7 +2545,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "94";
+const APP_VERSION = "95";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
@@ -5852,8 +5852,6 @@ function GlobalStyle() {
   });
 }
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
-
 :root {
   --curtain: #140a06;
   --velvet: #211309;
