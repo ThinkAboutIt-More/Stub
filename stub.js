@@ -2176,7 +2176,8 @@ function SwipeCard({
       const W = Math.round(card.offsetWidth),
         H = Math.round(card.offsetHeight);
       if (W > 0 && H > 0) {
-        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${W}' height='${H}' viewBox='0 0 ${W} ${H}'><rect width='${W}' height='${H}' rx='18' fill='#fff'/><circle cx='0' cy='${y}' r='17' fill='#000'/><circle cx='${W}' cy='${y}' r='17' fill='#000'/></svg>`;
+        const hole = cx => `M${cx - 17} ${y}a17 17 0 1 0 34 0a17 17 0 1 0 -34 0Z`;
+        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${W}' height='${H}' viewBox='0 0 ${W} ${H}'><path d='M0 0H${W}V${H}H0Z ${hole(0)} ${hole(W)}' fill='#fff' fill-rule='evenodd'/></svg>`;
         const uri = `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`;
         card.style.maskImage = uri;
         card.style.webkitMaskImage = uri;
@@ -2406,7 +2407,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "79";
+const APP_VERSION = "80";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
