@@ -2322,6 +2322,10 @@ function DiscoverView({
       const yr = new Date().getFullYear();
       const recentFloor = `${yr - 6}-01-01`; // skew the deck to the last ~6 years
       const freshFloor = `${yr - 2}-01-01`; // plus a heavy dose of the last 2
+      // All-time lanes: a rotating decade of acclaimed films (any language) so a
+      // great movie from 40 years ago can surface, plus TMDB's all-time top-rated.
+      const decades = [1960, 1970, 1980, 1990, 2000, 2010];
+      const dec = decades[pageNum % decades.length];
       const calls = [tmdb.trendingWeek(), tmdb.discoverMovie({
         sort_by: "popularity.desc",
         page: pageNum,
@@ -2352,7 +2356,13 @@ function DiscoverView({
         with_original_language: langB,
         "vote_count.gte": 40,
         "primary_release_date.gte": recentFloor
-      }), tmdb.popularTv(pageNum), tmdb.nowPlaying(pageNum)];
+      }), tmdb.popularTv(pageNum), tmdb.nowPlaying(pageNum), tmdb.topRatedMovies(pageNum), tmdb.topRatedTv(pageNum), tmdb.discoverMovie({
+        sort_by: "vote_average.desc",
+        page: pageNum,
+        "vote_count.gte": 300,
+        "primary_release_date.gte": `${dec}-01-01`,
+        "primary_release_date.lte": `${dec + 9}-12-31`
+      })];
       if (topGenres) {
         calls.push(tmdb.discoverMovie({
           with_genres: topGenres,
