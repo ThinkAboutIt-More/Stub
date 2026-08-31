@@ -1697,7 +1697,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "85";
+const APP_VERSION = "86";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -4021,7 +4021,7 @@ input, textarea { font-family: inherit; }
 .tab-bar {
   position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
   width: 100%; max-width: 480px;
-  display: flex; background: rgba(10,8,16,0.16); backdrop-filter: blur(18px) saturate(1.25); -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  display: flex; background: rgba(10,8,16,0.38); backdrop-filter: blur(18px) saturate(1.25); -webkit-backdrop-filter: blur(18px) saturate(1.25);
   border-top: 1px solid rgba(255,255,255,0.08);
   padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
   z-index: 10;
@@ -4524,7 +4524,7 @@ input, textarea { font-family: inherit; }
 @media (min-width: 768px) {
   .app { max-width: 1060px; }
   .app-main { padding: 8px 28px 116px; }
-  .tab-bar { max-width: 620px; bottom: 18px; border: 1px solid var(--line); border-radius: 22px; padding: 10px 8px; box-shadow: 0 14px 44px rgba(0,0,0,0.55); background: rgba(10,8,16,0.16); backdrop-filter: blur(18px) saturate(1.25); -webkit-backdrop-filter: blur(18px) saturate(1.25); }
+  .tab-bar { max-width: 620px; bottom: 18px; border: 1px solid var(--line); border-radius: 22px; padding: 10px 8px; box-shadow: 0 14px 44px rgba(0,0,0,0.55); background: rgba(10,8,16,0.38); backdrop-filter: blur(18px) saturate(1.25); -webkit-backdrop-filter: blur(18px) saturate(1.25); }
   .tab-btn { border-radius: 14px; }
   .stub-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 18px; }
   .stub-grid-compact { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
