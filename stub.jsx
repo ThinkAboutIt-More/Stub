@@ -634,7 +634,7 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
               const m = matchMeta(item, SCORING_CTX.taste, SCORING_CTX.people, SCORING_CTX.crowd);
               if (m.pct == null) return null;
               const lb = letterboxdRating(item);
-              const aud5 = lb != null ? lb / 2 : (item.voteAverage != null ? item.voteAverage / 2 : null);
+              const aud5 = lb != null ? lb / 2 : ((item.voteAverage != null && (item.voteCount ?? 0) >= 50) ? item.voteAverage / 2 : null);
               return (
                 <div className="detail-score">
                   <span className="match-pill" style={matchStyle(m.pct)}>{m.pct}% match</span>
@@ -1767,7 +1767,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "90";
+const APP_VERSION = "91";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {

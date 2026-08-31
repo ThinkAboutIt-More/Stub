@@ -806,7 +806,7 @@ function DetailModal({
             const m = matchMeta(item, SCORING_CTX.taste, SCORING_CTX.people, SCORING_CTX.crowd);
             if (m.pct == null) return null;
             const lb = letterboxdRating(item);
-            const aud5 = lb != null ? lb / 2 : item.voteAverage != null ? item.voteAverage / 2 : null;
+            const aud5 = lb != null ? lb / 2 : item.voteAverage != null && (item.voteCount ?? 0) >= 50 ? item.voteAverage / 2 : null;
             return /*#__PURE__*/_jsxs("div", {
               className: "detail-score",
               children: [/*#__PURE__*/_jsxs("span", {
@@ -2545,7 +2545,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "90";
+const APP_VERSION = "91";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
