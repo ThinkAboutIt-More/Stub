@@ -380,6 +380,30 @@ function peopleAffinity(item, people) {
 /* full match computation: his ratings anchor everything.
    people (directors/writers/cast he loves) > genre affinity > crowd average
    (weight learned from his history) + per-genre calibration vs consensus */
+/* Letterboxd tough-crowd ratings, baked in as a static asset (letterboxd.json).
+   Loaded once per version, cached in localStorage. Feeds the reception gate so a
+   panned-on-Letterboxd title cannot ride TMDB's softer curve into the top. */
+let LB_RATINGS = null;
+let LB_LOADING = null;
+function loadLetterboxd() {
+  if (LB_RATINGS) return Promise.resolve(LB_RATINGS);
+  if (LB_LOADING) return LB_LOADING;
+  LB_LOADING = (async () => {
+    try {
+      const res = await fetch("letterboxd.json?v=1");
+      if (res.ok) LB_RATINGS = await res.json();
+    } catch (e) {}
+    LB_RATINGS = LB_RATINGS || {};
+    return LB_RATINGS;
+  })();
+  return LB_LOADING;
+}
+function letterboxdRating(item) {
+  if (!LB_RATINGS || item.mediaType !== "movie") return null;
+  const r = LB_RATINGS[item.tmdbId];
+  return typeof r === "number" ? r : null;
+}
+
 function matchMeta(item, taste, people, crowd) {
   const weights = getWeights(taste);
   const gc = taste?.genreCalibration || {};
@@ -439,7 +463,9 @@ function matchMeta(item, taste, people, crowd) {
   // pattern-match alone can't carry a title past what the crowd saw in it.
   // Bayesian-shrunk rating decides the ceiling; thin-data titles are uncapped.
   if (item.voteAverage != null && (item.voteCount ?? 0) >= 300) {
-    const eff = (item.voteAverage * item.voteCount + 6.8 * 300) / (item.voteCount + 300);
+    let eff = (item.voteAverage * item.voteCount + 6.8 * 300) / (item.voteCount + 300);
+    const lb = letterboxdRating(item);
+    if (lb != null) eff = Math.min(eff, lb); // tough crowd wins: Letterboxd can only lower the ceiling
     const cap = eff >= 7.0 ? 99 : eff >= 6.6 ? 72 : eff >= 6.2 ? 63 : eff >= 5.6 ? 52 : eff >= 5.0 ? 43 : 34;
     if (pct > cap) pct = cap;
   }
@@ -1707,7 +1733,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "88";
+const APP_VERSION = "89";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -1918,6 +1944,16 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   if (crowdRef.current === null || crowdRef.current._for !== collection) {
     crowdRef.current = { ...learnCrowdWeight(collection), _for: collection };
   }
+
+  // Letterboxd tough-crowd ratings: load once, then re-score what is on screen
+  const [lbReady, setLbReady] = useState(false);
+  useEffect(() => { loadLetterboxd().then((r) => { if (r && Object.keys(r).length) setLbReady(true); }); }, []);
+  useEffect(() => {
+    if (!lbReady) return;
+    const rescore = (x) => { const m = matchMeta(x, taste, people, crowdRef.current); return { ...x, _pct: m.pct, _conf: m.conf }; };
+    setPool((prev) => prev.map(rescore));
+    setForYouList((prev) => prev.map(rescore).sort((a, b) => (b._pct || 50) - (a._pct || 50)));
+  }, [lbReady]);
   const loadForYouList = useCallback(async () => {
     setForYouLoading(true);
     try {
