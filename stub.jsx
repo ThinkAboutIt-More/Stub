@@ -1767,7 +1767,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "93";
+const APP_VERSION = "94";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
