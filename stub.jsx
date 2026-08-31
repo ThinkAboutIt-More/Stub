@@ -508,14 +508,22 @@ function Stars({ value = 0, onChange, size = 18 }) {
 --------------------------------------------------------- */
 
 function Modal({ onClose, children, wide }) {
+  const dragStartY = useRef(null);
+  const onTS = (e) => { if (e.currentTarget.scrollTop <= 0) dragStartY.current = e.touches[0].clientY; };
+  const onTM = (e) => {
+    if (dragStartY.current == null) return;
+    if (e.touches[0].clientY - dragStartY.current > 90) { dragStartY.current = null; onClose(); }
+  };
+  const onTE = () => { dragStartY.current = null; };
   return (
     <div className="modal-veil" onClick={onClose}>
-      <div className={"modal-card" + (wide ? " modal-wide" : "")} onClick={(e) => e.stopPropagation()}>
-        <button className="modal-close" onClick={onClose} aria-label="Close">
-          <X size={18} />
-        </button>
+      <div className={"modal-card" + (wide ? " modal-wide" : "")} onClick={(e) => e.stopPropagation()} onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE}>
+        <div className="modal-grip" />
         {children}
       </div>
+      <button className="modal-close" onClick={onClose} aria-label="Close">
+        <X size={18} />
+      </button>
     </div>
   );
 }
@@ -1645,6 +1653,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
+const APP_VERSION = "73";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -1737,6 +1746,11 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   const servedRef = useRef(new Set());
 
   const grad = usePosterGradient(pool[0]);
+  useEffect(() => {
+    const rs = document.documentElement.style;
+    rs.setProperty("--wash-a", grad.a);
+    rs.setProperty("--wash-b", grad.b);
+  }, [grad]);
   const seenIdSet = useMemo(
     () => {
       const now = Date.now();
@@ -1944,11 +1958,6 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
 
       {mode === "swipe" && (
         <div className="view-discover">
-          {!loading && current && (
-            <>
-              <div className="discover-grad" style={{ background: `linear-gradient(180deg, ${grad.a} 0%, ${grad.a} 24%, ${grad.b} 76%, ${grad.b} 100%)` }} />
-            </>
-          )}
           {loading && !current && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Shuffling the deck" body="Pulling titles you haven't seen yet." />}
           {!loading && error && !current && (
             <EmptyState icon={<Info size={32} />} title="Couldn't load new titles" body={`TMDB said: ${error}. Check your API key in settings, then reopen the app.`} />
@@ -3441,6 +3450,24 @@ export default function App() {
   const [watchlist, setWatchlist] = useState([]);
   const [feedback, setFeedback] = useState({ skippedIds: [], wantedIds: [], seenIds: [] });
   const [tab, setTab] = useState("discover");
+  // Self-update: if the tab has been sitting open through a newer deploy, reload once.
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await fetch(location.pathname + "?wu=" + Date.now(), { cache: "no-store" });
+        const html = await res.text();
+        const m = html.match(/stub\.js\?v=([0-9]+)/);
+        if (m && Number(m[1]) > Number(APP_VERSION) && !sessionStorage.getItem("wu-done")) {
+          sessionStorage.setItem("wu-done", "1");
+          location.reload();
+        }
+      } catch {}
+    };
+    const onVis = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVis);
+    const t = setTimeout(check, 4000);
+    return () => { document.removeEventListener("visibilitychange", onVis); clearTimeout(t); };
+  }, []);
   // mountedTabs: once a tab is visited it stays mounted (CSS display:none) so state isn't lost on switch
   const [mountedTabs, setMountedTabs] = useState(() => new Set(["discover"]));
   const [showSettings, setShowSettings] = useState(false);
@@ -3615,7 +3642,7 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={"app" + (tab === "discover" ? " wash-on" : "")}>
       <GlobalStyle />
       {burst && (
         <div className="burst-overlay" key={burst.key}>
@@ -3635,7 +3662,7 @@ export default function App() {
             <button className="icon-btn" onClick={() => setShowYIR(true)} aria-label="Recap" title="Recap"><Sparkles size={17} /></button>
           )}
           <span className={"sync-pill" + (hasCloud(conn) ? " sync-on" : "")}>
-            {hasCloud(conn) ? "Synced" : "This device only"}
+            {(hasCloud(conn) ? "Synced" : "This device only") + " · v" + APP_VERSION}
           </span>
           <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="Settings"><Settings size={18} /></button>
         </div>
@@ -3972,10 +3999,11 @@ input, textarea { font-family: inherit; }
 .icon-btn-active { background: var(--brass); border-color: var(--brass); color: var(--ink); }
 
 /* modal */
-.modal-veil { position: fixed; inset: 0; background: rgba(10,5,9,0.72); backdrop-filter: blur(2px); display: flex; align-items: flex-end; justify-content: center; z-index: 50; }
+.modal-veil { position: fixed; inset: 0; background: rgba(10,5,9,0.72); backdrop-filter: blur(2px); display: flex; align-items: flex-end; justify-content: center; z-index: 50; cursor: pointer; }
 .modal-card { background: var(--velvet); width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto; border-radius: 20px 20px 0 0; padding: 22px 18px 28px; position: relative; }
 .modal-wide { max-height: 92vh; }
-.modal-close { position: absolute; top: 14px; right: 14px; background: rgba(0,0,0,0.25); border: none; color: var(--cream-text); width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.modal-close { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); right: 14px; z-index: 70; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.3); color: #fff; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.modal-grip { width: 44px; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.22); margin: 0 auto 14px; }
 .modal-title { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 0.02em; margin: 0 0 14px; padding-right: 30px; }
 
 /* forms */
@@ -4060,7 +4088,7 @@ input, textarea { font-family: inherit; }
 .marquee-bulbs i { width: 6px; height: 6px; border-radius: 50%; background: var(--brass-bright); box-shadow: 0 0 9px 2px rgba(245,205,110,0.8); animation: bulb-glow 2.2s infinite alternate; }
 .marquee-bulbs i:nth-child(2n) { animation-delay: 1.1s; opacity: 0.6; }
 @keyframes bulb-glow { to { opacity: 0.55; box-shadow: 0 0 6px 1.5px rgba(245,205,110,0.45); } }
-.discover-grad { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+.app.wash-on { background: linear-gradient(180deg, var(--wash-a, #c98f2e) 0%, var(--wash-a, #c98f2e) 24%, var(--wash-b, #503a72) 76%, var(--wash-b, #503a72) 100%); }
 .discover-bg { position: absolute; top: -150px; right: -130px; width: 440px; height: 440px; border-radius: 50%; background-size: cover; background-position: center; filter: blur(90px) brightness(1.0) saturate(1.5); opacity: 0.65; pointer-events: none; z-index: 0; }
 .discover-bg-b { top: auto; right: auto; bottom: -120px; left: -150px; opacity: 0.45; filter: blur(90px) brightness(0.9) saturate(1.4); }
 .view-discover::after { content: none; }
