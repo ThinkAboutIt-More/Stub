@@ -490,7 +490,25 @@ function letterboxdRating(item) {
   const r = LB_RATINGS[item.tmdbId];
   return typeof r === "number" ? r : null;
 }
+
+/* his own rating outranks any prediction: once he has logged a title,
+   the displayed match IS his rating - the model never second-guesses him */
+let OWN_RATINGS = {};
+function setOwnRatings(collection) {
+  const map = {};
+  (collection || []).forEach(t => {
+    const rated = (t.viewings || []).filter(v => v.rating);
+    if (rated.length) map[t.tmdbId + t.mediaType] = rated[rated.length - 1].rating;
+  });
+  OWN_RATINGS = map;
+}
 function matchMeta(item, taste, people, crowd) {
+  const own = OWN_RATINGS[item.tmdbId + item.mediaType];
+  if (own != null) return {
+    pct: own >= 10 ? 99 : Math.max(1, Math.min(99, Math.round(own * 10))),
+    conf: "high",
+    own: true
+  };
   const weights = getWeights(taste);
   const gc = taste?.genreCalibration || {};
   const keys = Object.keys(weights);
@@ -2545,7 +2563,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "96";
+const APP_VERSION = "97";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
@@ -5411,6 +5429,7 @@ export default function App() {
   const tmdb = useMemo(() => makeTmdb(settings.tmdbKey), [settings.tmdbKey]);
   const taste = useMemo(() => buildTasteProfile(collection, feedback), [collection, feedback]);
   const people = useMemo(() => buildPeopleProfile(collection), [collection]);
+  useMemo(() => setOwnRatings(collection), [collection]);
   const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
   const [burst, setBurst] = useState(null);
   function fireBurst(kind) {
