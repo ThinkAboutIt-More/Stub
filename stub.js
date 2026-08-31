@@ -5674,6 +5674,28 @@ input, textarea { font-family: inherit; }
   100% { transform: scale(0.7) translateY(-60px); opacity: 0; }
 }
 
+/* ---- desktop layout (v54, audit A) ---- */
+@media (min-width: 768px) {
+  .app { max-width: 1060px; }
+  .app-main { padding: 8px 28px 116px; }
+  .tab-bar { max-width: 620px; bottom: 18px; border: 1px solid var(--line); border-radius: 22px; padding: 10px 8px; box-shadow: 0 14px 44px rgba(0,0,0,0.55); background: rgba(30,0,0,0.85); backdrop-filter: blur(14px); }
+  .tab-btn { border-radius: 14px; }
+  .stub-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 18px; }
+  .stub-grid-compact { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .modal-veil { align-items: center; }
+  .modal-card { max-width: 560px; border-radius: 20px; max-height: 84vh; }
+  .modal-wide { max-width: 860px; }
+  .outnow-hero-img { aspect-ratio: 16/6; }
+  .swipe-stack { max-width: 340px; }
+  .empty-body { max-width: 340px; }
+  .onboarding-card { max-width: 400px; }
+}
+@media (min-width: 1200px) {
+  .app { max-width: 1240px; }
+  .stub-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .stub-grid-compact { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .burst-icon { animation: none !important; }
   .stub-shine, .spin, .flip-stage { animation: none !important; transition: none !important; }
