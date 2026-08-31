@@ -1693,7 +1693,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "83";
+const APP_VERSION = "84";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -2878,7 +2878,8 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
    SEARCH TAB
 --------------------------------------------------------- */
 
-function SearchView({ tmdb, taste, people, crowd, onAddToWatchlist, onLogNew }) {
+function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, onLogNew }) {
+  const ownedKeys = useMemo(() => new Set((collection || []).map((c) => c.tmdbId + c.mediaType)), [collection]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -3000,6 +3001,8 @@ function SearchView({ tmdb, taste, people, crowd, onAddToWatchlist, onLogNew }) 
                     <div className="suggest-actions">
                       {loggedMarks[item.tmdbId + item.mediaType] ? (
                         <span className="logged-mark"><Check size={15} /> {loggedMarks[item.tmdbId + item.mediaType]}/10</span>
+                      ) : ownedKeys.has(item.tmdbId + item.mediaType) ? (
+                        <button className="icon-btn logged-owned" onClick={() => setLogging(item)} aria-label="Already logged - add rewatch"><Check size={16} /></button>
                       ) : (
                         <>
                           <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Want to see"><Bookmark size={16} /></button>
@@ -3660,7 +3663,23 @@ export default function App() {
     fireBurst("want");
   }
 
+  const [rewatchPrompt, setRewatchPrompt] = useState(null);
+
+  function confirmRewatch() {
+    if (!rewatchPrompt) return;
+    const { ticket, viewing } = rewatchPrompt;
+    updateTicket({ ...ticket, viewings: [...ticket.viewings, viewing], log: [...(ticket.log || []), { at: Date.now(), text: "Added a rewatch" }] });
+    setWatchlist((w) => w.filter((x) => !(x.tmdbId === ticket.tmdbId && x.mediaType === ticket.mediaType)));
+    setRewatchPrompt(null);
+    fireBurst("collect");
+  }
+
   function logNew(item, viewing, credits, extra) {
+    const existing = collection.find((x) => x.tmdbId === item.tmdbId && x.mediaType === item.mediaType);
+    if (existing) {
+      setRewatchPrompt({ ticket: existing, viewing });
+      return;
+    }
     const ticket = {
       id: uid(),
       tmdbId: item.tmdbId,
@@ -3843,7 +3862,7 @@ export default function App() {
         )}
         {mountedTabs.has("search") && (
           <div style={{ display: tab === "search" ? "" : "none" }}>
-            <SearchView tmdb={tmdb} taste={taste} people={people} crowd={crowd} onAddToWatchlist={addToWatchlist} onLogNew={logNew} />
+            <SearchView tmdb={tmdb} taste={taste} people={people} crowd={crowd} collection={collection} onAddToWatchlist={addToWatchlist} onLogNew={logNew} />
           </div>
         )}
       </main>
@@ -3851,6 +3870,24 @@ export default function App() {
       {showYIR && (
         <Modal onClose={() => setShowYIR(false)} wide>
           <YearInReview collection={collection} onClose={() => setShowYIR(false)} />
+        </Modal>
+      )}
+
+      {rewatchPrompt && (
+        <Modal onClose={() => setRewatchPrompt(null)}>
+          <h3 className="modal-title">Already in your collection</h3>
+          <p className="sync-note" style={{ margin: "6px 0 14px" }}>
+            You logged {rewatchPrompt.ticket.title}{(() => {
+              const ds = rewatchPrompt.ticket.viewings.map((v) => v.date).filter(Boolean).sort();
+              if (!ds.length) return "";
+              const d = ds[ds.length - 1];
+              return ` on ${rewatchPrompt.ticket.mediaType === "tv" && d.endsWith("-01-01") ? d.slice(0, 4) : d}`;
+            })()}. Add a rewatch instead?
+          </p>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button className="btn btn-primary" style={{ flex: 1 }} onClick={confirmRewatch}>Add rewatch</button>
+            <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setRewatchPrompt(null)}>Cancel</button>
+          </div>
         </Modal>
       )}
 
@@ -4306,6 +4343,7 @@ input, textarea { font-family: inherit; }
 .quick-rate .stars { direction: ltr; }
 .quick-rate-more { background: none; border: none; color: var(--muted); font-size: 10px; text-decoration: underline; padding: 1px 2px; cursor: pointer; }
 .logged-mark { color: var(--brass-bright); font-size: 11px; font-weight: 700; display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+.icon-btn.logged-owned { color: var(--brass-bright); background: rgba(245,179,1,0.14); border-color: rgba(245,179,1,0.4); }
 
 /* search bar */
 .search-bar { display: flex; align-items: center; gap: 8px; background: var(--velvet); border-radius: 999px; padding: 10px 16px; margin-bottom: 16px; color: var(--muted); }

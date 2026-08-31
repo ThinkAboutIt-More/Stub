@@ -2407,7 +2407,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "83";
+const APP_VERSION = "84";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
@@ -4157,9 +4157,11 @@ function SearchView({
   taste,
   people,
   crowd,
+  collection,
   onAddToWatchlist,
   onLogNew
 }) {
+  const ownedKeys = useMemo(() => new Set((collection || []).map(c => c.tmdbId + c.mediaType)), [collection]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -4346,6 +4348,13 @@ function SearchView({
                 children: [/*#__PURE__*/_jsx(Check, {
                   size: 15
                 }), " ", loggedMarks[item.tmdbId + item.mediaType], "/10"]
+              }) : ownedKeys.has(item.tmdbId + item.mediaType) ? /*#__PURE__*/_jsx("button", {
+                className: "icon-btn logged-owned",
+                onClick: () => setLogging(item),
+                "aria-label": "Already logged - add rewatch",
+                children: /*#__PURE__*/_jsx(Check, {
+                  size: 16
+                })
               }) : /*#__PURE__*/_jsxs(_Fragment, {
                 children: [/*#__PURE__*/_jsx("button", {
                   className: "icon-btn",
@@ -5178,7 +5187,34 @@ export default function App() {
     });
     fireBurst("want");
   }
+  const [rewatchPrompt, setRewatchPrompt] = useState(null);
+  function confirmRewatch() {
+    if (!rewatchPrompt) return;
+    const {
+      ticket,
+      viewing
+    } = rewatchPrompt;
+    updateTicket({
+      ...ticket,
+      viewings: [...ticket.viewings, viewing],
+      log: [...(ticket.log || []), {
+        at: Date.now(),
+        text: "Added a rewatch"
+      }]
+    });
+    setWatchlist(w => w.filter(x => !(x.tmdbId === ticket.tmdbId && x.mediaType === ticket.mediaType)));
+    setRewatchPrompt(null);
+    fireBurst("collect");
+  }
   function logNew(item, viewing, credits, extra) {
+    const existing = collection.find(x => x.tmdbId === item.tmdbId && x.mediaType === item.mediaType);
+    if (existing) {
+      setRewatchPrompt({
+        ticket: existing,
+        viewing
+      });
+      return;
+    }
     const ticket = {
       id: uid(),
       tmdbId: item.tmdbId,
@@ -5439,6 +5475,7 @@ export default function App() {
           taste: taste,
           people: people,
           crowd: crowd,
+          collection: collection,
           onAddToWatchlist: addToWatchlist,
           onLogNew: logNew
         })
@@ -5450,6 +5487,43 @@ export default function App() {
         collection: collection,
         onClose: () => setShowYIR(false)
       })
+    }), rewatchPrompt && /*#__PURE__*/_jsxs(Modal, {
+      onClose: () => setRewatchPrompt(null),
+      children: [/*#__PURE__*/_jsx("h3", {
+        className: "modal-title",
+        children: "Already in your collection"
+      }), /*#__PURE__*/_jsxs("p", {
+        className: "sync-note",
+        style: {
+          margin: "6px 0 14px"
+        },
+        children: ["You logged ", rewatchPrompt.ticket.title, (() => {
+          const ds = rewatchPrompt.ticket.viewings.map(v => v.date).filter(Boolean).sort();
+          if (!ds.length) return "";
+          const d = ds[ds.length - 1];
+          return ` on ${rewatchPrompt.ticket.mediaType === "tv" && d.endsWith("-01-01") ? d.slice(0, 4) : d}`;
+        })(), ". Add a rewatch instead?"]
+      }), /*#__PURE__*/_jsxs("div", {
+        style: {
+          display: "flex",
+          gap: 10
+        },
+        children: [/*#__PURE__*/_jsx("button", {
+          className: "btn btn-primary",
+          style: {
+            flex: 1
+          },
+          onClick: confirmRewatch,
+          children: "Add rewatch"
+        }), /*#__PURE__*/_jsx("button", {
+          className: "btn btn-outline",
+          style: {
+            flex: 1
+          },
+          onClick: () => setRewatchPrompt(null),
+          children: "Cancel"
+        })]
+      })]
     }), /*#__PURE__*/_jsx("nav", {
       className: "tab-bar",
       children: TABS.map(t => {
@@ -5910,6 +5984,7 @@ input, textarea { font-family: inherit; }
 .quick-rate .stars { direction: ltr; }
 .quick-rate-more { background: none; border: none; color: var(--muted); font-size: 10px; text-decoration: underline; padding: 1px 2px; cursor: pointer; }
 .logged-mark { color: var(--brass-bright); font-size: 11px; font-weight: 700; display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+.icon-btn.logged-owned { color: var(--brass-bright); background: rgba(245,179,1,0.14); border-color: rgba(245,179,1,0.4); }
 
 /* search bar */
 .search-bar { display: flex; align-items: center; gap: 8px; background: var(--velvet); border-radius: 999px; padding: 10px 16px; margin-bottom: 16px; color: var(--muted); }
