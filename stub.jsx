@@ -1693,7 +1693,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "80";
+const APP_VERSION = "81";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -4209,12 +4209,12 @@ input, textarea { font-family: inherit; }
 .swipe-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; z-index: 1; }
 .swipe-poster-blur { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(30px) brightness(0.72) saturate(1.15); transform: scale(1.3); }
 .swipe-poster-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); background: var(--velvet-2); }
-.swipe-meta { padding: 12px 14px 6px; flex-shrink: 0; background: var(--velvet); color: var(--cream-text); position: relative; }
-.swipe-title { font-weight: 800; font-size: 16px; margin-bottom: 3px; color: var(--cream-text); }
-.swipe-sub { font-family: 'Space Mono', monospace; font-weight: 700; font-size: 10px; letter-spacing: 0.18em; color: var(--brass); }
-.swipe-perf { border-top: 2px dashed rgba(255,249,240,0.28); margin: 9px -14px 2px; position: relative; }
-.swipe-meta .why-watch { color: var(--brass-bright); font-style: normal; font-weight: 600; font-size: 12px; margin-top: 7px; }
-.swipe-buttons-wrap { background: var(--velvet); flex-shrink: 0; border-radius: 0 0 18px 18px; }
+.swipe-meta { padding: 16px 18px 12px; flex-shrink: 0; background: var(--stub-cream); color: var(--ink); position: relative; }
+.swipe-title { font-family: 'Bebas Neue', sans-serif; font-weight: 400; font-size: 27px; letter-spacing: 0.02em; line-height: 1.05; margin-bottom: 5px; color: var(--ink); }
+.swipe-sub { font-family: 'Space Mono', monospace; font-weight: 700; font-size: 10px; letter-spacing: 0.18em; color: #8a5a2a; }
+.swipe-perf { border-top: 2px dashed rgba(22,8,0,0.22); margin: 13px -18px 10px; position: relative; }
+.swipe-meta .why-watch { color: #6b4213; font-style: normal; font-weight: 600; font-size: 12px; margin-top: 0; line-height: 1.45; }
+.swipe-buttons-wrap { background: var(--stub-cream); flex-shrink: 0; border-radius: 0 0 18px 18px; }
 .match-ring { position: absolute; top: 12px; right: 12px; z-index: 3; width: 72px; height: 72px; }
 .match-ring-arc { filter: drop-shadow(0 0 5px rgba(245,205,110,0.75)); }
 .match-ring-label { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; line-height: 1; }
