@@ -2545,7 +2545,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "91";
+const APP_VERSION = "92";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
@@ -4055,6 +4055,70 @@ function OutNowHeroCard({
     })]
   });
 }
+function ZipBanner({
+  settings,
+  onSaveSettings
+}) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(settings?.zip || "");
+  const zip = (settings?.zip || "").trim();
+  const save = () => {
+    const z = val.trim();
+    if (!/^\d{5}$/.test(z)) return;
+    onSaveSettings({
+      ...settings,
+      zip: z
+    });
+    setEditing(false);
+  };
+  if (!zip || editing) {
+    return /*#__PURE__*/_jsxs("div", {
+      className: "zip-banner",
+      children: [/*#__PURE__*/_jsx(MapPin, {
+        size: 14
+      }), /*#__PURE__*/_jsx("input", {
+        className: "zip-input",
+        value: val,
+        inputMode: "numeric",
+        maxLength: 5,
+        placeholder: "ZIP for local showtimes",
+        onChange: e => setVal(e.target.value.replace(/[^0-9]/g, "").slice(0, 5)),
+        onKeyDown: e => {
+          if (e.key === "Enter") save();
+        }
+      }), /*#__PURE__*/_jsx("button", {
+        className: "btn btn-primary btn-sm",
+        onClick: save,
+        disabled: !/^\d{5}$/.test(val.trim()),
+        children: "Save"
+      }), zip && /*#__PURE__*/_jsx("button", {
+        className: "btn btn-ghost btn-sm",
+        onClick: () => {
+          setVal(zip);
+          setEditing(false);
+        },
+        children: "Cancel"
+      })]
+    });
+  }
+  return /*#__PURE__*/_jsxs("div", {
+    className: "zip-banner zip-banner-set",
+    children: [/*#__PURE__*/_jsx(MapPin, {
+      size: 13
+    }), /*#__PURE__*/_jsxs("span", {
+      children: ["Showtimes near ", /*#__PURE__*/_jsx("b", {
+        children: zip
+      })]
+    }), /*#__PURE__*/_jsx("button", {
+      className: "zip-change",
+      onClick: () => {
+        setVal(zip);
+        setEditing(true);
+      },
+      children: "change"
+    })]
+  });
+}
 function OutNowView({
   tmdb,
   settings,
@@ -4241,6 +4305,9 @@ function OutNowView({
           setLogging(null);
         }
       })]
+    }), onSaveSettings && /*#__PURE__*/_jsx(ZipBanner, {
+      settings: settings,
+      onSaveSettings: onSaveSettings
     }), /*#__PURE__*/_jsxs("div", {
       className: "chip-scroll",
       style: {
@@ -6246,6 +6313,12 @@ input, textarea { font-family: inherit; }
 /* match scores */
 .match-badge { position: absolute; top: 14px; right: 14px; z-index: 3; font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; backdrop-filter: blur(8px); }
 .match-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex-shrink: 0; }
+.zip-banner { display: flex; align-items: center; gap: 8px; background: var(--velvet); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
+.zip-banner-set { padding: 7px 12px; }
+.zip-banner-set b { color: var(--cream-text); }
+.zip-input { flex: 1; background: var(--ink); border: 1px solid var(--line); border-radius: 8px; color: var(--cream-text); padding: 7px 10px; font-size: 14px; min-width: 0; }
+.zip-input:focus { outline: none; border-color: var(--brass); }
+.zip-change { background: none; border: none; color: var(--brass-bright); font-size: 11px; text-decoration: underline; cursor: pointer; padding: 2px 4px; margin-left: auto; }
 .detail-score { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .detail-score-conf { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
 .detail-score-aud { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-bright); }

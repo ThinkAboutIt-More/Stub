@@ -1767,7 +1767,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "91";
+const APP_VERSION = "92";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -2770,6 +2770,43 @@ function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCo
   );
 }
 
+function ZipBanner({ settings, onSaveSettings }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(settings?.zip || "");
+  const zip = (settings?.zip || "").trim();
+  const save = () => {
+    const z = val.trim();
+    if (!/^\d{5}$/.test(z)) return;
+    onSaveSettings({ ...settings, zip: z });
+    setEditing(false);
+  };
+  if (!zip || editing) {
+    return (
+      <div className="zip-banner">
+        <MapPin size={14} />
+        <input
+          className="zip-input"
+          value={val}
+          inputMode="numeric"
+          maxLength={5}
+          placeholder="ZIP for local showtimes"
+          onChange={(e) => setVal(e.target.value.replace(/[^0-9]/g, "").slice(0, 5))}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+        />
+        <button className="btn btn-primary btn-sm" onClick={save} disabled={!/^\d{5}$/.test(val.trim())}>Save</button>
+        {zip && <button className="btn btn-ghost btn-sm" onClick={() => { setVal(zip); setEditing(false); }}>Cancel</button>}
+      </div>
+    );
+  }
+  return (
+    <div className="zip-banner zip-banner-set">
+      <MapPin size={13} />
+      <span>Showtimes near <b>{zip}</b></span>
+      <button className="zip-change" onClick={() => { setVal(zip); setEditing(true); }}>change</button>
+    </div>
+  );
+}
+
 function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feedback, onAddToWatchlist, onLogNew, onSaveSettings }) {
   const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
   const [items, setItems] = useState([]);
@@ -2912,6 +2949,10 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
           <h3 className="modal-title">{logging.title}</h3>
           <LogForm mediaType={logging.mediaType} saveLabel="Add to collection" onCancel={() => setLogging(null)} onSave={(entry) => { onLogNew(logging, entry); setLogging(null); }} />
         </Modal>
+      )}
+
+      {onSaveSettings && (
+        <ZipBanner settings={settings} onSaveSettings={onSaveSettings} />
       )}
 
       <div className="chip-scroll" style={{ marginBottom: 12 }}>
@@ -4510,6 +4551,12 @@ input, textarea { font-family: inherit; }
 /* match scores */
 .match-badge { position: absolute; top: 14px; right: 14px; z-index: 3; font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; backdrop-filter: blur(8px); }
 .match-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex-shrink: 0; }
+.zip-banner { display: flex; align-items: center; gap: 8px; background: var(--velvet); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
+.zip-banner-set { padding: 7px 12px; }
+.zip-banner-set b { color: var(--cream-text); }
+.zip-input { flex: 1; background: var(--ink); border: 1px solid var(--line); border-radius: 8px; color: var(--cream-text); padding: 7px 10px; font-size: 14px; min-width: 0; }
+.zip-input:focus { outline: none; border-color: var(--brass); }
+.zip-change { background: none; border: none; color: var(--brass-bright); font-size: 11px; text-decoration: underline; cursor: pointer; padding: 2px 4px; margin-left: auto; }
 .detail-score { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .detail-score-conf { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
 .detail-score-aud { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-bright); }
