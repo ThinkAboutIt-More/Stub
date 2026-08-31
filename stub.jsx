@@ -3846,8 +3846,8 @@ input, textarea { font-family: inherit; }
 .tab-bar {
   position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
   width: 100%; max-width: 480px;
-  display: flex; background: rgba(8,6,12,0.32); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-  border-top: 1px solid var(--line);
+  display: flex; background: rgba(10,8,16,0.16); backdrop-filter: blur(18px) saturate(1.25); -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  border-top: 1px solid rgba(255,255,255,0.08);
   padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
   z-index: 10;
 }
@@ -4028,7 +4028,7 @@ input, textarea { font-family: inherit; }
 /* discover swipe */
 .view-discover { display: flex; flex-direction: column; align-items: center; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .view-discover * { user-select: none; -webkit-user-select: none; }
-.swipe-stack { width: 100%; max-width: 354px; height: calc(100dvh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; position: relative; z-index: 1; margin: 2px auto 0; border-radius: 19px; box-shadow: 0 26px 44px -14px rgba(0,0,0,0.38); }
+.swipe-stack { width: 100%; max-width: 354px; height: calc(100dvh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; position: relative; z-index: 1; margin: 2px auto 0; border-radius: 19px; box-shadow: 0 20px 34px -14px rgba(0,0,0,0.25); }
 .swipe-card {
   background: var(--velvet); border-radius: 18px; overflow: hidden; position: relative;
   touch-action: none; user-select: none;
@@ -4338,7 +4338,7 @@ input, textarea { font-family: inherit; }
 @media (min-width: 768px) {
   .app { max-width: 1060px; }
   .app-main { padding: 8px 28px 116px; }
-  .tab-bar { max-width: 620px; bottom: 18px; border: 1px solid var(--line); border-radius: 22px; padding: 10px 8px; box-shadow: 0 14px 44px rgba(0,0,0,0.55); background: rgba(8,6,12,0.32); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .tab-bar { max-width: 620px; bottom: 18px; border: 1px solid var(--line); border-radius: 22px; padding: 10px 8px; box-shadow: 0 14px 44px rgba(0,0,0,0.55); background: rgba(10,8,16,0.16); backdrop-filter: blur(18px) saturate(1.25); -webkit-backdrop-filter: blur(18px) saturate(1.25); }
   .tab-btn { border-radius: 14px; }
   .stub-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 18px; }
   .stub-grid-compact { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
