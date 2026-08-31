@@ -2321,12 +2321,16 @@ function usePosterGradient(item) {
   const [grad, setGrad] = useState(DEFAULT_GRAD);
   useEffect(() => {
     let dead = false;
+    window.__gradLog = window.__gradLog || [];
+    window.__gradLog.push("effect item=" + (item && item.tmdbId) + "/" + (item && item.mediaType) + " poster=" + (item && item.posterPath));
     if (!item || !item.posterPath) {
+      window.__gradLog.push("no-item");
       setGrad(DEFAULT_GRAD);
       return;
     }
     const key = item.tmdbId + item.mediaType;
     if (key in posterGradCache) {
+      window.__gradLog.push("cache " + key);
       setGrad(posterGradCache[key] || DEFAULT_GRAD);
       return;
     }
@@ -2343,11 +2347,13 @@ function usePosterGradient(item) {
           mode: "cors",
           credentials: "omit"
         });
+        window.__gradLog.push("fetched " + res.status);
         if (!res.ok) throw new Error("poster fetch " + res.status);
         const blob = await res.blob();
         const objUrl = URL.createObjectURL(blob);
         const img = new Image();
         img.onload = () => {
+          window.__gradLog.push("onload");
           URL.revokeObjectURL(objUrl);
           try {
             const cv = document.createElement("canvas");
@@ -2398,20 +2404,25 @@ function usePosterGradient(item) {
               };
               return `rgb(${Math.round(hue(h + 1 / 3) * 255)},${Math.round(hue(h) * 255)},${Math.round(hue(h - 1 / 3) * 255)})`;
             };
-            finish({
+            const gg = {
               a: vivid(avg(0, 6)),
               b: vivid(avg(6, 12))
-            });
-          } catch {
+            };
+            window.__gradLog.push("extracted " + gg.a + "/" + gg.b + " dead=" + dead);
+            finish(gg);
+          } catch (e) {
+            window.__gradLog.push("canvas-err " + e);
             finish(null);
           }
         };
         img.onerror = () => {
+          window.__gradLog.push("imgerr");
           URL.revokeObjectURL(objUrl);
           finish(null);
         };
         img.src = objUrl;
-      } catch {
+      } catch (e) {
+        window.__gradLog.push("outer-err " + e);
         finish(null);
       }
     })();

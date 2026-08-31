@@ -1651,9 +1651,11 @@ function usePosterGradient(item) {
   const [grad, setGrad] = useState(DEFAULT_GRAD);
   useEffect(() => {
     let dead = false;
-    if (!item || !item.posterPath) { setGrad(DEFAULT_GRAD); return; }
+    window.__gradLog = window.__gradLog || [];
+    window.__gradLog.push("effect item=" + (item && item.tmdbId) + "/" + (item && item.mediaType) + " poster=" + (item && item.posterPath));
+    if (!item || !item.posterPath) { window.__gradLog.push("no-item"); setGrad(DEFAULT_GRAD); return; }
     const key = item.tmdbId + item.mediaType;
-    if (key in posterGradCache) { setGrad(posterGradCache[key] || DEFAULT_GRAD); return; }
+    if (key in posterGradCache) { window.__gradLog.push("cache " + key); setGrad(posterGradCache[key] || DEFAULT_GRAD); return; }
     setGrad(DEFAULT_GRAD);
     const finish = (g) => { posterGradCache[key] = g; if (!dead) setGrad(g || DEFAULT_GRAD); };
     // fetch -> blob -> bitmap: blob URLs are same-origin, so the canvas can
@@ -1661,11 +1663,13 @@ function usePosterGradient(item) {
     (async () => {
       try {
         const res = await fetch(tmdbImg(item.posterPath, "w342"), { mode: "cors", credentials: "omit" });
+        window.__gradLog.push("fetched " + res.status);
         if (!res.ok) throw new Error("poster fetch " + res.status);
         const blob = await res.blob();
         const objUrl = URL.createObjectURL(blob);
         const img = new Image();
         img.onload = () => {
+          window.__gradLog.push("onload");
           URL.revokeObjectURL(objUrl);
           try {
             const cv = document.createElement("canvas");
@@ -1705,12 +1709,14 @@ function usePosterGradient(item) {
               };
               return `rgb(${Math.round(hue(h + 1 / 3) * 255)},${Math.round(hue(h) * 255)},${Math.round(hue(h - 1 / 3) * 255)})`;
             };
-            finish({ a: vivid(avg(0, 6)), b: vivid(avg(6, 12)) });
-          } catch { finish(null); }
+            const gg = { a: vivid(avg(0, 6)), b: vivid(avg(6, 12)) };
+            window.__gradLog.push("extracted " + gg.a + "/" + gg.b + " dead=" + dead);
+            finish(gg);
+          } catch (e) { window.__gradLog.push("canvas-err " + e); finish(null); }
         };
-        img.onerror = () => { URL.revokeObjectURL(objUrl); finish(null); };
+        img.onerror = () => { window.__gradLog.push("imgerr"); URL.revokeObjectURL(objUrl); finish(null); };
         img.src = objUrl;
-      } catch { finish(null); }
+      } catch (e) { window.__gradLog.push("outer-err " + e); finish(null); }
     })();
     return () => { dead = true; };
   }, [item && item.tmdbId, item && item.mediaType]);
