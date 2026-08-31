@@ -1693,7 +1693,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "82";
+const APP_VERSION = "83";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -2024,7 +2024,11 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
           )}
           {current && (
             <div className="swipe-stack">
+              {pool.slice(1, 4).map((p) => p.posterPath && (
+                <img key={p.tmdbId + p.mediaType} src={tmdbImg(p.posterPath, "w500")} alt="" style={{ display: "none" }} loading="eager" />
+              ))}
               <SwipeCard
+                key={current.tmdbId + current.mediaType}
                 item={current}
                 matchPct={enough ? current._pct : null}
                 matchConf={enough ? current._conf : null}

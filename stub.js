@@ -2407,7 +2407,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "82";
+const APP_VERSION = "83";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
@@ -2869,9 +2869,16 @@ function DiscoverView({
         }),
         title: "That's everything for now",
         body: "You've been through the pool. Replay your skipped titles to see them again."
-      }), current && /*#__PURE__*/_jsx("div", {
+      }), current && /*#__PURE__*/_jsxs("div", {
         className: "swipe-stack",
-        children: /*#__PURE__*/_jsx(SwipeCard, {
+        children: [pool.slice(1, 4).map(p => p.posterPath && /*#__PURE__*/_jsx("img", {
+          src: tmdbImg(p.posterPath, "w500"),
+          alt: "",
+          style: {
+            display: "none"
+          },
+          loading: "eager"
+        }, p.tmdbId + p.mediaType)), /*#__PURE__*/_jsx(SwipeCard, {
           item: current,
           matchPct: enough ? current._pct : null,
           matchConf: enough ? current._conf : null,
@@ -2882,7 +2889,7 @@ function DiscoverView({
           onWant: () => want(current),
           onRate: rateInline,
           onTapInfo: () => setInfoItem(current)
-        })
+        }, current.tmdbId + current.mediaType)]
       }), justLogged && /*#__PURE__*/_jsxs("div", {
         className: "logged-toast",
         children: [/*#__PURE__*/_jsx("span", {
