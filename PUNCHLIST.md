@@ -41,7 +41,7 @@ Status: [x] done & deployed, [~] in progress, [ ] todo, [?] verify (may already 
 
 ## Recent changes that were never committed (rebuilding)
 - [x] 10-star rating scale with half-star taps (0.5 steps), For You threshold 7+
-- [ ] swipe poster back to proper 2/3 aspect + refresh deck placement
+- [x] swipe poster aspect: DECIDED 2026-08-30 - keep full-bleed fill (Ary delegated pick, full-bleed stays; supersedes the 2/3 note)
 - [ ] AI-notes prompt rewrite
 
 ## Found during testing
