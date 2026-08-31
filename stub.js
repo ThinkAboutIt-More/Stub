@@ -2030,6 +2030,28 @@ function SwipeButtons({
     })]
   });
 }
+
+// continuous match scale: 0% red -> 50% amber -> 100% green, smoothly blended
+function matchColor(pct) {
+  const t = Math.max(0, Math.min(100, pct)) / 100;
+  const lerp = (a, b, u) => a + (b - a) * u;
+  let h, s, l;
+  if (t <= 0.5) {
+    const u = t / 0.5;
+    h = lerp(4, 42, u);
+    s = lerp(85, 96, u);
+    l = lerp(56, 55, u);
+  } else {
+    const u = (t - 0.5) / 0.5;
+    h = lerp(42, 145, u);
+    s = lerp(96, 70, u);
+    l = lerp(55, 48, u);
+  }
+  return {
+    stroke: `hsl(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(l)}%)`,
+    glow: `hsla(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(l)}%, 0.75)`
+  };
+}
 function MatchRing({
   pct,
   conf
@@ -2037,6 +2059,7 @@ function MatchRing({
   const r = 30;
   const c = 2 * Math.PI * r;
   const off = c * (1 - Math.max(1, Math.min(99, pct)) / 100);
+  const mc = matchColor(pct);
   return /*#__PURE__*/_jsxs("div", {
     className: "match-ring",
     children: [/*#__PURE__*/_jsxs("svg", {
@@ -2055,19 +2078,25 @@ function MatchRing({
         cy: "36",
         r: r,
         fill: "none",
-        stroke: "var(--brass-bright)",
+        stroke: mc.stroke,
         strokeWidth: "4.5",
         strokeLinecap: "round",
         strokeDasharray: c,
         strokeDashoffset: off,
         transform: "rotate(-90 36 36)",
-        className: "match-ring-arc"
+        className: "match-ring-arc",
+        style: {
+          filter: `drop-shadow(0 0 5px ${mc.glow})`
+        }
       })]
     }), /*#__PURE__*/_jsxs("div", {
       className: "match-ring-label",
       children: [/*#__PURE__*/_jsxs("b", {
         children: [pct, "%"]
       }), /*#__PURE__*/_jsx("span", {
+        style: {
+          color: mc.stroke
+        },
         children: "match"
       })]
     })]
@@ -2331,7 +2360,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "73";
+const APP_VERSION = "74";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
