@@ -51,6 +51,8 @@ const STORAGE_KEYS = {
   watchlist: "stub-watchlist",
   feedback: "stub-discover-feedback"
 };
+const SKIP_COOLDOWN_MS = 14 * 24 * 60 * 60 * 1000; // X'ed titles sit out 2 weeks, then recycle
+
 const DEFAULT_SETTINGS = {
   tmdbKey: "",
   omdbKey: "5f3a67c7",
@@ -2334,7 +2336,13 @@ function DiscoverView({
   const pageRef = useRef(1);
   const reloadAttemptsRef = useRef(0);
   const servedRef = useRef(new Set());
-  const seenIdSet = useMemo(() => new Set([...feedback.skippedIds, ...feedback.wantedIds, ...feedback.seenIds].map(x => x.tmdbId + x.mediaType)), [feedback]);
+  const seenIdSet = useMemo(() => {
+    const now = Date.now();
+    // skips cool down: hidden for SKIP_COOLDOWN_MS, then free to resurface.
+    // legacy entries with no timestamp count as long cooled-off.
+    const cooling = feedback.skippedIds.filter(x => x.at && now - x.at < SKIP_COOLDOWN_MS);
+    return new Set([...cooling, ...feedback.wantedIds, ...feedback.seenIds].map(x => x.tmdbId + x.mediaType));
+  }, [feedback]);
   const ownedSet = useMemo(() => new Set([...collection.map(c => c.tmdbId + c.mediaType), ...watchlist.map(w => w.tmdbId + w.mediaType)]), [collection, watchlist]);
   const loadPool = useCallback(async (includeSkipped = false) => {
     setLoading(true);
@@ -2417,7 +2425,7 @@ function DiscoverView({
       const all = pages.flatMap(p => p.results || []).map(normalize);
       // advance paging for next load; wrap back to the start when we run out so the deck never truly ends
       pageRef.current = all.length === 0 || pageNum + 2 > 9 ? 1 : pageNum + 2;
-      const skipSet = includeSkipped ? new Set([...feedback.wantedIds, ...feedback.seenIds].map(x => x.tmdbId + x.mediaType)) : seenIdSet;
+      const skipSet = seenIdSet; // cooldown-aware: only cooling-down skips, wanted, and seen are excluded
       const fresh = all.filter(a => !skipSet.has(a.tmdbId + a.mediaType) && !ownedSet.has(a.tmdbId + a.mediaType));
       const dedup = Array.from(new Map(fresh.map(f => [f.tmdbId + f.mediaType, f])).values());
       // don't resurface anything already shown this session; only when we've genuinely
@@ -2517,10 +2525,11 @@ function DiscoverView({
   function recordFeedback(bucket, item) {
     setFeedback(f => ({
       ...f,
-      [bucket]: [...f[bucket], {
+      [bucket]: [...f[bucket].filter(x => !(x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)), {
         tmdbId: item.tmdbId,
         mediaType: item.mediaType,
-        genreIds: item.genreIds
+        genreIds: item.genreIds,
+        at: Date.now()
       }]
     }));
   }
