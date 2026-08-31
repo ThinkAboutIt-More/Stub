@@ -2545,7 +2545,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "92";
+const APP_VERSION = "93";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
@@ -6061,6 +6061,29 @@ input, textarea { font-family: inherit; }
 
 /* ticket detail */
 .ticket-detail { }
+/* ticket back = the reverse of the stub: cream paper, dark ink, gold accents */
+.td-back { background: var(--stub-cream); border-radius: 18px; padding: 14px; color: #241612; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+.td-back .td-hero { margin: -14px -14px 0; border-radius: 18px 18px 0 0; }
+.td-back-title { font-family: 'Bebas Neue', sans-serif; font-size: 26px; font-weight: 400; letter-spacing: 0.04em; color: #241612; margin: 0 0 4px; line-height: 1.1; }
+.td-back-genres { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.18em; color: #8a6f57; margin-bottom: 6px; }
+.td-rewatch-count { color: #8a6d1f; }
+.td-back .td-overview { color: #4a382c; }
+.td-back .td-stat { color: #8a6f57; }
+.td-back .td-stat span { color: #241612; }
+.td-back .td-cast-label { color: #8a6f57; }
+.td-back .cast-chip { background: #e7ded6; color: #3a2a20; }
+.td-back .td-reddit-btn { border-color: #cbb9a4; color: #6b4f2a; }
+.td-back .td-tool-btn { background: #fffdf9; border-color: #d8cbbd; color: #3a2a20; }
+.td-back .td-tool-btn:hover { background: #f7f1e8; }
+.td-back .td-tool-danger { color: #b3432f; border-color: rgba(179,67,47,0.4); }
+.td-back .td-tool-danger:hover { background: rgba(179,67,47,0.08); }
+.td-back .viewing-list { border-top: 2px dashed rgba(60,40,20,0.25); padding-top: 14px; }
+.td-back .viewing-row { background: #fffdf9; border: 1px solid #e4d8ca; }
+.td-back .viewing-row-new { border: 1px dashed var(--brass); }
+.td-back .viewing-date { color: #8a6d1f; }
+.td-back .viewing-loc { color: #8a6f57; }
+.td-back .viewing-notes { color: #3a2a20; }
+.td-back .icon-btn { border-color: #d8cbbd; color: #6b5a44; background: #fffdf9; }
 .td-poster-view { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .detail-poster { width: 100%; border-radius: 14px; aspect-ratio: 2/3; object-fit: cover; background: var(--curtain); }
 .detail-poster-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); }
