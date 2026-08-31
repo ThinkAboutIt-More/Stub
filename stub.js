@@ -2441,7 +2441,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "87";
+const APP_VERSION = "88";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
@@ -5958,9 +5958,10 @@ input, textarea { font-family: inherit; }
 .btn, .icon-btn, .td-tool-btn { transition: transform 0.14s cubic-bezier(.34,1.56,.64,1), background 0.15s, box-shadow 0.15s, color 0.15s; }
 .btn:active, .icon-btn:active, .td-tool-btn:active { transform: scale(0.9); }
 @keyframes card-enter { 0% { transform: translateY(16px) scale(0.95); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
-.swipe-card:not(.swipe-fly-left):not(.swipe-fly-right):not(.swipe-fly-up) { animation: card-enter 0.28s cubic-bezier(.22,.9,.32,1.15); }
+@keyframes card-rise { 0% { transform: translateY(10px); } 100% { transform: translateY(0); } }
+.swipe-card:not(.swipe-fly-left):not(.swipe-fly-right):not(.swipe-fly-up) { animation: card-rise 0.22s cubic-bezier(.22,.9,.32,1.15); }
 @keyframes match-pop { 0% { transform: scale(0.4); opacity: 0; } 70% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
-.match-badge, .match-pill { animation: match-pop 0.32s cubic-bezier(.34,1.56,.64,1) 0.04s both; }
+
 
 /* out now cards */
 .outnow-hero { position: relative; border-radius: 14px; overflow: hidden; cursor: pointer; }
@@ -6137,9 +6138,11 @@ input, textarea { font-family: inherit; }
 /* logged toast */
 .logged-toast {
   display: flex; align-items: center; gap: 8px;
-  background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.28);
-  border-radius: 10px; padding: 8px 12px; margin: 6px 0;
+  position: fixed; left: 16px; right: 16px; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); z-index: 55;
+  background: rgba(14,20,12,0.92); border: 1px solid rgba(34,197,94,0.4);
+  border-radius: 10px; padding: 8px 12px; margin: 0;
   font-size: 13px; color: var(--cream-text);
+  backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(0,0,0,0.45);
 }
 .logged-toast a { color: var(--brass-bright); text-decoration: none; display: flex; align-items: center; gap: 4px; font-weight: 600; }
 .toast-close { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0; display: flex; align-items: center; margin-left: auto; }
