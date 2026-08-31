@@ -41,7 +41,7 @@ Status: [x] done & deployed, [~] in progress, [ ] todo, [?] verify (may already 
 
 ## Recent changes that were never committed (rebuilding)
 - [x] 10-star rating scale with half-star taps (0.5 steps), For You threshold 7+
-- [x] swipe poster aspect: DECIDED 2026-08-30 - keep full-bleed fill (Ary delegated pick, full-bleed stays; supersedes the 2/3 note)
+- [x] swipe poster aspect: DECIDED 2026-08-30 (v53) - FULL poster uncropped over blurred-poster backdrop (his explicit pick, supersedes both earlier notes)
 - [ ] AI-notes prompt rewrite
 
 ## Found during testing

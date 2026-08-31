@@ -735,11 +735,7 @@ function DetailModal({
             children: [/*#__PURE__*/_jsx("span", {
               children: "Release"
             }), formatDate(release.slice(0, 10)) || release]
-          }), runtime ? /*#__PURE__*/_jsxs("div", {
-            children: [/*#__PURE__*/_jsx("span", {
-              children: "Runtime"
-            }), runtime, " min"]
-          }) : null, director && /*#__PURE__*/_jsxs("div", {
+          }), director && /*#__PURE__*/_jsxs("div", {
             children: [/*#__PURE__*/_jsx("span", {
               children: "Director"
             }), director.name]
@@ -2013,6 +2009,52 @@ function SwipeButtons({
     })]
   });
 }
+function MatchRing({
+  pct,
+  conf
+}) {
+  const r = 30;
+  const c = 2 * Math.PI * r;
+  const off = c * (1 - Math.max(1, Math.min(99, pct)) / 100);
+  return /*#__PURE__*/_jsxs("div", {
+    className: "match-ring",
+    children: [/*#__PURE__*/_jsxs("svg", {
+      width: "72",
+      height: "72",
+      viewBox: "0 0 72 72",
+      children: [/*#__PURE__*/_jsx("circle", {
+        cx: "36",
+        cy: "36",
+        r: r,
+        fill: "rgba(15,1,0,0.6)",
+        stroke: "rgba(255,245,245,0.16)",
+        strokeWidth: "4.5"
+      }), /*#__PURE__*/_jsx("circle", {
+        cx: "36",
+        cy: "36",
+        r: r,
+        fill: "none",
+        stroke: "var(--brass-bright)",
+        strokeWidth: "4.5",
+        strokeLinecap: "round",
+        strokeDasharray: c,
+        strokeDashoffset: off,
+        transform: "rotate(-90 36 36)",
+        className: "match-ring-arc"
+      })]
+    }), /*#__PURE__*/_jsxs("div", {
+      className: "match-ring-label",
+      children: [/*#__PURE__*/_jsxs("b", {
+        children: [pct, "%"]
+      }), /*#__PURE__*/_jsx("span", {
+        children: "match"
+      })]
+    }), conf && /*#__PURE__*/_jsx("div", {
+      className: "match-ring-conf",
+      children: conf.toUpperCase()
+    })]
+  });
+}
 function SwipeCard({
   item,
   matchPct,
@@ -2021,7 +2063,7 @@ function SwipeCard({
   collection,
   onSkip,
   onWant,
-  onSeen,
+  onRate,
   onTapInfo
 }) {
   const [drag, setDrag] = useState({
@@ -2030,6 +2072,8 @@ function SwipeCard({
   });
   const [flying, setFlying] = useState(null);
   const [flyFrom, setFlyFrom] = useState(0);
+  const [choice, setChoice] = useState(null); // null | "choose" | "rate"
+  const [rateVal, setRateVal] = useState(0);
   const startX = useRef(0);
   const moved = useRef(false);
   const pendingAction = useRef(null);
@@ -2041,6 +2085,15 @@ function SwipeCard({
       x: 0,
       active: false
     });
+    setChoice(null);
+    setRateVal(0);
+  }
+  function askChoice() {
+    setDrag({
+      x: 0,
+      active: false
+    });
+    setChoice("choose");
   }
   function handleAnimEnd(e) {
     if (e.target !== e.currentTarget) return;
@@ -2050,7 +2103,7 @@ function SwipeCard({
     if (action) action();
   }
   function down(e) {
-    if (flying) return;
+    if (flying || choice) return;
     startX.current = e.touches ? e.touches[0].clientX : e.clientX;
     moved.current = false;
     setDrag({
@@ -2059,7 +2112,7 @@ function SwipeCard({
     });
   }
   function move(e) {
-    if (!drag.active || flying) return;
+    if (!drag.active || flying || choice) return;
     const x = (e.touches ? e.touches[0].clientX : e.clientX) - startX.current;
     if (Math.abs(x) > 6) moved.current = true;
     setDrag({
@@ -2068,13 +2121,15 @@ function SwipeCard({
     });
   }
   function up() {
+    if (choice) return;
     if (drag.x > 100) {
-      fly("right", onWant);
+      askChoice();
       return;
-    } else if (drag.x < -100) {
+    } // right = seen it / want to watch
+    else if (drag.x < -100) {
       fly("left", onSkip);
       return;
-    }
+    } // left = don't care
     setDrag({
       x: 0,
       active: false
@@ -2118,21 +2173,27 @@ function SwipeCard({
         transform: `rotate(8deg) scale(${0.55 + dragPct * 0.55})`
       },
       children: "SKIP"
-    }), matchPct != null && /*#__PURE__*/_jsxs("div", {
-      className: "match-badge",
-      style: matchStyle(matchPct),
-      children: [matchPct, "% match", matchConf ? ` \u00b7 ${matchConf.toUpperCase()}` : ""]
+    }), matchPct != null && /*#__PURE__*/_jsx(MatchRing, {
+      pct: matchPct,
+      conf: matchConf
     }), /*#__PURE__*/_jsx("button", {
       className: "swipe-poster-btn",
       onClick: () => {
         if (!moved.current) onTapInfo();
       },
       "aria-label": "More info",
-      children: item.posterPath ? /*#__PURE__*/_jsx("img", {
-        src: tmdbImg(item.posterPath, "w500"),
-        alt: "",
-        className: "swipe-poster",
-        draggable: false
+      children: item.posterPath ? /*#__PURE__*/_jsxs(_Fragment, {
+        children: [/*#__PURE__*/_jsx("img", {
+          src: tmdbImg(item.posterPath, "w500"),
+          alt: "",
+          className: "swipe-poster-blur",
+          draggable: false
+        }), /*#__PURE__*/_jsx("img", {
+          src: tmdbImg(item.posterPath, "w500"),
+          alt: "",
+          className: "swipe-poster",
+          draggable: false
+        })]
       }) : /*#__PURE__*/_jsx("div", {
         className: "swipe-poster swipe-poster-fallback",
         children: item.mediaType === "tv" ? /*#__PURE__*/_jsx(Tv, {
@@ -2143,22 +2204,82 @@ function SwipeCard({
       })
     }), /*#__PURE__*/_jsxs("div", {
       className: "swipe-meta",
-      children: [/*#__PURE__*/_jsxs("div", {
+      children: [/*#__PURE__*/_jsx("div", {
         className: "swipe-title",
-        children: [item.title, " ", item.year ? `(${item.year})` : ""]
-      }), /*#__PURE__*/_jsx("div", {
-        className: "swipe-genres",
-        children: genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ") || (item.mediaType === "tv" ? "TV series" : "Film")
+        children: item.title
+      }), /*#__PURE__*/_jsxs("div", {
+        className: "swipe-sub",
+        children: [item.year ? `${item.year} \u00b7 ` : "", item.mediaType === "tv" ? "TV SHOW" : "MOVIE"]
+      }), /*#__PURE__*/_jsxs("div", {
+        className: "swipe-perf",
+        children: [/*#__PURE__*/_jsx("i", {}), /*#__PURE__*/_jsx("i", {})]
       }), /*#__PURE__*/_jsx(WhyWatch, {
         item: item,
         taste: taste,
         matchPct: matchPct,
         collection: collection
       })]
-    }), /*#__PURE__*/_jsx(SwipeButtons, {
-      onSkip: () => fly("left", onSkip),
-      onSeen: () => fly("up", onSeen),
-      onWant: () => fly("right", onWant)
+    }), /*#__PURE__*/_jsx("div", {
+      className: "swipe-buttons-wrap",
+      children: /*#__PURE__*/_jsx(SwipeButtons, {
+        onSkip: () => fly("left", onSkip),
+        onSeen: () => setChoice("rate"),
+        onWant: askChoice
+      })
+    }), choice && /*#__PURE__*/_jsx("div", {
+      className: "choice-overlay",
+      onMouseDown: e => e.stopPropagation(),
+      onTouchStart: e => e.stopPropagation(),
+      children: choice === "choose" ? /*#__PURE__*/_jsxs(_Fragment, {
+        children: [/*#__PURE__*/_jsx("div", {
+          className: "choice-title",
+          children: item.title
+        }), /*#__PURE__*/_jsx("button", {
+          className: "choice-btn choice-btn-want",
+          onClick: () => fly("right", onWant),
+          children: "WANT TO WATCH"
+        }), /*#__PURE__*/_jsx("button", {
+          className: "choice-btn choice-btn-seen",
+          onClick: () => setChoice("rate"),
+          children: "I'VE SEEN IT"
+        }), /*#__PURE__*/_jsx("button", {
+          className: "choice-dismiss",
+          onClick: () => setChoice(null),
+          children: "not now"
+        })]
+      }) : /*#__PURE__*/_jsxs(_Fragment, {
+        children: [/*#__PURE__*/_jsx("div", {
+          className: "choice-title",
+          children: "Rate it"
+        }), /*#__PURE__*/_jsx("div", {
+          className: "choice-stars",
+          children: /*#__PURE__*/_jsx(Stars, {
+            value: rateVal,
+            onChange: setRateVal,
+            size: 30
+          })
+        }), /*#__PURE__*/_jsx("button", {
+          className: "choice-btn choice-btn-want",
+          disabled: !rateVal,
+          style: !rateVal ? {
+            opacity: 0.45
+          } : undefined,
+          onClick: () => rateVal && fly("up", () => onRate(item, {
+            id: uid(),
+            date: todayISO(),
+            undated: false,
+            location: "",
+            rating: rateVal,
+            notes: "",
+            loggedAt: Date.now()
+          })),
+          children: "LOG IT"
+        }), /*#__PURE__*/_jsx("button", {
+          className: "choice-dismiss",
+          onClick: () => setChoice("choose"),
+          children: "back"
+        })]
+      })
     })]
   });
 }
@@ -2177,7 +2298,6 @@ function DiscoverView({
   const [pool, setPool] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [pendingLog, setPendingLog] = useState(null);
   const [infoItem, setInfoItem] = useState(null);
   const [mode, setMode] = useState("swipe");
   const [lastAction, setLastAction] = useState(null);
@@ -2405,8 +2525,17 @@ function DiscoverView({
     onAddToWatchlist(item);
     advance();
   }
-  function seen(item) {
-    setPendingLog(item);
+  function rateInline(item, entry) {
+    onLogNew(item, entry);
+    recordFeedback("seenIds", item);
+    resolveRedditUrl(item.title, item.year).then(url => {
+      setJustLogged({
+        title: item.title,
+        url
+      });
+      setTimeout(() => setJustLogged(null), 7000);
+    });
+    advance();
   }
   const enough = hasEnoughTaste(collection, feedback);
   const current = pool[0];
@@ -2437,31 +2566,19 @@ function DiscoverView({
         recordFeedback("seenIds", it);
         advance();
       }
-    }), pendingLog && /*#__PURE__*/_jsxs(Modal, {
-      onClose: () => setPendingLog(null),
-      children: [/*#__PURE__*/_jsx("h3", {
-        className: "modal-title",
-        children: pendingLog.title
-      }), /*#__PURE__*/_jsx(LogForm, {
-        saveLabel: "Add to collection",
-        onCancel: () => setPendingLog(null),
-        onSave: entry => {
-          onLogNew(pendingLog, entry);
-          recordFeedback("seenIds", pendingLog);
-          resolveRedditUrl(pendingLog.title, pendingLog.year).then(url => {
-            setJustLogged({
-              title: pendingLog.title,
-              url
-            });
-            setTimeout(() => setJustLogged(null), 7000);
-          });
-          setPendingLog(null);
-          advance();
-        }
-      })]
     }), mode === "swipe" && /*#__PURE__*/_jsxs("div", {
       className: "view-discover",
-      children: [loading && /*#__PURE__*/_jsx(EmptyState, {
+      children: [!loading && current && current.posterPath && /*#__PURE__*/_jsx("div", {
+        className: "discover-bg",
+        style: {
+          backgroundImage: `url(${tmdbImg(current.posterPath, "w500")})`
+        }
+      }), /*#__PURE__*/_jsx("div", {
+        className: "marquee-bulbs",
+        children: Array.from({
+          length: 9
+        }).map((_, i) => /*#__PURE__*/_jsx("i", {}, i))
+      }), loading && /*#__PURE__*/_jsx(EmptyState, {
         icon: /*#__PURE__*/_jsx(RefreshCw, {
           size: 32,
           className: "spin"
@@ -2490,7 +2607,7 @@ function DiscoverView({
           collection: collection,
           onSkip: () => skip(current),
           onWant: () => want(current),
-          onSeen: () => seen(current),
+          onRate: rateInline,
           onTapInfo: () => setInfoItem(current)
         })
       }), justLogged && /*#__PURE__*/_jsxs("div", {
@@ -5257,18 +5374,46 @@ input, textarea { font-family: inherit; }
 /* discover swipe */
 .view-discover { display: flex; flex-direction: column; align-items: center; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .view-discover * { user-select: none; -webkit-user-select: none; }
-.swipe-stack { width: 100%; max-width: 340px; height: calc(100dvh - 252px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; }
+.swipe-stack { width: 100%; max-width: 320px; height: calc(100dvh - 258px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; position: relative; z-index: 1; }
 .swipe-card {
   background: var(--velvet); border-radius: 18px; overflow: hidden; position: relative;
   touch-action: none; user-select: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
   border: 1px solid rgba(226,54,54,0.1);
   flex: 1; display: flex; flex-direction: column; min-height: 0;
 }
-.swipe-poster { width: 100%; height: 100%; object-fit: cover; display: block; }
+.swipe-poster { position: relative; width: 100%; height: 100%; object-fit: contain; display: block; z-index: 1; }
+.swipe-poster-blur { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(26px) brightness(0.45) saturate(1.3); transform: scale(1.25); }
 .swipe-poster-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); background: var(--velvet-2); }
-.swipe-meta { padding: 10px 12px 4px; flex-shrink: 0; }
-.swipe-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
-.swipe-genres { color: var(--muted); font-size: 12px; }
+.swipe-meta { padding: 12px 14px 6px; flex-shrink: 0; background: var(--stub-cream); color: var(--ink); position: relative; }
+.swipe-title { font-weight: 800; font-size: 16px; margin-bottom: 3px; color: var(--ink); }
+.swipe-sub { font-family: 'Space Mono', monospace; font-weight: 700; font-size: 10px; letter-spacing: 0.18em; color: #8a5a2a; }
+.swipe-perf { border-top: 2px dashed rgba(22,8,0,0.22); margin: 9px -14px 2px; position: relative; }
+.swipe-perf i { position: absolute; top: -8px; width: 16px; height: 16px; border-radius: 50%; background: var(--velvet); }
+.swipe-perf i:first-child { left: -22px; }
+.swipe-perf i:last-child { right: -22px; }
+.swipe-meta .why-watch { color: #6b4213; font-style: normal; font-weight: 600; font-size: 12px; margin-top: 7px; }
+.swipe-buttons-wrap { background: var(--stub-cream); flex-shrink: 0; border-radius: 0 0 18px 18px; }
+.match-ring { position: absolute; top: 12px; right: 12px; z-index: 3; width: 72px; height: 72px; }
+.match-ring-arc { filter: drop-shadow(0 0 5px rgba(245,205,110,0.75)); }
+.match-ring-label { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; line-height: 1; }
+.match-ring-label b { font-family: 'Space Mono', monospace; font-size: 17px; text-shadow: 0 1px 6px rgba(0,0,0,0.65); }
+.match-ring-label span { font-family: 'Space Mono', monospace; font-size: 8px; font-weight: 700; letter-spacing: 0.2em; color: var(--brass-bright); margin-top: 3px; }
+.match-ring-conf { position: absolute; top: 74px; left: 0; right: 0; text-align: center; font-family: 'Space Mono', monospace; font-size: 7px; font-weight: 700; letter-spacing: 0.22em; color: rgba(255,245,245,0.75); text-shadow: 0 1px 4px rgba(0,0,0,0.7); }
+.marquee-bulbs { display: flex; justify-content: center; gap: 15px; padding: 0 0 9px; position: relative; z-index: 1; }
+.marquee-bulbs i { width: 6px; height: 6px; border-radius: 50%; background: var(--brass-bright); box-shadow: 0 0 9px 2px rgba(245,205,110,0.8); animation: bulb-glow 2.2s infinite alternate; }
+.marquee-bulbs i:nth-child(2n) { animation-delay: 1.1s; opacity: 0.6; }
+@keyframes bulb-glow { to { opacity: 0.3; box-shadow: 0 0 3px 1px rgba(245,205,110,0.35); } }
+.discover-bg { position: absolute; inset: -50px; background-size: cover; background-position: center 20%; filter: blur(70px) brightness(0.4) saturate(1.35); pointer-events: none; z-index: 0; }
+.view-discover { position: relative; overflow: hidden; }
+.view-discover .discover-foot, .view-discover .logged-toast { position: relative; z-index: 1; }
+.choice-overlay { position: absolute; inset: 0; z-index: 6; background: rgba(15,1,0,0.9); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; border-radius: 18px; animation: card-enter 0.22s cubic-bezier(.22,.9,.32,1.15); }
+.choice-title { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 0.05em; color: var(--cream-text); margin-bottom: 4px; text-align: center; padding: 0 20px; }
+.choice-btn { width: 72%; padding: 14px 0; border-radius: 14px; font-family: 'Space Mono', monospace; font-weight: 700; font-size: 12px; letter-spacing: 0.14em; border: none; cursor: pointer; transition: transform 0.14s cubic-bezier(.34,1.56,.64,1); }
+.choice-btn:active { transform: scale(0.92); }
+.choice-btn-want { background: var(--brass); color: var(--ink); box-shadow: 0 6px 20px rgba(226,168,54,0.3); }
+.choice-btn-seen { background: var(--stub-cream); color: var(--ink); }
+.choice-dismiss { background: none; border: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 4px 10px; text-decoration: underline; }
+.choice-stars { padding: 4px 0 8px; }
 .swipe-buttons { display: flex; justify-content: center; align-items: center; gap: 20px; padding: 10px 0 14px; flex-shrink: 0; }
 .round-btn { width: 52px; height: 52px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; transition: transform 0.16s cubic-bezier(.34,1.56,.64,1), box-shadow 0.16s; }
 .round-btn:active { transform: scale(0.86); }
