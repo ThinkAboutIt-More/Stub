@@ -383,6 +383,8 @@ function peopleAffinity(item, people) {
 /* Letterboxd tough-crowd ratings, baked in as a static asset (letterboxd.json).
    Loaded once per version, cached in localStorage. Feeds the reception gate so a
    panned-on-Letterboxd title cannot ride TMDB's softer curve into the top. */
+let SCORING_CTX = null;
+function setScoringContext(ctx) { SCORING_CTX = ctx; }
 let LB_RATINGS = null;
 let LB_LOADING = null;
 function loadLetterboxd() {
@@ -627,6 +629,20 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
                 ))}
               </div>
             )}
+            {(() => {
+              if (!SCORING_CTX || !SCORING_CTX.taste) return null;
+              const m = matchMeta(item, SCORING_CTX.taste, SCORING_CTX.people, SCORING_CTX.crowd);
+              if (m.pct == null) return null;
+              const lb = letterboxdRating(item);
+              const aud5 = lb != null ? lb / 2 : (item.voteAverage != null ? item.voteAverage / 2 : null);
+              return (
+                <div className="detail-score">
+                  <span className="match-pill" style={matchStyle(m.pct)}>{m.pct}% match</span>
+                  <span className="detail-score-conf">{m.conf} confidence</span>
+                  {aud5 != null && <span className="detail-score-aud">audience {aud5.toFixed(1)}/5</span>}
+                </div>
+              );
+            })()}
           </div>
         </div>
 
@@ -1571,6 +1587,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
   const [flying, setFlying] = useState(null);
   const [flyFrom, setFlyFrom] = useState(0);
   const [choice, setChoice] = useState(null); // null | "choose" | "rate"
+  const [showRingInfo, setShowRingInfo] = useState(false);
   const [rateVal, setRateVal] = useState(0);
   const startX = useRef(0);
   const moved = useRef(false);
@@ -1673,7 +1690,24 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
       )}
       {drag.x > 0 && <div className="swipe-flag swipe-flag-want" style={{ opacity: dragPct, transform: `rotate(-8deg) scale(${0.55 + dragPct * 0.55})` }}>SAVE IT</div>}
       {drag.x < 0 && <div className="swipe-flag swipe-flag-skip" style={{ opacity: dragPct, transform: `rotate(8deg) scale(${0.55 + dragPct * 0.55})` }}>SKIP</div>}
-      {matchPct != null && <MatchRing pct={matchPct} conf={matchConf} />}
+      {matchPct != null && (
+        <button className="match-ring-btn" aria-label="What does the match score mean"
+          onTouchStart={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); setShowRingInfo(true); }}>
+          <MatchRing pct={matchPct} conf={matchConf} />
+        </button>
+      )}
+      {showRingInfo && (
+        <div className="ring-info-overlay" onTouchStart={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setShowRingInfo(false); }}>
+          <div className="ring-info-card" onClick={(e) => e.stopPropagation()}>
+            <div className="ring-info-title">{matchPct}% match</div>
+            <p>How likely you are to rate this highly. It blends what you've loved before with audience consensus (TMDB + Letterboxd), so a well-reviewed miss for you still lands mid.</p>
+            <p className="ring-info-legend"><span style={{ color: "hsl(4,85%,56%)" }}>red</span> under 50 · <span style={{ color: "hsl(42,96%,55%)" }}>amber</span> 50-69 · <span style={{ color: "hsl(145,70%,48%)" }}>green</span> 70+</p>
+            {matchConf && <p className="ring-info-conf">Confidence: {matchConf} - it sharpens as you rate more.</p>}
+            <button className="btn btn-primary" onClick={(e) => { e.stopPropagation(); setShowRingInfo(false); }}>Got it</button>
+          </div>
+        </div>
+      )}
       <button
         className="swipe-poster-btn"
         onClick={() => { if (!moved.current) onTapInfo(); }}
@@ -1733,7 +1767,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "89";
+const APP_VERSION = "90";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -2928,7 +2962,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
    SEARCH TAB
 --------------------------------------------------------- */
 
-function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, onLogNew }) {
+function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, onLogNew, onUndoQuick }) {
   const ownedKeys = useMemo(() => new Set((collection || []).map((c) => c.tmdbId + c.mediaType)), [collection]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -3050,7 +3084,9 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
                     </div>
                     <div className="suggest-actions">
                       {loggedMarks[item.tmdbId + item.mediaType] ? (
-                        <span className="logged-mark"><Check size={15} /> {loggedMarks[item.tmdbId + item.mediaType]}/10</span>
+                        <span className="logged-mark"><Check size={15} /> {loggedMarks[item.tmdbId + item.mediaType]}/10
+                          {onUndoQuick && <button className="logged-undo" onClick={() => { onUndoQuick(item); setLoggedMarks((m) => { const n = { ...m }; delete n[item.tmdbId + item.mediaType]; return n; }); }} aria-label="Undo log"><Undo2 size={13} /></button>}
+                        </span>
                       ) : ownedKeys.has(item.tmdbId + item.mediaType) ? (
                         <button className="icon-btn logged-owned" onClick={() => setLogging(item)} aria-label="Already logged - add rewatch"><Check size={16} /></button>
                       ) : (
@@ -3724,6 +3760,18 @@ export default function App() {
     fireBurst("collect");
   }
 
+  // undo a just-made quick-rate log: remove the ticket only if it is the fresh single-viewing entry
+  function undoQuick(item) {
+    setCollection((c) => {
+      const key = item.tmdbId + item.mediaType;
+      const idx = c.map((x) => x.tmdbId + x.mediaType).lastIndexOf(key);
+      if (idx < 0) return c;
+      const t = c[idx];
+      if (!t.viewings || t.viewings.length !== 1) return c; // never strip a ticket with history
+      return [...c.slice(0, idx), ...c.slice(idx + 1)];
+    });
+  }
+
   function logNew(item, viewing, credits, extra) {
     const existing = collection.find((x) => x.tmdbId === item.tmdbId && x.mediaType === item.mediaType);
     if (existing) {
@@ -3817,6 +3865,7 @@ export default function App() {
     );
   }
 
+  setScoringContext({ taste, people, crowd });
   return (
     <div className={"app" + (tab === "discover" ? " wash-on" : "")}>
       <GlobalStyle />
@@ -3912,7 +3961,7 @@ export default function App() {
         )}
         {mountedTabs.has("search") && (
           <div style={{ display: tab === "search" ? "" : "none" }}>
-            <SearchView tmdb={tmdb} taste={taste} people={people} crowd={crowd} collection={collection} onAddToWatchlist={addToWatchlist} onLogNew={logNew} />
+            <SearchView tmdb={tmdb} taste={taste} people={people} crowd={crowd} collection={collection} onAddToWatchlist={addToWatchlist} onLogNew={logNew} onUndoQuick={undoQuick} />
           </div>
         )}
       </main>
@@ -4461,6 +4510,19 @@ input, textarea { font-family: inherit; }
 /* match scores */
 .match-badge { position: absolute; top: 14px; right: 14px; z-index: 3; font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; backdrop-filter: blur(8px); }
 .match-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex-shrink: 0; }
+.detail-score { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.detail-score-conf { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.detail-score-aud { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-bright); }
+.match-ring-btn { position: absolute; top: 12px; right: 12px; z-index: 4; background: none; border: none; padding: 0; cursor: pointer; }
+.match-ring-btn .match-ring { position: static; }
+.ring-info-overlay { position: fixed; inset: 0; z-index: 120; background: rgba(10,2,2,0.7); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.ring-info-card { background: var(--velvet); border: 1px solid var(--line); border-radius: 16px; padding: 20px; max-width: 320px; color: var(--cream-text); font-size: 14px; line-height: 1.5; }
+.ring-info-title { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 0.04em; color: var(--brass-bright); margin-bottom: 8px; }
+.ring-info-legend { font-size: 12px; }
+.ring-info-conf { font-size: 12px; color: var(--muted); }
+.ring-info-card .btn { margin-top: 10px; width: 100%; }
+.logged-undo { background: none; border: none; color: var(--muted); cursor: pointer; padding: 2px; display: inline-flex; align-items: center; margin-left: 4px; }
+.logged-undo:active { color: var(--brass-bright); }
 .match-high { background: rgba(34,150,86,0.88); color: #eafff3; border: 1px solid rgba(120,240,170,0.9); }
 .match-seen { background: rgba(196,140,40,0.92); color: #fff6e6; border: 1px solid rgba(240,200,120,0.9); display: inline-flex; align-items: center; }
 .avail-tag { position: absolute; top: 10px; left: 10px; z-index: 3; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 999px; backdrop-filter: blur(6px); }

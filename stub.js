@@ -466,6 +466,10 @@ function peopleAffinity(item, people) {
 /* Letterboxd tough-crowd ratings, baked in as a static asset (letterboxd.json).
    Loaded once per version, cached in localStorage. Feeds the reception gate so a
    panned-on-Letterboxd title cannot ride TMDB's softer curve into the top. */
+let SCORING_CTX = null;
+function setScoringContext(ctx) {
+  SCORING_CTX = ctx;
+}
 let LB_RATINGS = null;
 let LB_LOADING = null;
 function loadLetterboxd() {
@@ -797,7 +801,27 @@ function DetailModal({
               className: "badge badge-" + b.kind,
               children: b.text
             }, i))
-          })]
+          }), (() => {
+            if (!SCORING_CTX || !SCORING_CTX.taste) return null;
+            const m = matchMeta(item, SCORING_CTX.taste, SCORING_CTX.people, SCORING_CTX.crowd);
+            if (m.pct == null) return null;
+            const lb = letterboxdRating(item);
+            const aud5 = lb != null ? lb / 2 : item.voteAverage != null ? item.voteAverage / 2 : null;
+            return /*#__PURE__*/_jsxs("div", {
+              className: "detail-score",
+              children: [/*#__PURE__*/_jsxs("span", {
+                className: "match-pill",
+                style: matchStyle(m.pct),
+                children: [m.pct, "% match"]
+              }), /*#__PURE__*/_jsxs("span", {
+                className: "detail-score-conf",
+                children: [m.conf, " confidence"]
+              }), aud5 != null && /*#__PURE__*/_jsxs("span", {
+                className: "detail-score-aud",
+                children: ["audience ", aud5.toFixed(1), "/5"]
+              })]
+            });
+          })()]
         })]
       }), loading && /*#__PURE__*/_jsxs("div", {
         className: "detail-loading",
@@ -2216,6 +2240,7 @@ function SwipeCard({
   const [flying, setFlying] = useState(null);
   const [flyFrom, setFlyFrom] = useState(0);
   const [choice, setChoice] = useState(null); // null | "choose" | "rate"
+  const [showRingInfo, setShowRingInfo] = useState(false);
   const [rateVal, setRateVal] = useState(0);
   const startX = useRef(0);
   const moved = useRef(false);
@@ -2356,9 +2381,63 @@ function SwipeCard({
         transform: `rotate(8deg) scale(${0.55 + dragPct * 0.55})`
       },
       children: "SKIP"
-    }), matchPct != null && /*#__PURE__*/_jsx(MatchRing, {
-      pct: matchPct,
-      conf: matchConf
+    }), matchPct != null && /*#__PURE__*/_jsx("button", {
+      className: "match-ring-btn",
+      "aria-label": "What does the match score mean",
+      onTouchStart: e => e.stopPropagation(),
+      onClick: e => {
+        e.stopPropagation();
+        setShowRingInfo(true);
+      },
+      children: /*#__PURE__*/_jsx(MatchRing, {
+        pct: matchPct,
+        conf: matchConf
+      })
+    }), showRingInfo && /*#__PURE__*/_jsx("div", {
+      className: "ring-info-overlay",
+      onTouchStart: e => e.stopPropagation(),
+      onClick: e => {
+        e.stopPropagation();
+        setShowRingInfo(false);
+      },
+      children: /*#__PURE__*/_jsxs("div", {
+        className: "ring-info-card",
+        onClick: e => e.stopPropagation(),
+        children: [/*#__PURE__*/_jsxs("div", {
+          className: "ring-info-title",
+          children: [matchPct, "% match"]
+        }), /*#__PURE__*/_jsx("p", {
+          children: "How likely you are to rate this highly. It blends what you've loved before with audience consensus (TMDB + Letterboxd), so a well-reviewed miss for you still lands mid."
+        }), /*#__PURE__*/_jsxs("p", {
+          className: "ring-info-legend",
+          children: [/*#__PURE__*/_jsx("span", {
+            style: {
+              color: "hsl(4,85%,56%)"
+            },
+            children: "red"
+          }), " under 50 · ", /*#__PURE__*/_jsx("span", {
+            style: {
+              color: "hsl(42,96%,55%)"
+            },
+            children: "amber"
+          }), " 50-69 · ", /*#__PURE__*/_jsx("span", {
+            style: {
+              color: "hsl(145,70%,48%)"
+            },
+            children: "green"
+          }), " 70+"]
+        }), matchConf && /*#__PURE__*/_jsxs("p", {
+          className: "ring-info-conf",
+          children: ["Confidence: ", matchConf, " - it sharpens as you rate more."]
+        }), /*#__PURE__*/_jsx("button", {
+          className: "btn btn-primary",
+          onClick: e => {
+            e.stopPropagation();
+            setShowRingInfo(false);
+          },
+          children: "Got it"
+        })]
+      })
     }), /*#__PURE__*/_jsx("button", {
       className: "swipe-poster-btn",
       onClick: () => {
@@ -2466,7 +2545,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "89";
+const APP_VERSION = "90";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
@@ -4239,7 +4318,8 @@ function SearchView({
   crowd,
   collection,
   onAddToWatchlist,
-  onLogNew
+  onLogNew,
+  onUndoQuick
 }) {
   const ownedKeys = useMemo(() => new Set((collection || []).map(c => c.tmdbId + c.mediaType)), [collection]);
   const [query, setQuery] = useState("");
@@ -4427,7 +4507,23 @@ function SearchView({
                 className: "logged-mark",
                 children: [/*#__PURE__*/_jsx(Check, {
                   size: 15
-                }), " ", loggedMarks[item.tmdbId + item.mediaType], "/10"]
+                }), " ", loggedMarks[item.tmdbId + item.mediaType], "/10", onUndoQuick && /*#__PURE__*/_jsx("button", {
+                  className: "logged-undo",
+                  onClick: () => {
+                    onUndoQuick(item);
+                    setLoggedMarks(m => {
+                      const n = {
+                        ...m
+                      };
+                      delete n[item.tmdbId + item.mediaType];
+                      return n;
+                    });
+                  },
+                  "aria-label": "Undo log",
+                  children: /*#__PURE__*/_jsx(Undo2, {
+                    size: 13
+                  })
+                })]
               }) : ownedKeys.has(item.tmdbId + item.mediaType) ? /*#__PURE__*/_jsx("button", {
                 className: "icon-btn logged-owned",
                 onClick: () => setLogging(item),
@@ -5286,6 +5382,18 @@ export default function App() {
     setRewatchPrompt(null);
     fireBurst("collect");
   }
+
+  // undo a just-made quick-rate log: remove the ticket only if it is the fresh single-viewing entry
+  function undoQuick(item) {
+    setCollection(c => {
+      const key = item.tmdbId + item.mediaType;
+      const idx = c.map(x => x.tmdbId + x.mediaType).lastIndexOf(key);
+      if (idx < 0) return c;
+      const t = c[idx];
+      if (!t.viewings || t.viewings.length !== 1) return c; // never strip a ticket with history
+      return [...c.slice(0, idx), ...c.slice(idx + 1)];
+    });
+  }
   function logNew(item, viewing, credits, extra) {
     const existing = collection.find(x => x.tmdbId === item.tmdbId && x.mediaType === item.mediaType);
     if (existing) {
@@ -5410,6 +5518,11 @@ export default function App() {
       })]
     });
   }
+  setScoringContext({
+    taste,
+    people,
+    crowd
+  });
   return /*#__PURE__*/_jsxs("div", {
     className: "app" + (tab === "discover" ? " wash-on" : ""),
     children: [/*#__PURE__*/_jsx(GlobalStyle, {}), burst && /*#__PURE__*/_jsx("div", {
@@ -5557,7 +5670,8 @@ export default function App() {
           crowd: crowd,
           collection: collection,
           onAddToWatchlist: addToWatchlist,
-          onLogNew: logNew
+          onLogNew: logNew,
+          onUndoQuick: undoQuick
         })
       })]
     }), showYIR && /*#__PURE__*/_jsx(Modal, {
@@ -6132,6 +6246,19 @@ input, textarea { font-family: inherit; }
 /* match scores */
 .match-badge { position: absolute; top: 14px; right: 14px; z-index: 3; font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; backdrop-filter: blur(8px); }
 .match-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex-shrink: 0; }
+.detail-score { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.detail-score-conf { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.detail-score-aud { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-bright); }
+.match-ring-btn { position: absolute; top: 12px; right: 12px; z-index: 4; background: none; border: none; padding: 0; cursor: pointer; }
+.match-ring-btn .match-ring { position: static; }
+.ring-info-overlay { position: fixed; inset: 0; z-index: 120; background: rgba(10,2,2,0.7); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.ring-info-card { background: var(--velvet); border: 1px solid var(--line); border-radius: 16px; padding: 20px; max-width: 320px; color: var(--cream-text); font-size: 14px; line-height: 1.5; }
+.ring-info-title { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 0.04em; color: var(--brass-bright); margin-bottom: 8px; }
+.ring-info-legend { font-size: 12px; }
+.ring-info-conf { font-size: 12px; color: var(--muted); }
+.ring-info-card .btn { margin-top: 10px; width: 100%; }
+.logged-undo { background: none; border: none; color: var(--muted); cursor: pointer; padding: 2px; display: inline-flex; align-items: center; margin-left: 4px; }
+.logged-undo:active { color: var(--brass-bright); }
 .match-high { background: rgba(34,150,86,0.88); color: #eafff3; border: 1px solid rgba(120,240,170,0.9); }
 .match-seen { background: rgba(196,140,40,0.92); color: #fff6e6; border: 1px solid rgba(240,200,120,0.9); display: inline-flex; align-items: center; }
 .avail-tag { position: absolute; top: 10px; left: 10px; z-index: 3; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 999px; backdrop-filter: blur(6px); }
