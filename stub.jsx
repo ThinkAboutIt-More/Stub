@@ -1673,9 +1673,9 @@ function usePosterGradient(item) {
         };
         const boost = (c) => {
           // push saturation and lift dark colors so the hue always reads
-          let [r, g, b] = c.map((v) => Math.min(255, v * 1.55));
+          let [r, g, b] = c.map((v) => Math.min(255, v * 1.7));
           const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-          const lift = lum < 78 ? 78 - lum : 0;
+          const lift = lum < 90 ? 90 - lum : 0;
           return `rgb(${Math.round(r + lift)},${Math.round(g + lift)},${Math.round(b + lift)})`;
         };
         finish({ a: boost(avg(0, 6)), b: boost(avg(6, 12)) });
@@ -1914,9 +1914,9 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
           {!loading && current && current.posterPath && (
             grad ? (
               <>
-                <div className="discover-grad" style={{ background: `radial-gradient(circle 320px at 76% 10%, ${grad.a} 0%, transparent 72%)` }} />
-                <div className="discover-grad" style={{ background: `radial-gradient(circle 340px at 20% 90%, ${grad.b} 0%, transparent 72%)` }} />
-                <div className="discover-grad discover-grad-wash" style={{ background: `linear-gradient(180deg, ${grad.a} 0%, transparent 26%, transparent 74%, ${grad.b} 100%)` }} />
+                <div className="discover-grad" style={{ background: `radial-gradient(ellipse 165% 85% at 72% -12%, ${grad.a} 0%, transparent 68%)` }} />
+                <div className="discover-grad" style={{ background: `radial-gradient(ellipse 165% 90% at 22% 110%, ${grad.b} 0%, transparent 70%)` }} />
+                <div className="discover-grad discover-grad-wash" style={{ background: `linear-gradient(180deg, ${grad.a} 0%, transparent 30%, transparent 70%, ${grad.b} 100%)` }} />
               </>
             ) : (
               <>
@@ -4097,8 +4097,8 @@ input, textarea { font-family: inherit; }
 .marquee-bulbs i { width: 6px; height: 6px; border-radius: 50%; background: var(--brass-bright); box-shadow: 0 0 9px 2px rgba(245,205,110,0.8); animation: bulb-glow 2.2s infinite alternate; }
 .marquee-bulbs i:nth-child(2n) { animation-delay: 1.1s; opacity: 0.6; }
 @keyframes bulb-glow { to { opacity: 0.55; box-shadow: 0 0 6px 1.5px rgba(245,205,110,0.45); } }
-.discover-grad { position: absolute; inset: 0; opacity: 0.6; pointer-events: none; z-index: 0; }
-.discover-grad-wash { opacity: 0.14; }
+.discover-grad { position: absolute; inset: 0; opacity: 0.82; pointer-events: none; z-index: 0; }
+.discover-grad-wash { opacity: 0.2; }
 .discover-bg { position: absolute; top: -150px; right: -130px; width: 440px; height: 440px; border-radius: 50%; background-size: cover; background-position: center; filter: blur(90px) brightness(1.0) saturate(1.5); opacity: 0.65; pointer-events: none; z-index: 0; }
 .discover-bg-b { top: auto; right: auto; bottom: -120px; left: -150px; opacity: 0.45; filter: blur(90px) brightness(0.9) saturate(1.4); }
 .view-discover::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 42%, transparent 52%, rgba(0,0,0,0.55) 100%); pointer-events: none; z-index: 0; }
