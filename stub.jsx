@@ -1646,61 +1646,72 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
 const posterGradCache = {};
+const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
-  const [grad, setGrad] = useState(null);
+  const [grad, setGrad] = useState(DEFAULT_GRAD);
   useEffect(() => {
     let dead = false;
-    if (!item || !item.posterPath) { setGrad(null); return; }
+    if (!item || !item.posterPath) { setGrad(DEFAULT_GRAD); return; }
     const key = item.tmdbId + item.mediaType;
-    if (key in posterGradCache) { setGrad(posterGradCache[key]); return; }
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src = tmdbImg(item.posterPath, "w342");
-    const finish = (g) => { posterGradCache[key] = g; if (!dead) setGrad(g); };
-    img.onload = () => {
+    if (key in posterGradCache) { setGrad(posterGradCache[key] || DEFAULT_GRAD); return; }
+    setGrad(DEFAULT_GRAD);
+    const finish = (g) => { posterGradCache[key] = g; if (!dead) setGrad(g || DEFAULT_GRAD); };
+    // fetch -> blob -> bitmap: blob URLs are same-origin, so the canvas can
+    // never taint (the iOS failure mode that made the backdrop go black)
+    (async () => {
       try {
-        const cv = document.createElement("canvas");
-        cv.width = 8; cv.height = 12;
-        const cx = cv.getContext("2d", { willReadFrequently: true });
-        cx.drawImage(img, 0, 0, 8, 12);
-        const d = cx.getImageData(0, 0, 8, 12).data;
-        const avg = (y0, y1) => {
-          let r = 0, g = 0, b = 0, n = 0;
-          for (let y = y0; y < y1; y++) for (let x = 0; x < 8; x++) {
-            const i = (y * 8 + x) * 4; r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
-          }
-          return [r / n, g / n, b / n];
+        const res = await fetch(tmdbImg(item.posterPath, "w342"), { mode: "cors", credentials: "omit" });
+        if (!res.ok) throw new Error("poster fetch " + res.status);
+        const blob = await res.blob();
+        const objUrl = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+          URL.revokeObjectURL(objUrl);
+          try {
+            const cv = document.createElement("canvas");
+            cv.width = 8; cv.height = 12;
+            const cx = cv.getContext("2d", { willReadFrequently: true });
+            cx.drawImage(img, 0, 0, 8, 12);
+            const d = cx.getImageData(0, 0, 8, 12).data;
+            const avg = (y0, y1) => {
+              let r = 0, g = 0, b = 0, n = 0;
+              for (let y = y0; y < y1; y++) for (let x = 0; x < 8; x++) {
+                const i = (y * 8 + x) * 4; r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
+              }
+              return [r / n, g / n, b / n];
+            };
+            const vivid = (c) => {
+              let [r, g, b] = c.map((v) => v / 255);
+              const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+              let h = 0, s = 0;
+              const l = (mx + mn) / 2;
+              if (mx !== mn) {
+                const dd = mx - mn;
+                s = l > 0.5 ? dd / (2 - mx - mn) : dd / (mx + mn);
+                if (mx === r) h = ((g - b) / dd + (g < b ? 6 : 0)) / 6;
+                else if (mx === g) h = ((b - r) / dd + 2) / 6;
+                else h = ((r - g) / dd + 4) / 6;
+              }
+              s = Math.max(s, 0.55);
+              const ll = Math.min(0.58, Math.max(0.42, l));
+              const q = ll < 0.5 ? ll * (1 + s) : ll + s - ll * s;
+              const p = 2 * ll - q;
+              const hue = (t) => {
+                if (t < 0) t += 1; if (t > 1) t -= 1;
+                if (t < 1 / 6) return p + (q - p) * 6 * t;
+                if (t < 1 / 2) return q;
+                if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+                return p;
+              };
+              return `rgb(${Math.round(hue(h + 1 / 3) * 255)},${Math.round(hue(h) * 255)},${Math.round(hue(h - 1 / 3) * 255)})`;
+            };
+            finish({ a: vivid(avg(0, 6)), b: vivid(avg(6, 12)) });
+          } catch { finish(null); }
         };
-        const vivid = (c) => {
-          // pull the hue, then force mock-level saturation and lightness
-          let [r, g, b] = c.map((v) => v / 255);
-          const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-          let h = 0, s = 0;
-          const l = (mx + mn) / 2;
-          if (mx !== mn) {
-            const d = mx - mn;
-            s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
-            if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-            else if (mx === g) h = ((b - r) / d + 2) / 6;
-            else h = ((r - g) / d + 4) / 6;
-          }
-          s = Math.max(s, 0.55);            // never muddy
-          const ll = Math.min(0.58, Math.max(0.42, l)); // vivid but not neon
-          const q = ll < 0.5 ? ll * (1 + s) : ll + s - ll * s;
-          const p = 2 * ll - q;
-          const hue = (t) => {
-            if (t < 0) t += 1; if (t > 1) t -= 1;
-            if (t < 1 / 6) return p + (q - p) * 6 * t;
-            if (t < 1 / 2) return q;
-            if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-            return p;
-          };
-          return `rgb(${Math.round(hue(h + 1 / 3) * 255)},${Math.round(hue(h) * 255)},${Math.round(hue(h - 1 / 3) * 255)})`;
-        };
-        finish({ a: vivid(avg(0, 6)), b: vivid(avg(6, 12)) });
+        img.onerror = () => { URL.revokeObjectURL(objUrl); finish(null); };
+        img.src = objUrl;
       } catch { finish(null); }
-    };
-    img.onerror = () => finish(null);
+    })();
     return () => { dead = true; };
   }, [item && item.tmdbId, item && item.mediaType]);
   return grad;
@@ -1930,18 +1941,11 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
 
       {mode === "swipe" && (
         <div className="view-discover">
-          {!loading && current && current.posterPath && (
-            grad ? (
-              <>
-                <div className="discover-grad" style={{ background: `radial-gradient(circle 460px at 88% -10%, ${grad.a} 0%, transparent 70%)` }} />
-                <div className="discover-grad discover-grad-b" style={{ background: `radial-gradient(circle 480px at 8% 112%, ${grad.b} 0%, transparent 72%)` }} />
-              </>
-            ) : (
-              <>
-                <div className="discover-bg" style={{ backgroundImage: `url(${tmdbImg(current.posterPath, "w500")})` }} />
-                <div className="discover-bg discover-bg-b" style={{ backgroundImage: `url(${tmdbImg(current.posterPath, "w500")})` }} />
-              </>
-            )
+          {!loading && current && (
+            <>
+              <div className="discover-grad" style={{ background: `linear-gradient(180deg, ${grad.a} 0%, ${grad.a}59 34%, transparent 62%)` }} />
+              <div className="discover-grad discover-grad-b" style={{ background: `linear-gradient(0deg, ${grad.b} 0%, ${grad.b}59 34%, transparent 62%)` }} />
+            </>
           )}
           {loading && !current && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Shuffling the deck" body="Pulling titles you haven't seen yet." />}
           {!loading && error && !current && (
@@ -4054,8 +4058,8 @@ input, textarea { font-family: inherit; }
 .marquee-bulbs i { width: 6px; height: 6px; border-radius: 50%; background: var(--brass-bright); box-shadow: 0 0 9px 2px rgba(245,205,110,0.8); animation: bulb-glow 2.2s infinite alternate; }
 .marquee-bulbs i:nth-child(2n) { animation-delay: 1.1s; opacity: 0.6; }
 @keyframes bulb-glow { to { opacity: 0.55; box-shadow: 0 0 6px 1.5px rgba(245,205,110,0.45); } }
-.discover-grad { position: absolute; inset: 0; opacity: 0.55; pointer-events: none; z-index: 0; }
-.discover-grad-b { opacity: 0.38; }
+.discover-grad { position: absolute; inset: 0; opacity: 0.6; pointer-events: none; z-index: 0; }
+.discover-grad-b { opacity: 0.48; }
 .discover-bg { position: absolute; top: -150px; right: -130px; width: 440px; height: 440px; border-radius: 50%; background-size: cover; background-position: center; filter: blur(90px) brightness(1.0) saturate(1.5); opacity: 0.65; pointer-events: none; z-index: 0; }
 .discover-bg-b { top: auto; right: auto; bottom: -120px; left: -150px; opacity: 0.45; filter: blur(90px) brightness(0.9) saturate(1.4); }
 .view-discover::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 42%, transparent 52%, rgba(0,0,0,0.55) 100%); pointer-events: none; z-index: 0; }
