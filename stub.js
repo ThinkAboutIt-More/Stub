@@ -2730,18 +2730,13 @@ function DiscoverView({
       }
     }), mode === "swipe" && /*#__PURE__*/_jsxs("div", {
       className: "view-discover",
-      children: [!loading && current && /*#__PURE__*/_jsxs(_Fragment, {
-        children: [/*#__PURE__*/_jsx("div", {
+      children: [!loading && current && /*#__PURE__*/_jsx(_Fragment, {
+        children: /*#__PURE__*/_jsx("div", {
           className: "discover-grad",
           style: {
-            background: `linear-gradient(180deg, ${grad.a} 0%, ${grad.a}59 34%, transparent 62%)`
+            background: `linear-gradient(180deg, ${grad.a} 0%, ${grad.a} 24%, ${grad.b} 76%, ${grad.b} 100%)`
           }
-        }), /*#__PURE__*/_jsx("div", {
-          className: "discover-grad discover-grad-b",
-          style: {
-            background: `linear-gradient(0deg, ${grad.b} 0%, ${grad.b}59 34%, transparent 62%)`
-          }
-        })]
+        })
       }), loading && !current && /*#__PURE__*/_jsx(EmptyState, {
         icon: /*#__PURE__*/_jsx(RefreshCw, {
           size: 32,
@@ -5539,8 +5534,7 @@ input, textarea { font-family: inherit; }
 .marquee-bulbs i { width: 6px; height: 6px; border-radius: 50%; background: var(--brass-bright); box-shadow: 0 0 9px 2px rgba(245,205,110,0.8); animation: bulb-glow 2.2s infinite alternate; }
 .marquee-bulbs i:nth-child(2n) { animation-delay: 1.1s; opacity: 0.6; }
 @keyframes bulb-glow { to { opacity: 0.55; box-shadow: 0 0 6px 1.5px rgba(245,205,110,0.45); } }
-.discover-grad { position: absolute; inset: 0; opacity: 0.6; pointer-events: none; z-index: 0; }
-.discover-grad-b { opacity: 0.48; }
+.discover-grad { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
 .discover-bg { position: absolute; top: -150px; right: -130px; width: 440px; height: 440px; border-radius: 50%; background-size: cover; background-position: center; filter: blur(90px) brightness(1.0) saturate(1.5); opacity: 0.65; pointer-events: none; z-index: 0; }
 .discover-bg-b { top: auto; right: auto; bottom: -120px; left: -150px; opacity: 0.45; filter: blur(90px) brightness(0.9) saturate(1.4); }
 .view-discover::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 42%, transparent 52%, rgba(0,0,0,0.55) 100%); pointer-events: none; z-index: 0; }
