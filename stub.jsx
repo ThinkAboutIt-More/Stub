@@ -4028,7 +4028,7 @@ input, textarea { font-family: inherit; }
 /* discover swipe */
 .view-discover { display: flex; flex-direction: column; align-items: center; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .view-discover * { user-select: none; -webkit-user-select: none; }
-.swipe-stack { width: 100%; max-width: 354px; height: calc(100dvh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; position: relative; z-index: 1; margin: 2px auto 0; border-radius: 19px; box-shadow: 0 20px 34px -14px rgba(0,0,0,0.25); }
+.swipe-stack { width: 100%; max-width: 354px; height: calc(100vh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); height: calc(100dvh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; position: relative; z-index: 1; margin: 2px auto 0; border-radius: 19px; box-shadow: 0 20px 34px -14px rgba(0,0,0,0.25); }
 .swipe-card {
   background: var(--velvet); border-radius: 18px; overflow: hidden; position: relative;
   touch-action: none; user-select: none;
@@ -4040,8 +4040,8 @@ input, textarea { font-family: inherit; }
   mask-image: radial-gradient(circle 18px at 0px var(--notch-y), transparent 17px, #000 18px), radial-gradient(circle 18px at 100% var(--notch-y), transparent 17px, #000 18px));
   mask-composite: intersect;
 }
-.swipe-poster { position: relative; width: 100%; height: 100%; object-fit: contain; display: block; z-index: 1; }
-.swipe-poster-blur { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(30px) brightness(0.38) saturate(0.8); transform: scale(1.3); }
+.swipe-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; z-index: 1; }
+.swipe-poster-blur { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(30px) brightness(0.72) saturate(1.15); transform: scale(1.3); }
 .swipe-poster-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); background: var(--velvet-2); }
 .swipe-meta { padding: 12px 14px 6px; flex-shrink: 0; background: var(--stub-cream); color: var(--ink); position: relative; }
 .swipe-title { font-weight: 800; font-size: 16px; margin-bottom: 3px; color: var(--ink); }
@@ -4065,7 +4065,7 @@ input, textarea { font-family: inherit; }
 .discover-bg-b { top: auto; right: auto; bottom: -120px; left: -150px; opacity: 0.45; filter: blur(90px) brightness(0.9) saturate(1.4); }
 .view-discover::after { content: none; }
 .view-discover { position: relative; overflow: hidden; background: transparent; border-radius: inherit; }
-.view-discover .discover-foot, .view-discover .logged-toast { position: relative; z-index: 1; }
+.view-discover .discover-foot, .view-discover .logged-toast, .view-discover .view-toggle, .view-discover .deck-label, .view-discover .marquee-bulbs, .view-discover .empty-state, .view-discover .hint-banner { position: relative; z-index: 1; }
 .choice-overlay { position: absolute; inset: 0; z-index: 6; background: rgba(15,1,0,0.9); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; border-radius: 18px; animation: card-enter 0.22s cubic-bezier(.22,.9,.32,1.15); }
 .choice-title { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 0.05em; color: var(--cream-text); margin-bottom: 4px; text-align: center; padding: 0 20px; }
 .choice-btn { width: 72%; padding: 14px 0; border-radius: 14px; font-family: 'Space Mono', monospace; font-weight: 700; font-size: 12px; letter-spacing: 0.14em; border: none; cursor: pointer; transition: transform 0.14s cubic-bezier(.34,1.56,.64,1); }
