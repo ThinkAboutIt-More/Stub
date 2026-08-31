@@ -2407,7 +2407,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "81";
+const APP_VERSION = "82";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
@@ -3607,43 +3607,32 @@ function ComingSoonView({
     if (pct == null) return null;
     const _w = getWeights(taste);
     const likedGenres = Object.entries(_w).filter(([, v]) => v > 0).map(([g]) => Number(g));
-    const topUserGenres = Object.entries(_w).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
     const itemGenres = item.genreIds || [];
     const overlapping = itemGenres.filter(g => likedGenres.includes(g));
-    const nonOverlapping = itemGenres.filter(g => !likedGenres.includes(g));
-    const gName = id => MOVIE_GENRES[id] || TV_GENRES[id];
     const pick = (arr, seed) => arr[seed % arr.length];
     const seed = item.tmdbId % 13;
     if (pct >= 70) {
-      const g = overlapping.find(id => gName(id));
-      const opts = g ? [`Big ${gName(g)} energy`, `This one was made for you — ${gName(g)}`, `Strong ${gName(g)} pull`, `You'll want this one — peak ${gName(g)}`] : ["Very much your kind of film", "Built for your taste", "High confidence add"];
       return {
         tone: "hot",
-        text: pick(opts, seed)
+        text: pick(["Very much your kind of film", "This one was made for you", "Strong pull for you", "Built for your taste", "High confidence pick"], seed)
       };
     }
     if (overlapping.length && pct >= 45) {
-      const g = gName(overlapping[0]);
-      const opts = g ? [`Worth a look — good ${g}`, `Decent ${g} that fits`, `${g} angle works for you`] : ["Reasonable fit for you", "Worth putting on the radar"];
       return {
         tone: "hot",
-        text: pick(opts, seed)
+        text: pick(["Worth a look - fits your taste", "Decent fit for you", "This one works for you", "On your wavelength"], seed)
       };
     }
     if (!overlapping.length && pct >= 35) {
-      const g = nonOverlapping.find(id => gName(id));
-      const opts = g ? [`${gName(g)} is new territory for you`, `Different vibe — ${gName(g)}`, `Pushes outside your usual ${gName(g)} comfort`] : ["A curveball — but keep an open mind", "Different from your usual"];
       return {
         tone: "stretch",
-        text: pick(opts, seed)
+        text: pick(["New territory for you", "Different vibe from your usual", "A stretch pick - keep an open mind", "Outside your usual lane"], seed)
       };
     }
     if (pct < 28) {
-      const g = topUserGenres.find(id => gName(id));
-      const opts = g ? [`Not really your ${gName(g)} world`, `Pretty far from what you usually watch`, `Outside your usual range`] : ["Probably not your thing", "Long shot for you"];
       return {
         tone: "cool",
-        text: pick(opts, seed)
+        text: pick(["Not really your world", "Pretty far from what you usually watch", "Outside your usual range", "Probably not your thing"], seed)
       };
     }
     return {
@@ -3659,6 +3648,7 @@ function ComingSoonView({
       name: MOVIE_GENRES[id] || TV_GENRES[id]
     })).filter(x => x.name).sort((a, b) => a.name.localeCompare(b.name));
   }, [items]);
+  const ownedKeys = useMemo(() => new Set((collection || []).map(c => c.tmdbId + c.mediaType)), [collection]);
   const processed = useMemo(() => {
     let list = items.map(x => {
       const m = matchMeta(x, taste, people, crowd);
@@ -3667,11 +3657,11 @@ function ComingSoonView({
         _pct: m.pct,
         _conf: m.conf
       };
-    }).filter(x => inWindow(x.releaseDate));
+    }).filter(x => inWindow(x.releaseDate)).filter(x => !ownedKeys.has(x.tmdbId + x.mediaType));
     if (genreFilter !== "all") list = list.filter(x => (x.genreIds || []).includes(Number(genreFilter)));
     if (!enough) list.sort((a, b) => a.releaseDate < b.releaseDate ? -1 : 1);else if (sort === "lowest") list.sort((a, b) => (a._pct || 0) - (b._pct || 0));else list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
     return list;
-  }, [items, window, sort, taste, genreFilter, enough]);
+  }, [items, window, sort, taste, genreFilter, enough, ownedKeys]);
   const thisYr = new Date().getFullYear();
   const WINDOWS = [{
     id: "all",
@@ -3991,6 +3981,7 @@ function OutNowView({
       name: MOVIE_GENRES[id] || TV_GENRES[id]
     })).filter(x => x.name).sort((a, b) => a.name.localeCompare(b.name));
   }, [items]);
+  const ownedKeys = useMemo(() => new Set((collection || []).map(c => c.tmdbId + c.mediaType)), [collection]);
   const processed = useMemo(() => {
     let list = items.map(x => {
       const m = matchMeta(x, taste, people, crowd);
@@ -3999,7 +3990,7 @@ function OutNowView({
         _pct: m.pct,
         _conf: m.conf
       };
-    });
+    }).filter(x => !ownedKeys.has(x.tmdbId + x.mediaType));
     if (genreFilter !== "all") list = list.filter(x => (x.genreIds || []).includes(Number(genreFilter)));
     if (sort === "match") list.sort((a, b) => (b._pct || 0) - (a._pct || 0));else if (sort === "lowest") list.sort((a, b) => (a._pct || 0) - (b._pct || 0));else if (sort === "genre") list.sort((a, b) => {
       const ag = genreNames(a.genreIds, a.mediaType)[0] || "";
@@ -4007,53 +3998,42 @@ function OutNowView({
       return ag.localeCompare(bg);
     });
     return list;
-  }, [items, taste, sort, genreFilter]);
+  }, [items, taste, sort, genreFilter, ownedKeys]);
   const note = (item, pct) => {
     if (pct == null) return null;
     const _w = getWeights(taste);
     const likedGenres = Object.entries(_w).filter(([, v]) => v > 0).map(([g]) => Number(g));
-    const topUserGenres = Object.entries(_w).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
     const itemGenres = item.genreIds || [];
     const overlapping = itemGenres.filter(g => likedGenres.includes(g));
-    const nonOverlapping = itemGenres.filter(g => !likedGenres.includes(g));
-    const gName = id => MOVIE_GENRES[id] || TV_GENRES[id];
     const pick = (arr, seed) => arr[seed % arr.length];
     const seed = item.tmdbId % 13;
     if (pct >= 70) {
-      const g = overlapping.find(id => gName(id));
-      const opts = g ? [`Nails the ${gName(g)} you like`, `Really strong ${gName(g)} pick`, `This is the ${gName(g)} you came for`, `Made for you — heavy ${gName(g)}`, `Peak ${gName(g)} for your taste`] : ["Locks hard into your profile", "Exactly what you come for", "Built for your taste"];
       return {
         tone: "hot",
-        text: pick(opts, seed)
+        text: pick(["Very much your kind of film", "This one was made for you", "Strong pull for you", "Built for your taste", "High confidence pick"], seed)
       };
     }
     if (overlapping.length && pct >= 45) {
-      const g = gName(overlapping[0]);
-      const opts = g ? [`Decent ${g} — worth your time`, `Checks the ${g} box`, `Good ${g} option`] : ["Checks most of your boxes", "Generally fits your profile"];
       return {
         tone: "hot",
-        text: pick(opts, seed)
+        text: pick(["Worth a look - fits your taste", "Decent fit for you", "This one works for you", "On your wavelength"], seed)
       };
     }
     if (!overlapping.length && pct >= 35) {
-      const g = nonOverlapping.find(id => gName(id));
-      const opts = g ? [`Venturing into ${gName(g)} here`, `Different angle — ${gName(g)}`, `${gName(g)} is new for you`] : ["Bit of a curveball for you", "Stretches your usual range"];
       return {
         tone: "stretch",
-        text: pick(opts, seed)
+        text: pick(["New territory for you", "Different vibe from your usual", "A stretch pick - keep an open mind", "Outside your usual lane"], seed)
       };
     }
     if (pct < 28) {
-      const g = topUserGenres.find(id => gName(id));
-      const opts = g ? [`Very far from your ${gName(g)} world`, `Not your usual ${gName(g)} territory`, `Skip unless you're in a different mood`] : ["Probably not your scene", "Significant stretch from your usual"];
       return {
         tone: "cool",
-        text: pick(opts, seed)
+        text: pick(["Not really your world", "Pretty far from what you usually watch", "Outside your usual range", "Probably not your thing"], seed)
       };
     }
     return {
       tone: "stretch",
-      text: pick(["Could go either way for you", "Might click, might not", "Middle ground for your taste", "Fair shot if you're open to it"], seed)
+      text: pick(["Could go either way", "Flip a coin on this one", "Worth a second look maybe", "Might click, might not"], seed)
     };
   };
   const ownedSet = useMemo(() => new Set([...collection.map(c => c.tmdbId + c.mediaType)]), [collection]);
