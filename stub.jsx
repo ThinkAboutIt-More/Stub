@@ -433,7 +433,17 @@ function matchMeta(item, taste, people, crowd) {
     blended = genreScore * wGenre + qualityScore * crowdW + calibBonus;
     conf = crowd && crowd.n >= 20 ? "medium" : "low";
   }
-  return { pct: Math.max(1, Math.min(99, Math.round(blended))), conf };
+  let pct = Math.max(1, Math.min(99, Math.round(blended)));
+
+  // RECEPTION GATE: when a real audience consensus exists (300+ votes),
+  // pattern-match alone can't carry a title past what the crowd saw in it.
+  // Bayesian-shrunk rating decides the ceiling; thin-data titles are uncapped.
+  if (item.voteAverage != null && (item.voteCount ?? 0) >= 300) {
+    const eff = (item.voteAverage * item.voteCount + 6.8 * 300) / (item.voteCount + 300);
+    const cap = eff >= 7.0 ? 99 : eff >= 6.6 ? 72 : eff >= 6.2 ? 63 : eff >= 5.6 ? 52 : eff >= 5.0 ? 43 : 34;
+    if (pct > cap) pct = cap;
+  }
+  return { pct, conf };
 }
 
 function matchPercent(item, taste, people, crowd) {
@@ -1697,7 +1707,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "86";
+const APP_VERSION = "87";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
