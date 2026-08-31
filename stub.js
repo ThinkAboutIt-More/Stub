@@ -2060,6 +2060,7 @@ function SwipeCard({
   matchConf,
   taste,
   collection,
+  tmdb,
   onSkip,
   onWant,
   onRate,
@@ -2244,7 +2245,8 @@ function SwipeCard({
         item: item,
         taste: taste,
         matchPct: matchPct,
-        collection: collection
+        collection: collection,
+        tmdb: tmdb
       })]
     }), /*#__PURE__*/_jsx("div", {
       className: "swipe-buttons-wrap",
@@ -2310,6 +2312,76 @@ function SwipeCard({
     })]
   });
 }
+
+/* pull dominant colors straight from the poster pixels - works even where
+   heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
+const posterGradCache = {};
+function usePosterGradient(item) {
+  const [grad, setGrad] = useState(null);
+  useEffect(() => {
+    let dead = false;
+    if (!item || !item.posterPath) {
+      setGrad(null);
+      return;
+    }
+    const key = item.tmdbId + item.mediaType;
+    if (key in posterGradCache) {
+      setGrad(posterGradCache[key]);
+      return;
+    }
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = tmdbImg(item.posterPath, "w342");
+    const finish = g => {
+      posterGradCache[key] = g;
+      if (!dead) setGrad(g);
+    };
+    img.onload = () => {
+      try {
+        const cv = document.createElement("canvas");
+        cv.width = 8;
+        cv.height = 12;
+        const cx = cv.getContext("2d", {
+          willReadFrequently: true
+        });
+        cx.drawImage(img, 0, 0, 8, 12);
+        const d = cx.getImageData(0, 0, 8, 12).data;
+        const avg = (y0, y1) => {
+          let r = 0,
+            g = 0,
+            b = 0,
+            n = 0;
+          for (let y = y0; y < y1; y++) for (let x = 0; x < 8; x++) {
+            const i = (y * 8 + x) * 4;
+            r += d[i];
+            g += d[i + 1];
+            b += d[i + 2];
+            n++;
+          }
+          return [r / n, g / n, b / n];
+        };
+        const boost = c => {
+          // push saturation and lift dark colors so the hue always reads
+          let [r, g, b] = c.map(v => Math.min(255, v * 1.55));
+          const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          const lift = lum < 78 ? 78 - lum : 0;
+          return `rgb(${Math.round(r + lift)},${Math.round(g + lift)},${Math.round(b + lift)})`;
+        };
+        finish({
+          a: boost(avg(0, 6)),
+          b: boost(avg(6, 12))
+        });
+      } catch {
+        finish(null);
+      }
+    };
+    img.onerror = () => finish(null);
+    return () => {
+      dead = true;
+    };
+  }, [item && item.tmdbId, item && item.mediaType]);
+  return grad;
+}
 function DiscoverView({
   tmdb,
   feedback,
@@ -2336,6 +2408,7 @@ function DiscoverView({
   const pageRef = useRef(1);
   const reloadAttemptsRef = useRef(0);
   const servedRef = useRef(new Set());
+  const grad = usePosterGradient(pool[0]);
   const seenIdSet = useMemo(() => {
     const now = Date.now();
     // skips cool down: hidden for SKIP_COOLDOWN_MS, then free to resurface.
@@ -2615,7 +2688,24 @@ function DiscoverView({
       }
     }), mode === "swipe" && /*#__PURE__*/_jsxs("div", {
       className: "view-discover",
-      children: [!loading && current && current.posterPath && /*#__PURE__*/_jsxs(_Fragment, {
+      children: [!loading && current && current.posterPath && (grad ? /*#__PURE__*/_jsxs(_Fragment, {
+        children: [/*#__PURE__*/_jsx("div", {
+          className: "discover-grad",
+          style: {
+            background: `radial-gradient(circle 320px at 76% 10%, ${grad.a} 0%, transparent 72%)`
+          }
+        }), /*#__PURE__*/_jsx("div", {
+          className: "discover-grad",
+          style: {
+            background: `radial-gradient(circle 340px at 20% 90%, ${grad.b} 0%, transparent 72%)`
+          }
+        }), /*#__PURE__*/_jsx("div", {
+          className: "discover-grad discover-grad-wash",
+          style: {
+            background: `linear-gradient(180deg, ${grad.a} 0%, transparent 26%, transparent 74%, ${grad.b} 100%)`
+          }
+        })]
+      }) : /*#__PURE__*/_jsxs(_Fragment, {
         children: [/*#__PURE__*/_jsx("div", {
           className: "discover-bg",
           style: {
@@ -2627,7 +2717,7 @@ function DiscoverView({
             backgroundImage: `url(${tmdbImg(current.posterPath, "w500")})`
           }
         })]
-      }), loading && !current && /*#__PURE__*/_jsx(EmptyState, {
+      })), loading && !current && /*#__PURE__*/_jsx(EmptyState, {
         icon: /*#__PURE__*/_jsx(RefreshCw, {
           size: 32,
           className: "spin"
@@ -2653,6 +2743,7 @@ function DiscoverView({
           matchPct: enough ? current._pct : null,
           matchConf: enough ? current._conf : null,
           taste: taste,
+          tmdb: tmdb,
           collection: collection,
           onSkip: () => skip(current),
           onWant: () => want(current),
@@ -2886,7 +2977,8 @@ function SuggestionRow({
         item: item,
         taste: taste,
         matchPct: matchPct,
-        collection: collection
+        collection: collection,
+        tmdb: tmdb
       }), expanded && /*#__PURE__*/_jsxs("div", {
         className: "suggest-links",
         onClick: e => e.stopPropagation(),
@@ -4361,33 +4453,41 @@ Write ONE frank opinion sentence, max 16 words. No quotation marks.`
 // Instant, varied "why watch" line — generated locally so there's no per-card
 // API lag, and seeded by the title so different movies get different phrasings
 // instead of the same line everywhere.
-function buildWhyWatch(item, taste, matchPct, voteAvg) {
+function buildWhyWatch(item, taste, matchPct, voteAvg, detail) {
   if (matchPct == null) return null;
   const pct = matchPct;
-  const weights = getWeights(taste);
-  const likedGenres = Object.entries(weights).filter(([, v]) => v > 0).map(([g]) => Number(g));
-  const topUserGenres = Object.entries(weights).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => Number(g));
   const gName = id => MOVIE_GENRES[id] || TV_GENRES[id];
-  const itemGenres = item.genreIds || [];
-  const overlap = itemGenres.filter(g => likedGenres.includes(g)).map(gName).filter(Boolean);
-  const offGenre = itemGenres.map(gName).filter(Boolean).find(g => !overlap.includes(g));
-  const g = overlap[0];
-  const good = voteAvg != null && voteAvg >= 7;
-  const weak = voteAvg != null && voteAvg < 5.5;
-  const seed = Math.abs(item.tmdbId || 0) % 4;
+  const genres = (item.genreIds || []).map(gName).filter(Boolean);
+  const g1 = genres[0];
+  const kind = item.mediaType === "tv" ? "series" : "film";
+  const seed = Math.abs(item.tmdbId || 0);
   const pick = arr => arr[seed % arr.length];
-  if (pct >= 75) {
-    const base = pick(g ? [`Right up your alley — that ${g} streak runs strong here`, `Lands square in your ${g} wheelhouse`, `Trust your ${g} taste on this one`, `Peak ${g} for someone like you`] : [`Squarely your kind of thing`, `Strong match — you'll click with this`, `Hard to picture you not liking this`, `Green light, this fits you`]);
-    return base + (good ? ", and it actually delivers." : ".");
+  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+  // sentence 1: what it is - director, year, genre, and a spoiler-safe hook
+  let director = null;
+  let hooks = [];
+  if (detail) {
+    director = item.mediaType === "tv" ? ((detail.created_by || [])[0] || {}).name : (((detail.credits || {}).crew || []).find(c => c.job === "Director") || {}).name;
+    const kw = detail.keywords && (detail.keywords.keywords || detail.keywords.results) || [];
+    hooks = kw.map(k => k.name).filter(n => n && !WHY_SPOILER_WORDS.test(n) && !/^based on/i.test(n)).slice(0, 6);
   }
-  if (pct >= 55) {
-    return pick(g ? [`Solid ${g} that should work for you.`, `Leans into the ${g} you tend to enjoy.`, `Comfortable fit — good ${g} angle.`, `Worth a look, the ${g} side suits you.`] : [`A reasonable fit for your taste.`, `Probably a good time for you.`, `Worth putting on the list.`, `Lines up decently with what you like.`]);
-  }
-  if (pct >= 38) {
-    const base = pick(offGenre ? [`A stretch — ${offGenre} isn't your usual, but maybe`, `Different lane with that ${offGenre} bent`, `Outside your comfort zone, ${offGenre}-wise`, `Not the obvious pick, but ${offGenre} could surprise you`] : [`A bit of a curveball for your taste`, `Different from your usual — open mind needed`, `Not a sure thing, but could click`, `Coin flip for someone like you`]);
-    return base + (good ? " (the crowd’s into it)." : ".");
-  }
-  return pick(weak ? [`Skip it — weak film and not your lane.`, `Probably a pass on both counts.`, `Hard to recommend this one to you.`, `Not your thing, and not a strong film.`] : good ? [`Not your usual, but fans rate it high.`, `Outside your taste but genuinely well-made.`, `Crowd favorite, just not aimed at you.`, `Good film, wrong fit for your taste.`] : [`Probably not your thing.`, `Pretty far from what you reach for.`, `Doubtful fit for your taste.`, `Likely a pass for you.`]);
+  const h1 = hooks.length ? hooks[seed % hooks.length] : null;
+  const h2 = hooks.length > 1 ? hooks[(seed + 2) % hooks.length] : null;
+  const hookBit = h1 ? pick([`, built around ${h1}`, `, leaning on ${h1}`, h2 && h2 !== h1 ? `, heavy on ${h1} and ${h2}` : `, built around ${h1}`]) : "";
+  const who = director ? ` from ${director}` : "";
+  const what = `A ${item.year ? item.year + " " : ""}${g1 ? g1.toLowerCase() + " " : ""}${kind}${who}${hookBit}.`;
+
+  // sentence 2: how it landed + honest fit for the match level
+  const va = voteAvg,
+    vc = item.voteCount || 0;
+  const reception = vc < 60 ? "still flying under the radar" : va >= 7.5 ? "broadly loved" : va >= 7 ? "strong crowd scores" : va >= 6 ? "decent crowd scores" : va >= 5 ? "mixed reception" : "rough crowd scores";
+  const weights = getWeights(taste);
+  const topG = Object.entries(weights).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 1).map(([g]) => gName(Number(g)))[0];
+  const lane = topG ? topG.toLowerCase() + " " : "";
+  let fit;
+  if (pct >= 75) fit = pick([`${cap(reception)}, and it plays straight to your ${lane}taste.`, `${cap(reception)} - right in your ${lane}wheelhouse.`]);else if (pct >= 55) fit = pick([`${cap(reception)}; a comfortable fit for you.`, `${cap(reception)} and it lines up well with what you rate.`]);else if (pct >= 38) fit = pick([`${cap(reception)}, though it sits outside your usual lanes.`, `${cap(reception)} - the case here is the ${g1 ? g1.toLowerCase() : kind} itself, not your history.`]);else fit = pick([`${cap(reception)}; on your profile it's a stretch.`, `${cap(reception)}, but it's far from what you usually rate up.`]);
+  return what + " " + fit;
 }
 
 /* nearest-neighbor reason: which of HIS rated films does this sit closest to,
@@ -4432,19 +4532,59 @@ function nearestReason(item, collection) {
     };
   });
   if (!best) return null;
+  if (!best.kind || best.kind === "cast") return null;
   const y = best.rating >= 7 ? "high" : best.rating <= 4 ? "low" : "mid";
   if (best.kind === "director") return y === "high" ? `Same director as your ${best.rating}/10 ${best.title}` : y === "low" ? `Same director as ${best.title} - which you gave ${best.rating}/10` : `Same director as your ${best.rating}/10 ${best.title}`;
   if (best.kind === "writer") return y === "high" ? `From a writer on your ${best.rating}/10 ${best.title}` : y === "low" ? `From a writer on ${best.title} - which you gave ${best.rating}/10` : `From a writer on your ${best.rating}/10 ${best.title}`;
-  if (best.kind === "cast") return y === "high" ? `Cast overlap with your ${best.rating}/10 ${best.title}` : y === "low" ? `Cast overlap with ${best.title} - which you gave ${best.rating}/10` : `Cast overlap with your ${best.rating}/10 ${best.title}`;
-  return y === "high" ? `Sits closest to your ${best.rating}/10 ${best.title}` : y === "low" ? `Sits closest to ${best.title} - which you gave ${best.rating}/10` : `In the neighborhood of your ${best.rating}/10 ${best.title}`;
+  return null;
+}
+const WHY_SPOILER_WORDS = /twist|ending|\bdies\b|death of|post-credits|mid-credits|after credits|cameo|spoiler|surprise|reveal/i;
+const fullDetailCache = {};
+function useFullDetail(tmdb, item) {
+  const [d, setD] = useState(null);
+  useEffect(() => {
+    let dead = false;
+    if (!tmdb || !item) {
+      setD(null);
+      return;
+    }
+    const key = item.tmdbId + item.mediaType;
+    if (key in fullDetailCache) {
+      setD(fullDetailCache[key]);
+      return;
+    }
+    tmdb.detailsFull(item.mediaType, item.tmdbId).then(res => {
+      fullDetailCache[key] = res;
+      if (!dead) setD(res);
+    }).catch(() => {
+      fullDetailCache[key] = null;
+    });
+    return () => {
+      dead = true;
+    };
+  }, [tmdb, item && item.tmdbId, item && item.mediaType]);
+  return d;
 }
 function WhyWatch({
   item,
   taste,
   matchPct,
-  collection
+  collection,
+  tmdb
 }) {
-  const reason = useMemo(() => nearestReason(item, collection) || buildWhyWatch(item, taste, matchPct, item.voteAverage), [item.tmdbId, item.mediaType, matchPct, collection]);
+  const detail = useFullDetail(tmdb, item);
+  const reason = useMemo(() => {
+    // "sits close to a favorite" lines only when the match actually earns them
+    if (matchPct != null && matchPct >= 70) {
+      const enriched = detail ? {
+        ...item,
+        credits: item.credits || slimCredits(detail.credits)
+      } : item;
+      const link = nearestReason(enriched, collection);
+      if (link) return link;
+    }
+    return buildWhyWatch(item, taste, matchPct, item.voteAverage, detail);
+  }, [item.tmdbId, item.mediaType, matchPct, collection, detail]);
   if (!reason) return null;
   return /*#__PURE__*/_jsx("div", {
     className: "why-watch",
@@ -4867,10 +5007,10 @@ export default function App() {
   function addToWatchlist(item) {
     setWatchlist(w => {
       if (w.find(x => x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)) return w;
-      return [...w, {
+      return [{
         ...item,
         addedAt: Date.now()
-      }];
+      }, ...w];
     });
     fireBurst("want");
   }
@@ -5490,8 +5630,10 @@ input, textarea { font-family: inherit; }
 .marquee-bulbs i { width: 6px; height: 6px; border-radius: 50%; background: var(--brass-bright); box-shadow: 0 0 9px 2px rgba(245,205,110,0.8); animation: bulb-glow 2.2s infinite alternate; }
 .marquee-bulbs i:nth-child(2n) { animation-delay: 1.1s; opacity: 0.6; }
 @keyframes bulb-glow { to { opacity: 0.55; box-shadow: 0 0 6px 1.5px rgba(245,205,110,0.45); } }
-.discover-bg { position: absolute; top: -150px; right: -130px; width: 440px; height: 440px; border-radius: 50%; background-size: cover; background-position: center; filter: blur(90px) brightness(0.85) saturate(1.2); opacity: 0.5; pointer-events: none; z-index: 0; }
-.discover-bg-b { top: auto; right: auto; bottom: -120px; left: -150px; opacity: 0.32; filter: blur(90px) brightness(0.75) saturate(1.15); }
+.discover-grad { position: absolute; inset: 0; opacity: 0.6; pointer-events: none; z-index: 0; }
+.discover-grad-wash { opacity: 0.14; }
+.discover-bg { position: absolute; top: -150px; right: -130px; width: 440px; height: 440px; border-radius: 50%; background-size: cover; background-position: center; filter: blur(90px) brightness(1.0) saturate(1.5); opacity: 0.65; pointer-events: none; z-index: 0; }
+.discover-bg-b { top: auto; right: auto; bottom: -120px; left: -150px; opacity: 0.45; filter: blur(90px) brightness(0.9) saturate(1.4); }
 .view-discover::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 42%, transparent 52%, rgba(0,0,0,0.55) 100%); pointer-events: none; z-index: 0; }
 .view-discover { position: relative; overflow: hidden; background: #080609; border-radius: inherit; }
 .view-discover .discover-foot, .view-discover .logged-toast { position: relative; z-index: 1; }
