@@ -2243,10 +2243,7 @@ function SwipeCard({
         className: "swipe-perf"
       }), /*#__PURE__*/_jsx(WhyWatch, {
         item: item,
-        taste: taste,
-        matchPct: matchPct,
-        collection: collection,
-        tmdb: tmdb
+        matchPct: matchPct
       })]
     }), /*#__PURE__*/_jsx("div", {
       className: "swipe-buttons-wrap",
@@ -2975,10 +2972,7 @@ function SuggestionRow({
         children: item.aiReason
       }), taste && !item.aiReason && /*#__PURE__*/_jsx(WhyWatch, {
         item: item,
-        taste: taste,
-        matchPct: matchPct,
-        collection: collection,
-        tmdb: tmdb
+        matchPct: matchPct
       }), expanded && /*#__PURE__*/_jsxs("div", {
         className: "suggest-links",
         onClick: e => e.stopPropagation(),
@@ -4453,138 +4447,26 @@ Write ONE frank opinion sentence, max 16 words. No quotation marks.`
 // Instant, varied "why watch" line — generated locally so there's no per-card
 // API lag, and seeded by the title so different movies get different phrasings
 // instead of the same line everywhere.
-function buildWhyWatch(item, taste, matchPct, voteAvg, detail) {
+/* why-line: year + one vibe-free endorsement or caution, calibrated to the match.
+   absolute spoiler-free - no plot, tone, genre, themes, cast, or comparisons. */
+const WHY_LINES = {
+  high: ["This is the kind of pick the ring exists for.", "High confidence - clear your evening.", "The match is strong; trust it.", "If anything in this deck is for you, it's this.", "About as sure a thing as this app gets.", "Lock this one in.", "The numbers like you two together.", "Don't overthink this one.", "An easy yes."],
+  good: ["A comfortable bet, not a risky one.", "Solid odds you'll enjoy this.", "Leans your way more than not.", "Worth the slot on your list.", "A safe add with real upside.", "Good chance this lands for you.", "More hit than miss for your taste.", "Reasonably confident you'll get along.", "A good bet for a quiet night."],
+  maybe: ["A coin flip - your call.", "Could go either way for you.", "Not a sure thing, but not a no.", "Approach with curiosity, not expectations.", "The match is lukewarm; mood decides.", "Maybe. That's the honest read.", "A maybe, with upside if you're patient.", "Fifty-fifty - go with your gut.", "Borderline, in an interesting way."],
+  low: ["Probably not your pick tonight.", "The match says pass, politely.", "Likely not for you - no harm skipping.", "Your taste and this one don't overlap much.", "Low odds; only if you're feeling adventurous.", "The numbers say skip, kindly.", "Not the one for you, most likely.", "Save your evening for a better match.", "A long shot for your taste."]
+};
+function buildWhyWatch(item, matchPct) {
   if (matchPct == null) return null;
-  const pct = matchPct;
-  const gName = id => MOVIE_GENRES[id] || TV_GENRES[id];
-  const genres = (item.genreIds || []).map(gName).filter(Boolean);
-  const g1 = genres[0];
-  const kind = item.mediaType === "tv" ? "series" : "film";
-  const seed = Math.abs(item.tmdbId || 0);
-  const pick = arr => arr[seed % arr.length];
-  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
-
-  // sentence 1: what it is - director, year, genre, and a spoiler-safe hook
-  let director = null;
-  let hooks = [];
-  if (detail) {
-    director = item.mediaType === "tv" ? ((detail.created_by || [])[0] || {}).name : (((detail.credits || {}).crew || []).find(c => c.job === "Director") || {}).name;
-    const kw = detail.keywords && (detail.keywords.keywords || detail.keywords.results) || [];
-    hooks = kw.map(k => k.name).filter(n => n && !WHY_SPOILER_WORDS.test(n) && !/^based on/i.test(n)).slice(0, 6);
-  }
-  const h1 = hooks.length ? hooks[seed % hooks.length] : null;
-  const h2 = hooks.length > 1 ? hooks[(seed + 2) % hooks.length] : null;
-  const hookBit = h1 ? pick([`, built around ${h1}`, `, leaning on ${h1}`, h2 && h2 !== h1 ? `, heavy on ${h1} and ${h2}` : `, built around ${h1}`]) : "";
-  const who = director ? ` from ${director}` : "";
-  const what = `A ${item.year ? item.year + " " : ""}${g1 ? g1.toLowerCase() + " " : ""}${kind}${who}${hookBit}.`;
-
-  // sentence 2: how it landed + honest fit for the match level
-  const va = voteAvg,
-    vc = item.voteCount || 0;
-  const reception = vc < 60 ? "still flying under the radar" : va >= 7.5 ? "broadly loved" : va >= 7 ? "strong crowd scores" : va >= 6 ? "decent crowd scores" : va >= 5 ? "mixed reception" : "rough crowd scores";
-  const weights = getWeights(taste);
-  const topG = Object.entries(weights).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 1).map(([g]) => gName(Number(g)))[0];
-  const lane = topG ? topG.toLowerCase() + " " : "";
-  let fit;
-  if (pct >= 75) fit = pick([`${cap(reception)}, and it plays straight to your ${lane}taste.`, `${cap(reception)} - right in your ${lane}wheelhouse.`]);else if (pct >= 55) fit = pick([`${cap(reception)}; a comfortable fit for you.`, `${cap(reception)} and it lines up well with what you rate.`]);else if (pct >= 38) fit = pick([`${cap(reception)}, though it sits outside your usual lanes.`, `${cap(reception)} - the case here is the ${g1 ? g1.toLowerCase() : kind} itself, not your history.`]);else fit = pick([`${cap(reception)}; on your profile it's a stretch.`, `${cap(reception)}, but it's far from what you usually rate up.`]);
-  return what + " " + fit;
-}
-
-/* nearest-neighbor reason: which of HIS rated films does this sit closest to,
-   and what did he give it. people links beat genre links; his rating of the
-   neighbor decides the tone. titles only - no plot, no cast names, spoiler-free */
-function nearestReason(item, collection) {
-  if (!collection || !collection.length || !item) return null;
-  const itemDirs = new Set((item.credits && item.credits.directors || []).map(p => p.id));
-  const itemWriters = new Set((item.credits && item.credits.writers || []).map(p => p.id));
-  const itemCast = new Set((item.credits && item.credits.cast || []).slice(0, 8).map(p => p.id));
-  let best = null;
-  collection.forEach(t => {
-    if (t.tmdbId === item.tmdbId && t.mediaType === item.mediaType) return;
-    const r = t.viewings && t.viewings.length ? t.viewings[t.viewings.length - 1].rating : null;
-    if (!r) return;
-    const c = t.credits || {};
-    let link = 0,
-      kind = null;
-    if ((c.directors || []).some(p => itemDirs.has(p.id))) {
-      link += 3;
-      kind = kind || "director";
-    }
-    if ((c.writers || []).some(p => itemWriters.has(p.id))) {
-      link += 2.5;
-      kind = kind || "writer";
-    }
-    const sharedCast = (c.cast || []).slice(0, 8).filter(p => itemCast.has(p.id)).length;
-    if (sharedCast) {
-      link += Math.min(sharedCast, 2) * 1.5;
-      kind = kind || "cast";
-    }
-    const gShared = (t.genreIds || []).filter(g => (item.genreIds || []).includes(g)).length;
-    link += gShared * 0.5;
-    if (link < 1) return;
-    const score = link * 10 + r;
-    if (!best || score > best.score) best = {
-      title: t.title,
-      rating: r,
-      link,
-      kind,
-      score
-    };
-  });
-  if (!best) return null;
-  if (!best.kind || best.kind === "cast") return null;
-  const y = best.rating >= 7 ? "high" : best.rating <= 4 ? "low" : "mid";
-  if (best.kind === "director") return y === "high" ? `Same director as your ${best.rating}/10 ${best.title}` : y === "low" ? `Same director as ${best.title} - which you gave ${best.rating}/10` : `Same director as your ${best.rating}/10 ${best.title}`;
-  if (best.kind === "writer") return y === "high" ? `From a writer on your ${best.rating}/10 ${best.title}` : y === "low" ? `From a writer on ${best.title} - which you gave ${best.rating}/10` : `From a writer on your ${best.rating}/10 ${best.title}`;
-  return null;
-}
-const WHY_SPOILER_WORDS = /twist|ending|\bdies\b|death of|post-credits|mid-credits|after credits|cameo|spoiler|surprise|reveal/i;
-const fullDetailCache = {};
-function useFullDetail(tmdb, item) {
-  const [d, setD] = useState(null);
-  useEffect(() => {
-    let dead = false;
-    if (!tmdb || !item) {
-      setD(null);
-      return;
-    }
-    const key = item.tmdbId + item.mediaType;
-    if (key in fullDetailCache) {
-      setD(fullDetailCache[key]);
-      return;
-    }
-    tmdb.detailsFull(item.mediaType, item.tmdbId).then(res => {
-      fullDetailCache[key] = res;
-      if (!dead) setD(res);
-    }).catch(() => {
-      fullDetailCache[key] = null;
-    });
-    return () => {
-      dead = true;
-    };
-  }, [tmdb, item && item.tmdbId, item && item.mediaType]);
-  return d;
+  const band = matchPct >= 75 ? "high" : matchPct >= 55 ? "good" : matchPct >= 38 ? "maybe" : "low";
+  const lines = WHY_LINES[band];
+  const line = lines[Math.abs(item.tmdbId || 0) % lines.length];
+  return `${item.year ? item.year + ". " : ""}${line}`;
 }
 function WhyWatch({
   item,
-  taste,
-  matchPct,
-  collection,
-  tmdb
+  matchPct
 }) {
-  const detail = useFullDetail(tmdb, item);
-  const reason = useMemo(() => {
-    // "sits close to a favorite" lines only when the match actually earns them
-    if (matchPct != null && matchPct >= 70) {
-      const enriched = detail ? {
-        ...item,
-        credits: item.credits || slimCredits(detail.credits)
-      } : item;
-      const link = nearestReason(enriched, collection);
-      if (link) return link;
-    }
-    return buildWhyWatch(item, taste, matchPct, item.voteAverage, detail);
-  }, [item.tmdbId, item.mediaType, matchPct, collection, detail]);
+  const reason = useMemo(() => buildWhyWatch(item, matchPct), [item.tmdbId, item.mediaType, matchPct]);
   if (!reason) return null;
   return /*#__PURE__*/_jsx("div", {
     className: "why-watch",
