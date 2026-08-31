@@ -1671,14 +1671,33 @@ function usePosterGradient(item) {
           }
           return [r / n, g / n, b / n];
         };
-        const boost = (c) => {
-          // push saturation and lift dark colors so the hue always reads
-          let [r, g, b] = c.map((v) => Math.min(255, v * 1.7));
-          const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-          const lift = lum < 90 ? 90 - lum : 0;
-          return `rgb(${Math.round(r + lift)},${Math.round(g + lift)},${Math.round(b + lift)})`;
+        const vivid = (c) => {
+          // pull the hue, then force mock-level saturation and lightness
+          let [r, g, b] = c.map((v) => v / 255);
+          const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+          let h = 0, s = 0;
+          const l = (mx + mn) / 2;
+          if (mx !== mn) {
+            const d = mx - mn;
+            s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+            if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+            else if (mx === g) h = ((b - r) / d + 2) / 6;
+            else h = ((r - g) / d + 4) / 6;
+          }
+          s = Math.max(s, 0.55);            // never muddy
+          const ll = Math.min(0.58, Math.max(0.42, l)); // vivid but not neon
+          const q = ll < 0.5 ? ll * (1 + s) : ll + s - ll * s;
+          const p = 2 * ll - q;
+          const hue = (t) => {
+            if (t < 0) t += 1; if (t > 1) t -= 1;
+            if (t < 1 / 6) return p + (q - p) * 6 * t;
+            if (t < 1 / 2) return q;
+            if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+            return p;
+          };
+          return `rgb(${Math.round(hue(h + 1 / 3) * 255)},${Math.round(hue(h) * 255)},${Math.round(hue(h - 1 / 3) * 255)})`;
         };
-        finish({ a: boost(avg(0, 6)), b: boost(avg(6, 12)) });
+        finish({ a: vivid(avg(0, 6)), b: vivid(avg(6, 12)) });
       } catch { finish(null); }
     };
     img.onerror = () => finish(null);
@@ -1914,9 +1933,8 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
           {!loading && current && current.posterPath && (
             grad ? (
               <>
-                <div className="discover-grad" style={{ background: `radial-gradient(ellipse 165% 85% at 72% -12%, ${grad.a} 0%, transparent 68%)` }} />
-                <div className="discover-grad" style={{ background: `radial-gradient(ellipse 165% 90% at 22% 110%, ${grad.b} 0%, transparent 70%)` }} />
-                <div className="discover-grad discover-grad-wash" style={{ background: `linear-gradient(180deg, ${grad.a} 0%, transparent 30%, transparent 70%, ${grad.b} 100%)` }} />
+                <div className="discover-grad" style={{ background: `radial-gradient(circle 460px at 88% -10%, ${grad.a} 0%, transparent 70%)` }} />
+                <div className="discover-grad discover-grad-b" style={{ background: `radial-gradient(circle 480px at 8% 112%, ${grad.b} 0%, transparent 72%)` }} />
               </>
             ) : (
               <>
@@ -3135,8 +3153,7 @@ function buildWhyWatch(item, matchPct) {
   if (matchPct == null) return null;
   const band = matchPct >= 75 ? "high" : matchPct >= 55 ? "good" : matchPct >= 38 ? "maybe" : "low";
   const lines = WHY_LINES[band];
-  const line = lines[Math.abs(item.tmdbId || 0) % lines.length];
-  return `${item.year ? item.year + ". " : ""}${line}`;
+  return lines[Math.abs(item.tmdbId || 0) % lines.length];
 }
 
 function WhyWatch({ item, matchPct }) {
@@ -4037,12 +4054,12 @@ input, textarea { font-family: inherit; }
 .marquee-bulbs i { width: 6px; height: 6px; border-radius: 50%; background: var(--brass-bright); box-shadow: 0 0 9px 2px rgba(245,205,110,0.8); animation: bulb-glow 2.2s infinite alternate; }
 .marquee-bulbs i:nth-child(2n) { animation-delay: 1.1s; opacity: 0.6; }
 @keyframes bulb-glow { to { opacity: 0.55; box-shadow: 0 0 6px 1.5px rgba(245,205,110,0.45); } }
-.discover-grad { position: absolute; inset: 0; opacity: 0.82; pointer-events: none; z-index: 0; }
-.discover-grad-wash { opacity: 0.2; }
+.discover-grad { position: absolute; inset: 0; opacity: 0.55; pointer-events: none; z-index: 0; }
+.discover-grad-b { opacity: 0.38; }
 .discover-bg { position: absolute; top: -150px; right: -130px; width: 440px; height: 440px; border-radius: 50%; background-size: cover; background-position: center; filter: blur(90px) brightness(1.0) saturate(1.5); opacity: 0.65; pointer-events: none; z-index: 0; }
 .discover-bg-b { top: auto; right: auto; bottom: -120px; left: -150px; opacity: 0.45; filter: blur(90px) brightness(0.9) saturate(1.4); }
 .view-discover::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 42%, transparent 52%, rgba(0,0,0,0.55) 100%); pointer-events: none; z-index: 0; }
-.view-discover { position: relative; overflow: hidden; background: #080609; border-radius: inherit; }
+.view-discover { position: relative; overflow: hidden; background: #060509; border-radius: inherit; }
 .view-discover .discover-foot, .view-discover .logged-toast { position: relative; z-index: 1; }
 .choice-overlay { position: absolute; inset: 0; z-index: 6; background: rgba(15,1,0,0.9); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; border-radius: 18px; animation: card-enter 0.22s cubic-bezier(.22,.9,.32,1.15); }
 .choice-title { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 0.05em; color: var(--cream-text); margin-bottom: 4px; text-align: center; padding: 0 20px; }
