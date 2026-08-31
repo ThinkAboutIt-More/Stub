@@ -1692,7 +1692,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
         const j = Math.floor(Math.random() * (i + 1));
         [scored[i], scored[j]] = [scored[j], scored[i]];
       }
-      setPool(scored);
+      setPool((prev) => { const live = prev.filter((p) => !skipSet.has(p.tmdbId + p.mediaType) && !ownedSet.has(p.tmdbId + p.mediaType)); return [...live, ...scored]; });
     } catch (e) {
       setError(e.message);
     }
@@ -1708,8 +1708,8 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   // around when exhausted). Capped so a dead API key can't spin forever.
   useEffect(() => {
     if (loading || error) return;
-    if (pool.length > 0) { reloadAttemptsRef.current = 0; return; }
-    if (reloadAttemptsRef.current >= 5) return;
+    if (pool.length > 4) { reloadAttemptsRef.current = 0; return; }
+    if (reloadAttemptsRef.current >= 25) return;
     reloadAttemptsRef.current += 1;
     loadPool(true);
     // eslint-disable-next-line
@@ -1827,16 +1827,19 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
       {mode === "swipe" && (
         <div className="view-discover">
           {!loading && current && current.posterPath && (
-            <div className="discover-bg" style={{ backgroundImage: `url(${tmdbImg(current.posterPath, "w500")})` }} />
+            <>
+              <div className="discover-bg" style={{ backgroundImage: `url(${tmdbImg(current.posterPath, "w500")})` }} />
+              <div className="discover-bg discover-bg-b" style={{ backgroundImage: `url(${tmdbImg(current.posterPath, "w500")})` }} />
+            </>
           )}
-          {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Shuffling the deck" body="Pulling titles you haven't seen yet." />}
-          {!loading && error && (
-            <EmptyState icon={<Info size={32} />} title="Couldn't load new titles" body={`TMDB said: ${error}. Check your API key in settings, then tap refresh.`} />
+          {loading && !current && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Shuffling the deck" body="Pulling titles you haven't seen yet." />}
+          {!loading && error && !current && (
+            <EmptyState icon={<Info size={32} />} title="Couldn't load new titles" body={`TMDB said: ${error}. Check your API key in settings, then reopen the app.`} />
           )}
           {!loading && !error && !current && (
-            <EmptyState icon={<Sparkles size={32} />} title="That's everything for now" body="You've been through the pool. Refresh, or pull back skipped titles." />
+            <EmptyState icon={<Sparkles size={32} />} title="That's everything for now" body="You've been through the pool. Replay your skipped titles to see them again." />
           )}
-          {!loading && current && (
+          {current && (
             <div className="swipe-stack">
               <SwipeCard
                 item={current}
@@ -1866,9 +1869,6 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
                 <Undo2 size={14} /> Undo skip
               </button>
             )}
-            <button className="btn btn-ghost btn-sm" onClick={() => { reloadAttemptsRef.current = 0; loadPool(true); }}>
-              <RefreshCw size={14} /> Refresh deck
-            </button>
             {skippedPool.length > 0 && (
               <button className="btn btn-ghost btn-sm" onClick={replaySkipped}>
                 <Undo2 size={14} /> Replay skipped ({skippedPool.length})
@@ -3713,7 +3713,7 @@ button { font-family: inherit; cursor: pointer; }
 input, textarea { font-family: inherit; }
 
 .app {
-  background: radial-gradient(ellipse at 50% -10%, #4a1508 0%, #22100a 45%, var(--curtain) 80%);
+  background: radial-gradient(ellipse at 50% -10%, #2a1f08 0%, #16100a 45%, var(--curtain) 80%);
   color: var(--cream-text);
   font-family: 'Inter', system-ui, sans-serif;
   min-height: 100vh;
@@ -3970,9 +3970,10 @@ input, textarea { font-family: inherit; }
 .marquee-bulbs i { width: 6px; height: 6px; border-radius: 50%; background: var(--brass-bright); box-shadow: 0 0 9px 2px rgba(245,205,110,0.8); animation: bulb-glow 2.2s infinite alternate; }
 .marquee-bulbs i:nth-child(2n) { animation-delay: 1.1s; opacity: 0.6; }
 @keyframes bulb-glow { to { opacity: 0.55; box-shadow: 0 0 6px 1.5px rgba(245,205,110,0.45); } }
-.discover-bg { position: absolute; inset: -50px; background-size: cover; background-position: center 20%; filter: blur(85px) brightness(0.34) saturate(0.72); pointer-events: none; z-index: 0; }
-.view-discover::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(18,11,6,0.5) 0%, rgba(18,11,6,0.72) 100%); pointer-events: none; z-index: 0; }
-.view-discover { position: relative; overflow: hidden; }
+.discover-bg { position: absolute; top: -150px; right: -130px; width: 440px; height: 440px; border-radius: 50%; background-size: cover; background-position: center; filter: blur(90px) brightness(0.85) saturate(1.2); opacity: 0.5; pointer-events: none; z-index: 0; }
+.discover-bg-b { top: auto; right: auto; bottom: -120px; left: -150px; opacity: 0.32; filter: blur(90px) brightness(0.75) saturate(1.15); }
+.view-discover::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 42%, transparent 52%, rgba(0,0,0,0.55) 100%); pointer-events: none; z-index: 0; }
+.view-discover { position: relative; overflow: hidden; background: #080609; border-radius: inherit; }
 .view-discover .discover-foot, .view-discover .logged-toast { position: relative; z-index: 1; }
 .choice-overlay { position: absolute; inset: 0; z-index: 6; background: rgba(15,1,0,0.9); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; border-radius: 18px; animation: card-enter 0.22s cubic-bezier(.22,.9,.32,1.15); }
 .choice-title { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 0.05em; color: var(--cream-text); margin-bottom: 4px; text-align: center; padding: 0 20px; }
