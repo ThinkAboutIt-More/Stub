@@ -3539,10 +3539,9 @@ export default function App() {
         </div>
       )}
       <header className="app-header">
-        <div className="header-left">
-          <div className="header-bulbs">{Array.from({ length: 8 }).map((_, i) => <i key={i} />)}</div>
+        <div className="header-bulbs">{Array.from({ length: 10 }).map((_, i) => <i key={i} />)}</div>
+        <div className="header-row">
           <div className="wordmark">WATCH<span className="wordmark-dot">LIST</span></div>
-        </div>
         <div className="header-right">
           <button className="icon-btn" onClick={() => setScanning(true)} aria-label="Scan ticket" title="Scan ticket"><Camera size={17} /></button>
           <button className="icon-btn" onClick={() => setShowFavorites(true)} aria-label="Favorites" title="Favorites"><Heart size={17} /></button>
@@ -3553,6 +3552,7 @@ export default function App() {
             {hasCloud(conn) ? "Synced" : "This device only"}
           </span>
           <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="Settings"><Settings size={18} /></button>
+        </div>
         </div>
       </header>
 
@@ -3696,9 +3696,9 @@ const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
 
 :root {
-  --curtain: #100b06;
-  --velvet: #1e160c;
-  --velvet-2: #2c2114;
+  --curtain: #140a06;
+  --velvet: #211309;
+  --velvet-2: #301d0f;
   --brass: #e2a836;
   --brass-bright: #f0c060;
   --marquee-red: #ff3030;
@@ -3715,7 +3715,7 @@ button { font-family: inherit; cursor: pointer; }
 input, textarea { font-family: inherit; }
 
 .app {
-  background: radial-gradient(ellipse at 50% -10%, #3d2a0c 0%, #241a0c 45%, var(--curtain) 80%);
+  background: radial-gradient(ellipse at 50% -10%, #4a1508 0%, #22100a 45%, var(--curtain) 80%);
   color: var(--cream-text);
   font-family: 'Inter', system-ui, sans-serif;
   min-height: 100vh;
@@ -3732,15 +3732,16 @@ input, textarea { font-family: inherit; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .app-header {
-  display: flex; align-items: flex-end; justify-content: space-between;
-  padding: calc(12px + env(safe-area-inset-top)) 18px 12px;
+  display: flex; flex-direction: column; gap: 9px;
+  padding: calc(10px + env(safe-area-inset-top)) 18px 12px;
   position: sticky; top: 0; z-index: 5;
   background: linear-gradient(180deg, var(--curtain) 82%, transparent);
 }
-.header-left { display: flex; flex-direction: column; gap: 6px; }
-.header-bulbs { display: flex; gap: 13px; padding-left: 3px; }
-.header-bulbs i { width: 6px; height: 6px; border-radius: 50%; background: var(--brass-bright); box-shadow: 0 0 9px 2px rgba(245,205,110,0.8); animation: bulb-glow 2.2s infinite alternate; }
-.header-bulbs i:nth-child(2n) { animation-delay: 1.1s; opacity: 0.6; }
+.header-row { display: flex; align-items: flex-end; justify-content: space-between; }
+.header-bulbs { display: flex; justify-content: space-between; padding: 0 2px; }
+.header-bulbs i { width: 8px; height: 8px; border-radius: 50%; background: #f8d97e; box-shadow: 0 0 13px 3px rgba(245,205,110,0.9); animation: bulb-glow 2.2s infinite alternate; }
+.header-bulbs i:nth-child(2n) { animation-delay: 1.1s; }
+.header-bulbs i:nth-child(3n) { animation-delay: 0.55s; }
 .header-right { display: flex; align-items: center; gap: 10px; }
 .sync-pill {
   font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase;
@@ -3750,7 +3751,7 @@ input, textarea { font-family: inherit; }
 .sync-note { font-size: 12px; color: var(--muted); line-height: 1.45; margin: 4px 0 10px; }
 .wordmark {
   font-family: 'Bebas Neue', sans-serif; font-weight: 400; font-size: 30px; letter-spacing: 0.14em; line-height: 0.9;
-  color: var(--cream-text); text-shadow: 0 0 16px rgba(226,168,54,0.35);
+  color: var(--cream-text); text-shadow: 0 0 22px rgba(245,205,110,0.45);
 }
 .wordmark-dot { color: var(--brass); }
 
@@ -3949,7 +3950,7 @@ input, textarea { font-family: inherit; }
   flex: 1; display: flex; flex-direction: column; min-height: 0;
 }
 .swipe-poster { position: relative; width: 100%; height: 100%; object-fit: contain; display: block; z-index: 1; }
-.swipe-poster-blur { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(26px) brightness(0.45) saturate(1.3); transform: scale(1.25); }
+.swipe-poster-blur { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(30px) brightness(0.38) saturate(0.8); transform: scale(1.3); }
 .swipe-poster-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); background: var(--velvet-2); }
 .swipe-meta { padding: 12px 14px 6px; flex-shrink: 0; background: var(--stub-cream); color: var(--ink); position: relative; }
 .swipe-title { font-weight: 800; font-size: 16px; margin-bottom: 3px; color: var(--ink); }
@@ -3970,8 +3971,9 @@ input, textarea { font-family: inherit; }
 .marquee-bulbs { display: flex; justify-content: center; gap: 15px; padding: 0 0 9px; position: relative; z-index: 1; }
 .marquee-bulbs i { width: 6px; height: 6px; border-radius: 50%; background: var(--brass-bright); box-shadow: 0 0 9px 2px rgba(245,205,110,0.8); animation: bulb-glow 2.2s infinite alternate; }
 .marquee-bulbs i:nth-child(2n) { animation-delay: 1.1s; opacity: 0.6; }
-@keyframes bulb-glow { to { opacity: 0.3; box-shadow: 0 0 3px 1px rgba(245,205,110,0.35); } }
-.discover-bg { position: absolute; inset: -50px; background-size: cover; background-position: center 20%; filter: blur(70px) brightness(0.4) saturate(1.35); pointer-events: none; z-index: 0; }
+@keyframes bulb-glow { to { opacity: 0.55; box-shadow: 0 0 6px 1.5px rgba(245,205,110,0.45); } }
+.discover-bg { position: absolute; inset: -50px; background-size: cover; background-position: center 20%; filter: blur(85px) brightness(0.34) saturate(0.72); pointer-events: none; z-index: 0; }
+.view-discover::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(18,11,6,0.5) 0%, rgba(18,11,6,0.72) 100%); pointer-events: none; z-index: 0; }
 .view-discover { position: relative; overflow: hidden; }
 .view-discover .discover-foot, .view-discover .logged-toast { position: relative; z-index: 1; }
 .choice-overlay { position: absolute; inset: 0; z-index: 6; background: rgba(15,1,0,0.9); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; border-radius: 18px; animation: card-enter 0.22s cubic-bezier(.22,.9,.32,1.15); }
