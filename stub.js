@@ -2360,7 +2360,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "74";
+const APP_VERSION = "75";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
@@ -4045,8 +4045,25 @@ function SearchView({
   const [logging, setLogging] = useState(null);
   const [detail, setDetail] = useState(null);
   const [aiMode, setAiMode] = useState(false);
+  const [quickRateKey, setQuickRateKey] = useState(null);
+  const [loggedMarks, setLoggedMarks] = useState({});
+  const searchRef = useRef(null);
+
+  // live search as you type (form submit still works for the keyboard button)
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setResults([]);
+      return;
+    }
+    const t = setTimeout(() => runSearch(), 420);
+    return () => clearTimeout(t);
+  }, [query]);
+  useEffect(() => {
+    if (searchRef.current) searchRef.current.focus();
+  }, []);
   async function runSearch(e) {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     const q = query.trim();
     if (!q) return;
     setLoading(true);
@@ -4103,6 +4120,7 @@ function SearchView({
         size: 16
       }), /*#__PURE__*/_jsx("input", {
         className: "search-input",
+        ref: searchRef,
         placeholder: 'Search or ask: "movies like Infinity Pool"',
         value: query,
         onChange: e => setQuery(e.target.value)
@@ -4149,34 +4167,75 @@ function SearchView({
                 size: 18
               })
             })
-          }), /*#__PURE__*/_jsxs("div", {
-            className: "suggest-info",
-            children: [/*#__PURE__*/_jsxs("button", {
-              className: "suggest-title-btn",
-              onClick: () => setDetail(item),
-              children: [item.title, " ", item.year ? `· ${item.year}` : ""]
-            }), /*#__PURE__*/_jsx("div", {
-              className: "suggest-genres",
-              children: genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ")
-            }), item.aiReason && /*#__PURE__*/_jsx("div", {
-              className: "why-watch",
-              children: item.aiReason
-            })]
-          }), /*#__PURE__*/_jsxs("div", {
-            className: "suggest-actions",
-            children: [/*#__PURE__*/_jsx("button", {
-              className: "icon-btn",
-              onClick: () => onAddToWatchlist(item),
-              "aria-label": "Want to see",
-              children: /*#__PURE__*/_jsx(Bookmark, {
-                size: 16
-              })
+          }), quickRateKey === item.tmdbId + item.mediaType && !loggedMarks[item.tmdbId + item.mediaType] ? /*#__PURE__*/_jsxs("div", {
+            className: "quick-rate",
+            children: [/*#__PURE__*/_jsx("div", {
+              className: "quick-rate-label",
+              children: "Rate it"
+            }), /*#__PURE__*/_jsx(Stars, {
+              value: 0,
+              size: 24,
+              onChange: n => {
+                onLogNew(item, {
+                  id: uid(),
+                  date: todayISO(),
+                  undated: false,
+                  location: "",
+                  rating: n,
+                  notes: "",
+                  loggedAt: Date.now()
+                });
+                setLoggedMarks(m => ({
+                  ...m,
+                  [item.tmdbId + item.mediaType]: n
+                }));
+                setQuickRateKey(null);
+              }
             }), /*#__PURE__*/_jsx("button", {
-              className: "icon-btn",
-              onClick: () => setLogging(item),
-              "aria-label": "Seen it",
-              children: /*#__PURE__*/_jsx(Check, {
-                size: 16
+              className: "quick-rate-more",
+              onClick: () => {
+                setQuickRateKey(null);
+                setLogging(item);
+              },
+              children: "more options"
+            })]
+          }) : /*#__PURE__*/_jsxs(_Fragment, {
+            children: [/*#__PURE__*/_jsxs("div", {
+              className: "suggest-info",
+              children: [/*#__PURE__*/_jsxs("button", {
+                className: "suggest-title-btn",
+                onClick: () => setDetail(item),
+                children: [item.title, " ", item.year ? `· ${item.year}` : ""]
+              }), /*#__PURE__*/_jsx("div", {
+                className: "suggest-genres",
+                children: genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ")
+              }), item.aiReason && /*#__PURE__*/_jsx("div", {
+                className: "why-watch",
+                children: item.aiReason
+              })]
+            }), /*#__PURE__*/_jsx("div", {
+              className: "suggest-actions",
+              children: loggedMarks[item.tmdbId + item.mediaType] ? /*#__PURE__*/_jsxs("span", {
+                className: "logged-mark",
+                children: [/*#__PURE__*/_jsx(Check, {
+                  size: 15
+                }), " ", loggedMarks[item.tmdbId + item.mediaType], "/10"]
+              }) : /*#__PURE__*/_jsxs(_Fragment, {
+                children: [/*#__PURE__*/_jsx("button", {
+                  className: "icon-btn",
+                  onClick: () => onAddToWatchlist(item),
+                  "aria-label": "Want to see",
+                  children: /*#__PURE__*/_jsx(Bookmark, {
+                    size: 16
+                  })
+                }), /*#__PURE__*/_jsx("button", {
+                  className: "icon-btn",
+                  onClick: () => setQuickRateKey(item.tmdbId + item.mediaType),
+                  "aria-label": "Seen it",
+                  children: /*#__PURE__*/_jsx(Check, {
+                    size: 16
+                  })
+                })]
               })
             })]
           })]
@@ -5711,6 +5770,11 @@ input, textarea { font-family: inherit; }
 .suggest-links { display: flex; gap: 6px; flex-wrap: wrap; }
 .link-pill { font-size: 10.5px; color: var(--cream-text); background: var(--velvet-2); padding: 3px 9px; border-radius: 999px; text-decoration: none; }
 .suggest-actions { display: flex; flex-direction: column; gap: 5px; justify-content: center; align-items: center; }
+.quick-rate { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 2px 0; }
+.quick-rate-label { font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; color: var(--muted); }
+.quick-rate .stars { direction: ltr; }
+.quick-rate-more { background: none; border: none; color: var(--muted); font-size: 10px; text-decoration: underline; padding: 1px 2px; cursor: pointer; }
+.logged-mark { color: var(--brass-bright); font-size: 11px; font-weight: 700; display: flex; align-items: center; gap: 3px; white-space: nowrap; }
 
 /* search bar */
 .search-bar { display: flex; align-items: center; gap: 8px; background: var(--velvet); border-radius: 999px; padding: 10px 16px; margin-bottom: 16px; color: var(--muted); }

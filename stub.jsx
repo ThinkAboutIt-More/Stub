@@ -1670,7 +1670,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "74";
+const APP_VERSION = "75";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -2835,9 +2835,21 @@ function SearchView({ tmdb, taste, onAddToWatchlist, onLogNew }) {
   const [logging, setLogging] = useState(null);
   const [detail, setDetail] = useState(null);
   const [aiMode, setAiMode] = useState(false);
+  const [quickRateKey, setQuickRateKey] = useState(null);
+  const [loggedMarks, setLoggedMarks] = useState({});
+  const searchRef = useRef(null);
+
+  // live search as you type (form submit still works for the keyboard button)
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) { setResults([]); return; }
+    const t = setTimeout(() => runSearch(), 420);
+    return () => clearTimeout(t);
+  }, [query]);
+  useEffect(() => { if (searchRef.current) searchRef.current.focus(); }, []);
 
   async function runSearch(e) {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     const q = query.trim();
     if (!q) return;
     setLoading(true);
@@ -2889,6 +2901,7 @@ function SearchView({ tmdb, taste, onAddToWatchlist, onLogNew }) {
         <Search size={16} />
         <input
           className="search-input"
+          ref={searchRef}
           placeholder={'Search or ask: "movies like Infinity Pool"'}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -2915,15 +2928,35 @@ function SearchView({ tmdb, taste, onAddToWatchlist, onLogNew }) {
                     <div className="suggest-thumb suggest-thumb-fallback">{item.mediaType === "tv" ? <Tv size={18} /> : <Film size={18} />}</div>
                   )}
                 </button>
-                <div className="suggest-info">
-                  <button className="suggest-title-btn" onClick={() => setDetail(item)}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
-                  <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ")}</div>
-                  {item.aiReason && <div className="why-watch">{item.aiReason}</div>}
-                </div>
-                <div className="suggest-actions">
-                  <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Want to see"><Bookmark size={16} /></button>
-                  <button className="icon-btn" onClick={() => setLogging(item)} aria-label="Seen it"><Check size={16} /></button>
-                </div>
+                {quickRateKey === item.tmdbId + item.mediaType && !loggedMarks[item.tmdbId + item.mediaType] ? (
+                  <div className="quick-rate">
+                    <div className="quick-rate-label">Rate it</div>
+                    <Stars value={0} size={24} onChange={(n) => {
+                      onLogNew(item, { id: uid(), date: todayISO(), undated: false, location: "", rating: n, notes: "", loggedAt: Date.now() });
+                      setLoggedMarks((m) => ({ ...m, [item.tmdbId + item.mediaType]: n }));
+                      setQuickRateKey(null);
+                    }} />
+                    <button className="quick-rate-more" onClick={() => { setQuickRateKey(null); setLogging(item); }}>more options</button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="suggest-info">
+                      <button className="suggest-title-btn" onClick={() => setDetail(item)}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
+                      <div className="suggest-genres">{genreNames(item.genreIds, item.mediaType).slice(0, 1).join(" · ")}</div>
+                      {item.aiReason && <div className="why-watch">{item.aiReason}</div>}
+                    </div>
+                    <div className="suggest-actions">
+                      {loggedMarks[item.tmdbId + item.mediaType] ? (
+                        <span className="logged-mark"><Check size={15} /> {loggedMarks[item.tmdbId + item.mediaType]}/10</span>
+                      ) : (
+                        <>
+                          <button className="icon-btn" onClick={() => onAddToWatchlist(item)} aria-label="Want to see"><Bookmark size={16} /></button>
+                          <button className="icon-btn" onClick={() => setQuickRateKey(item.tmdbId + item.mediaType)} aria-label="Seen it"><Check size={16} /></button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>
@@ -4209,6 +4242,11 @@ input, textarea { font-family: inherit; }
 .suggest-links { display: flex; gap: 6px; flex-wrap: wrap; }
 .link-pill { font-size: 10.5px; color: var(--cream-text); background: var(--velvet-2); padding: 3px 9px; border-radius: 999px; text-decoration: none; }
 .suggest-actions { display: flex; flex-direction: column; gap: 5px; justify-content: center; align-items: center; }
+.quick-rate { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 2px 0; }
+.quick-rate-label { font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; color: var(--muted); }
+.quick-rate .stars { direction: ltr; }
+.quick-rate-more { background: none; border: none; color: var(--muted); font-size: 10px; text-decoration: underline; padding: 1px 2px; cursor: pointer; }
+.logged-mark { color: var(--brass-bright); font-size: 11px; font-weight: 700; display: flex; align-items: center; gap: 3px; white-space: nowrap; }
 
 /* search bar */
 .search-bar { display: flex; align-items: center; gap: 8px; background: var(--velvet); border-radius: 999px; padding: 10px 16px; margin-bottom: 16px; color: var(--muted); }
