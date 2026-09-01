@@ -227,6 +227,7 @@ function normalize(item) {
     posterPath: item.poster_path || null,
     backdropPath: item.backdrop_path || null,
     genreIds: item.genre_ids || [],
+    originalLanguage: item.original_language || null,
     voteAverage: item.vote_average ?? null,
     voteCount: item.vote_count ?? 0
   };
@@ -1781,7 +1782,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "97";
+const APP_VERSION = "98";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -1940,7 +1941,12 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
         tmdb.nowPlaying(pageNum),
         tmdb.topRatedMovies(pageNum),
         tmdb.topRatedTv(pageNum),
-        tmdb.discoverMovie({ sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 300, "primary_release_date.gte": `${dec}-01-01`, "primary_release_date.lte": `${dec + 9}-12-31` })
+        tmdb.discoverMovie({ sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 300, "primary_release_date.gte": `${dec}-01-01`, "primary_release_date.lte": `${dec + 9}-12-31` }),
+        // blockbuster deep cut: the big recent English movies (1000+ votes, last 3
+        // years) sit several pages deep once he's logged the front page, so pull two
+        // rotating pages of them explicitly - the weave below deals them in early.
+        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "vote_count.gte": 1000, "primary_release_date.gte": `${yr - 3}-01-01` }),
+        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum + 1, with_original_language: "en", "vote_count.gte": 1000, "primary_release_date.gte": `${yr - 3}-01-01` })
       ];
       if (topGenres) {
         calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "primary_release_date.gte": recentFloor }));
@@ -1960,12 +1966,29 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
       if (unserved.length === 0) { servedRef.current.clear(); unserved = dedup; }
       unserved.forEach((x) => servedRef.current.add(x.tmdbId + x.mediaType));
       const scored = unserved.map((x) => { const m = matchMeta(x, taste, people, crowdRef.current); return { ...x, _pct: m.pct, _conf: m.conf }; });
-      // Fisher-Yates shuffle — truly random deck every load
-      for (let i = scored.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [scored[i], scored[j]] = [scored[j], scored[i]];
-      }
-      setPool((prev) => { const live = prev.filter((p) => !skipSet.has(p.tmdbId + p.mediaType) && !ownedSet.has(p.tmdbId + p.mediaType)); return [...live, ...scored]; });
+      // v98 deck order - still one blended stack, two biases on top of chance:
+      // 1) score-windowed shuffle: sort by match %, shuffle within windows of 8,
+      //    so the front of every batch leans high-match without feeling ranked.
+      // 2) blockbuster weave: recent big English movies (last 3 years, 1000+ votes)
+      //    get dealt into the first dozen cards of every load, wherever they scored.
+      const shuffleInPlace = (arr) => {
+        for (let i = arr.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+      };
+      const yrNow = new Date().getFullYear();
+      const isBlockbuster = (x) => x.mediaType === "movie" && x.originalLanguage === "en" && Number(x.year) >= yrNow - 3 && (x.voteCount || 0) >= 1000;
+      const byScore = [...scored].sort((a, b) => (b._pct || 50) - (a._pct || 50));
+      const windowed = [];
+      for (let i = 0; i < byScore.length; i += 8) windowed.push(...shuffleInPlace(byScore.slice(i, i + 8)));
+      const bbIdx = shuffleInPlace(windowed.map((x, i) => (isBlockbuster(x) ? i : -1)).filter((i) => i >= 0)).slice(0, 4);
+      const bbSet = new Set(bbIdx);
+      const woven = windowed.filter((_, i) => !bbSet.has(i));
+      const slots = [1, 4, 7, 10];
+      bbIdx.forEach((from, k) => woven.splice(Math.min(slots[k], woven.length), 0, windowed[from]));
+      setPool((prev) => { const live = prev.filter((p) => !skipSet.has(p.tmdbId + p.mediaType) && !ownedSet.has(p.tmdbId + p.mediaType)); return [...live, ...woven]; });
     } catch (e) {
       setError(e.message);
     }
