@@ -224,6 +224,7 @@ function normalize(item) {
     mediaType,
     title: item.title || item.name || "Untitled",
     year: (item.release_date || item.first_air_date || "").slice(0, 4),
+    releaseDate: item.release_date || item.first_air_date || null,
     posterPath: item.poster_path || null,
     backdropPath: item.backdrop_path || null,
     genreIds: item.genre_ids || [],
@@ -420,8 +421,14 @@ function setOwnRatings(collection) {
 }
 
 function matchMeta(item, taste, people, crowd) {
+  return matchMetaFull(item, taste, people, crowd).meta;
+}
+
+/* full scoring with the working parts exposed, so the ring popover can show
+   what actually produced the number instead of a generic blurb */
+function matchMetaFull(item, taste, people, crowd) {
   const own = OWN_RATINGS[item.tmdbId + item.mediaType];
-  if (own != null) return { pct: own >= 10 ? 99 : Math.max(1, Math.min(99, Math.round(own * 10))), conf: "high", own: true };
+  if (own != null) return { meta: { pct: own >= 10 ? 99 : Math.max(1, Math.min(99, Math.round(own * 10))), conf: "high", own: true }, detail: { ownRating: own } };
   const weights = getWeights(taste);
   const gc = taste?.genreCalibration || {};
   const keys = Object.keys(weights);
@@ -478,15 +485,102 @@ function matchMeta(item, taste, people, crowd) {
 
   // RECEPTION GATE: when a real audience consensus exists (300+ votes),
   // pattern-match alone can't carry a title past what the crowd saw in it.
-  // Bayesian-shrunk rating decides the ceiling; thin-data titles are uncapped.
+  // Bayesian-shrunk rating decides the ceiling.
+  let cappedBy = null, effReception = null, lbRating = null;
   if (item.voteAverage != null && (item.voteCount ?? 0) >= 300) {
     let eff = (item.voteAverage * item.voteCount + 6.8 * 300) / (item.voteCount + 300);
     const lb = letterboxdRating(item);
+    lbRating = lb;
     if (lb != null) eff = Math.min(eff, lb); // tough crowd wins: Letterboxd can only lower the ceiling
+    effReception = eff;
     const cap = eff >= 7.0 ? 99 : eff >= 6.6 ? 72 : eff >= 6.2 ? 63 : eff >= 5.6 ? 52 : eff >= 5.0 ? 43 : 34;
-    if (pct > cap) pct = cap;
+    if (pct > cap) { pct = cap; cappedBy = cap; }
   }
-  return { pct, conf };
+  // THIN-DATA SHRINK: below the reception-gate threshold there is no crowd
+  // verdict to trust, so a genre/people fit alone must not produce extremes.
+  // The thinner the vote evidence, the harder the pull toward 50.
+  const vc = item.voteCount ?? 0;
+  let shrink = 1;
+  if (vc < 300) {
+    shrink = Math.max(0.15, Math.min(1, vc / 300));
+    pct = Math.round(50 + (pct - 50) * shrink);
+  }
+  return {
+    meta: { pct, conf },
+    detail: { peopleScore, genreScore, qualityScore, calibBonus, crowdW, cappedBy, effReception, lbRating, shrink }
+  };
+}
+
+/* plain-language evidence for a match number: which of his own ratings,
+   which people, which lanes, and what the crowd said. spoiler-free by rule -
+   no plot words, no cast lists beyond the one matched person */
+function explainMatch(item, taste, people, crowd, collection) {
+  const { meta, detail } = matchMetaFull(item, taste, people, crowd);
+  const lines = [];
+  if (meta.own) {
+    lines.push(`You rated it ${detail.ownRating}/10 - your own rating always outranks any prediction.`);
+    return { ...meta, lines };
+  }
+  if (meta.pct == null) {
+    lines.push("Rate a few titles and this score starts meaning something.");
+    return { ...meta, lines };
+  }
+  // people evidence: the single strongest director/writer/cast connection
+  if (item.credits && people) {
+    const cand = [];
+    const look = (list, pool, role) => (list || []).forEach((p) => {
+      const hit = (pool || []).find((x) => x.id === p.id);
+      if (hit) cand.push({ id: p.id, name: p.name, role, score: hit.score });
+    });
+    look(item.credits.directors, people.directors, "Directed by");
+    look(item.credits.writers, people.writers, "Written by");
+    look((item.credits.cast || []).slice(0, 5), people.actors, "Stars");
+    cand.sort((a, b) => b.score - a.score);
+    const best = cand[0];
+    if (best) {
+      const rs = [];
+      (collection || []).forEach((t) => {
+        const c = t.credits;
+        if (!c) return;
+        const inT = [...(c.directors || []), ...(c.writers || []), ...(c.cast || [])].some((p) => p.id === best.id);
+        if (inT) t.viewings.forEach((v) => { if (v.rating) rs.push(v.rating); });
+      });
+      const avg = rs.length ? (rs.reduce((s, r) => s + r, 0) / rs.length).toFixed(1) : null;
+      lines.push(avg
+        ? `${best.role} ${best.name} - you average ${avg}/10 on their work.`
+        : `${best.role} ${best.name}, who you've watched before.`);
+    }
+  }
+  // genre lane evidence, named only when it actually moved the number
+  const w = getWeights(taste);
+  const lanes = (item.genreIds || [])
+    .map((g) => ({ name: MOVIE_GENRES[g] || TV_GENRES[g], wt: w[g] || 0 }))
+    .filter((x) => x.name);
+  const strong = lanes.filter((x) => x.wt > 0.5).sort((a, b) => b.wt - a.wt)[0];
+  const weak = lanes.filter((x) => x.wt < -0.5).sort((a, b) => a.wt - b.wt)[0];
+  if (meta.pct >= 50 && strong) lines.push(`${strong.name} is one of your stronger lanes - your ratings say so.`);
+  else if (meta.pct < 50 && weak) lines.push(`${weak.name} hasn't landed well with you - your ratings say so.`);
+  // crowd evidence with real numbers
+  const vc = item.voteCount ?? 0;
+  const bits = [];
+  if (item.voteAverage != null && vc > 0) bits.push(`TMDB ${item.voteAverage.toFixed(1)}/10 across ${vc >= 1000 ? (vc / 1000).toFixed(vc >= 10000 ? 0 : 1) + "k" : vc} ratings`);
+  if (detail.lbRating != null) bits.push(`Letterboxd ${detail.lbRating.toFixed(1)}/10`);
+  if (bits.length) {
+    const wNote = crowd && crowd.weight >= 0.3 ? "and the crowd usually lines up with you, so it counts"
+      : crowd && crowd.weight <= 0.15 ? "but you often disagree with the crowd, so it barely counts"
+      : "and it counts for a modest share";
+    lines.push(`Crowd reads ${bits.join(" · ")} - ${wNote}.`);
+  }
+  // cap / shrink honesty
+  if (detail.cappedBy != null) {
+    lines.push(`Held at ${detail.cappedBy}% - audience reception (${detail.effReception.toFixed(1)}/10) isn't strong enough for a higher score, whatever the pattern fit.`);
+  } else if (detail.shrink < 1) {
+    lines.push(vc === 0
+      ? "No crowd ratings exist yet, so this plays it safe near the middle until more data lands."
+      : "Thin crowd data, so the score deliberately plays it safe.");
+  }
+  if (!lines.length) lines.push("A blend of your genre history and the crowd consensus.");
+  return { ...meta, lines };
 }
 
 function matchPercent(item, taste, people, crowd) {
@@ -718,6 +812,8 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
             <h3 className="modal-title">{item.title}</h3>
             <LogForm
               mediaType={item.mediaType}
+              tmdb={tmdb}
+              item={item}
               saveLabel="Add to collection"
               onCancel={() => setLogging(false)}
               onSave={(entry) => {
@@ -739,8 +835,19 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
 
 const WHERE_PRESETS = ["AMC", "Regal", "Belcourt", "Home", "Plane", "Other"];
 
-function LogForm({ initial, onSave, onCancel, saveLabel, mediaType }) {
+function LogForm({ initial, onSave, onCancel, saveLabel, mediaType, tmdb, item }) {
   const isTv = mediaType === "tv";
+  const [seasons, setSeasons] = useState(null);
+  const [season, setSeason] = useState(initial?.season ?? null);
+  useEffect(() => {
+    if (!isTv || !tmdb || !item || !item.tmdbId) return;
+    let active = true;
+    tmdb.details("tv", item.tmdbId)
+      .then((d) => { if (active) setSeasons((d.seasons || []).filter((s) => s.episode_count > 0)); })
+      .catch(() => {});
+    return () => { active = false; };
+    // eslint-disable-next-line
+  }, [isTv, item && item.tmdbId]);
   const [date, setDate] = useState(initial?.date || todayISO());
   const [dateMode, setDateMode] = useState(initial?.undated ? "anytime" : (isTv ? "year" : "exact"));
   const [approxYear, setApproxYear] = useState(initial?.date ? initial.date.slice(0, 4) : String(new Date().getFullYear()));
@@ -795,6 +902,20 @@ function LogForm({ initial, onSave, onCancel, saveLabel, mediaType }) {
       </>
       )}
 
+      {isTv && seasons && seasons.length > 0 && (
+        <>
+          <label className="field-label">Season</label>
+          <select className="field-input" value={season == null ? "" : String(season)} onChange={(e) => setSeason(e.target.value === "" ? null : Number(e.target.value))}>
+            <option value="">Whole show</option>
+            {seasons.map((s) => (
+              <option key={s.season_number} value={s.season_number}>
+                {s.season_number === 0 ? "Specials" : `Season ${s.season_number}`}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
+
       <label className="field-label">Where</label>
       <div className="where-presets">
         {WHERE_PRESETS.map((p) => (
@@ -831,7 +952,7 @@ function LogForm({ initial, onSave, onCancel, saveLabel, mediaType }) {
         <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
         <button
           className="btn btn-primary"
-          onClick={() => onSave({ id: initial?.id || uid(), date: effectiveDate, undated: dateMode === "anytime", location, rating, notes, loggedAt: Date.now() })}
+          onClick={() => onSave({ id: initial?.id || uid(), date: effectiveDate, undated: dateMode === "anytime", location, rating, notes, season: isTv ? season : null, loggedAt: Date.now() })}
         >
           {saveLabel || "Save"}
         </button>
@@ -856,6 +977,12 @@ function TicketStub({ ticket, onOpen }) {
             {ticket.mediaType === "tv" ? <Tv size={28} /> : <Film size={28} />}
           </div>
         )}
+        {last.rating != null && last.rating > 0 && (
+          <div className="stub-rate-badge" aria-label={`Rated ${last.rating} out of 10`}>
+            <Star size={34} strokeWidth={1} className="stub-rate-star" />
+            <span className="stub-rate-num">{last.rating % 1 ? last.rating.toFixed(1) : last.rating}</span>
+          </div>
+        )}
         <div className="stub-perf" />
       </div>
       <div className="stub-tab">
@@ -865,7 +992,6 @@ function TicketStub({ ticket, onOpen }) {
             <div className="stub-rewatch-inline">{ticket.viewings.length}×</div>
           )}
         </div>
-        <Stars value={last.rating} size={13} />
       </div>
       <span className="stub-shine" />
     </button>
@@ -877,6 +1003,9 @@ function TicketStub({ ticket, onOpen }) {
 ---------------------------------------------------------*/
 
 function WatchlistStub({ item, onClick, onLog, onRemove }) {
+  const unreleased = item.releaseDate
+    ? item.releaseDate > todayISO()
+    : (item.year && Number(item.year) > new Date().getFullYear());
   return (
     <div className="stub">
       <button className="stub-poster-link" onClick={onClick} aria-label={item.title}>
@@ -896,9 +1025,15 @@ function WatchlistStub({ item, onClick, onLog, onRemove }) {
           <div className="stub-title">{item.title}</div>
         </div>
         <div className="wl-actions">
-          <button className="wl-watched-btn" onClick={(e) => { e.stopPropagation(); onLog(); }}>
-            <Check size={12} /> Watched
-          </button>
+          {unreleased ? (
+            <div className="wl-unreleased" title="Not released yet">
+              <CalendarDays size={12} /> {item.releaseDate ? `Out ${formatDate(item.releaseDate)}` : `Out ${item.year}`}
+            </div>
+          ) : (
+            <button className="wl-watched-btn" onClick={(e) => { e.stopPropagation(); onLog(); }}>
+              <Check size={12} /> Mark watched
+            </button>
+          )}
           <button className="wl-remove-btn" onClick={(e) => { e.stopPropagation(); onRemove(); }} aria-label="Remove">
             <X size={13} />
           </button>
@@ -1081,15 +1216,18 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
             </div>
 
             <div className="viewing-list">
-              {ticket.viewings
-                .slice()
-                .sort((a, b) => ((a.date || "") < (b.date || "") ? 1 : -1))
-                .map((v) => (
+              {(() => {
+                const sortedViewings = ticket.viewings
+                  .slice()
+                  .sort((a, b) => ((a.date || "") < (b.date || "") ? 1 : -1));
+                const renderViewing = (v) => (
                   <div className="viewing-row" key={v.id}>
                     {editingViewingId === v.id ? (
                       <LogForm
                         initial={v}
                         mediaType={ticket.mediaType}
+                        tmdb={tmdb}
+                        item={ticket}
                         saveLabel="Save changes"
                         onSave={handleSaveViewing}
                         onCancel={() => setEditingViewingId(null)}
@@ -1117,12 +1255,30 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
                       </>
                     )}
                   </div>
-                ))}
+                );
+                const hasSeasons = ticket.mediaType === "tv" && ticket.viewings.some((v) => v.season != null);
+                if (!hasSeasons) return sortedViewings.map(renderViewing);
+                const groups = new Map();
+                sortedViewings.forEach((v) => {
+                  const k = v.season == null ? "whole" : v.season;
+                  if (!groups.has(k)) groups.set(k, []);
+                  groups.get(k).push(v);
+                });
+                const keys = [...groups.keys()].sort((a, b) =>
+                  a === "whole" ? 1 : b === "whole" ? -1 : a - b
+                );
+                return keys.map((k) => (
+                  <div className="season-group" key={String(k)}>
+                    <div className="season-group-label">{k === "whole" ? "Whole show" : `Season ${k}`}</div>
+                    {groups.get(k).map(renderViewing)}
+                  </div>
+                ));
+              })()}
 
               {logging && (
                 <div className="viewing-row viewing-row-new">
                   <div className="field-label" style={{ marginTop: 0 }}>New viewing</div>
-                  <LogForm mediaType={ticket.mediaType} saveLabel="Add to ticket" onSave={handleSaveViewing} onCancel={() => setLogging(false)} />
+                  <LogForm mediaType={ticket.mediaType} tmdb={tmdb} item={ticket} saveLabel="Add to ticket" onSave={handleSaveViewing} onCancel={() => setLogging(false)} />
                 </div>
               )}
             </div>
@@ -1471,7 +1627,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
       {loggingWl && (
         <Modal onClose={() => setLoggingWl(null)}>
           <h3 className="modal-title">{loggingWl.title}</h3>
-          <LogForm mediaType={loggingWl.mediaType} saveLabel="Add to collection" onCancel={() => setLoggingWl(null)} onSave={(entry) => { onLogNew(loggingWl, entry); setLoggingWl(null); }} />
+          <LogForm mediaType={loggingWl.mediaType} tmdb={tmdb} item={loggingWl} saveLabel="Add to collection" onCancel={() => setLoggingWl(null)} onSave={(entry) => { onLogNew(loggingWl, entry); setLoggingWl(null); }} />
         </Modal>
       )}
 
@@ -1597,7 +1753,7 @@ function MatchRing({ pct, conf }) {
   );
 }
 
-function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip, onWant, onRate, onTapInfo }) {
+function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection, tmdb, onSkip, onWant, onRate, onTapInfo }) {
   const [drag, setDrag] = useState({ x: 0, active: false });
   const [flying, setFlying] = useState(null);
   const [flyFrom, setFlyFrom] = useState(0);
@@ -1716,7 +1872,11 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
         <div className="ring-info-overlay" onTouchStart={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setShowRingInfo(false); }}>
           <div className="ring-info-card" onClick={(e) => e.stopPropagation()}>
             <div className="ring-info-title">{matchPct}% match</div>
-            <p>How likely you are to rate this highly. It blends what you've loved before with audience consensus (TMDB + Letterboxd), so a well-reviewed miss for you still lands mid.</p>
+            <div className="ring-info-lines">
+              {explainMatch(item, taste, people, crowd, collection).lines.map((l, i) => (
+                <div className="ring-info-line" key={i}>{l}</div>
+              ))}
+            </div>
             <p className="ring-info-legend"><span style={{ color: "hsl(4,85%,56%)" }}>red</span> under 50 · <span style={{ color: "hsl(42,96%,55%)" }}>amber</span> 50-69 · <span style={{ color: "hsl(145,70%,48%)" }}>green</span> 70+</p>
             {matchConf && <p className="ring-info-conf">Confidence: {matchConf} - it sharpens as you rate more.</p>}
             <button className="btn btn-primary" onClick={(e) => { e.stopPropagation(); setShowRingInfo(false); }}>Got it</button>
@@ -1782,7 +1942,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, collection, tmdb, onSkip,
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "98";
+const APP_VERSION = "99";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -1937,10 +2097,10 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
         tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "vote_count.gte": 50, "primary_release_date.gte": freshFloor }),
         tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: langA, "vote_count.gte": 40, "primary_release_date.gte": recentFloor }),
         tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: langB, "vote_count.gte": 40, "primary_release_date.gte": recentFloor }),
-        tmdb.popularTv(pageNum),
+        tmdb.discoverTv({ sort_by: "popularity.desc", page: pageNum, "vote_count.gte": 200, without_genres: "10763,10767" }),
         tmdb.nowPlaying(pageNum),
         tmdb.topRatedMovies(pageNum),
-        tmdb.topRatedTv(pageNum),
+        tmdb.discoverTv({ sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 400, without_genres: "10763,10767" }),
         tmdb.discoverMovie({ sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 300, "primary_release_date.gte": `${dec}-01-01`, "primary_release_date.lte": `${dec + 9}-12-31` }),
         // blockbuster deep cut: the big recent English movies (1000+ votes, last 3
         // years) sit several pages deep once he's logged the front page, so pull two
@@ -2154,6 +2314,8 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
                 matchPct={enough ? current._pct : null}
                 matchConf={enough ? current._conf : null}
                 taste={taste}
+                people={people}
+                crowd={crowdRef.current}
                 tmdb={tmdb}
                 collection={collection}
                 onSkip={() => skip(current)}
@@ -2337,7 +2499,7 @@ function SuggestionRow({ item, matchPct, matchConf, settings, tmdb, taste, peopl
       {logging && (
         <Modal onClose={() => setLogging(false)}>
           <h3 className="modal-title">{item.title}</h3>
-          <LogForm mediaType={item.mediaType} saveLabel="Add to collection" onCancel={() => setLogging(false)} onSave={(entry) => { onSeen(item, entry); setLogging(false); }} />
+          <LogForm mediaType={item.mediaType} tmdb={tmdb} item={item} saveLabel="Add to collection" onCancel={() => setLogging(false)} onSave={(entry) => { onSeen(item, entry); setLogging(false); }} />
         </Modal>
       )}
     </div>
@@ -2350,10 +2512,11 @@ function SuggestionRow({ item, matchPct, matchConf, settings, tmdb, taste, peopl
    credits cached on the movies you've collected and rated
 --------------------------------------------------------- */
 
-function FavoritesView({ collection, people, taste, crowd, tmdb, onUpdateTicket }) {
+function FavoritesView({ collection, people, taste, crowd, tmdb, settings, onUpdateTicket, onAddToWatchlist, onLogNew }) {
   const [person, setPerson] = useState(null);
   const [filmo, setFilmo] = useState(null);
   const [filmoLoading, setFilmoLoading] = useState(false);
+  const [detail, setDetail] = useState(null);
 
   async function openPerson(p, kind) {
     setPerson({ ...p, kind });
@@ -2438,6 +2601,17 @@ function FavoritesView({ collection, people, taste, crowd, tmdb, onUpdateTicket 
   if (person) {
     return (
       <div className="view">
+        {detail && (
+          <DetailModal
+            item={detail}
+            tmdb={tmdb}
+            badges={badgesFor(detail, people, taste)}
+            settings={settings || {}}
+            onClose={() => setDetail(null)}
+            onAddToWatchlist={onAddToWatchlist ? (it) => { onAddToWatchlist(it); } : null}
+            onLogNew={onLogNew || null}
+          />
+        )}
         <button className="btn btn-outline btn-sm" onClick={() => { setPerson(null); setFilmo(null); }} style={{ marginBottom: 12 }}>
           <ChevronLeft size={14} /> All favorites
         </button>
@@ -2449,7 +2623,7 @@ function FavoritesView({ collection, people, taste, crowd, tmdb, onUpdateTicket 
         {!filmoLoading && filmo && filmo.length > 0 && (
           <div className="suggest-list">
             {filmo.map((item) => (
-              <div className="suggest-row" key={item.tmdbId + item.mediaType}>
+              <button className="suggest-row suggest-row-btn" key={item.tmdbId + item.mediaType} onClick={() => setDetail(item)} aria-label={`Details for ${item.title}`}>
                 {item.posterPath ? (
                   <img src={tmdbImg(item.posterPath, "w154")} alt="" className="suggest-thumb" />
                 ) : (
@@ -2461,7 +2635,7 @@ function FavoritesView({ collection, people, taste, crowd, tmdb, onUpdateTicket 
                     {item._pct != null && <span className="match-pill" style={matchStyle(item._pct)}>{item._pct}%</span>}
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -2852,7 +3026,6 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
   const [added, setAdded] = useState({});
   const [infoItem, setInfoItem] = useState(null);
   const [logging, setLogging] = useState(null);
-  const [sort, setSort] = useState("match");
   const [genreFilter, setGenreFilter] = useState("all");
   const [availMap, setAvailMap] = useState({});
   const availCacheRef = useRef({});
@@ -2920,15 +3093,9 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
       .map((x) => { const m = matchMeta(x, taste, people, crowd); return { ...x, _pct: m.pct, _conf: m.conf }; })
       .filter((x) => !ownedKeys.has(x.tmdbId + x.mediaType));
     if (genreFilter !== "all") list = list.filter((x) => (x.genreIds || []).includes(Number(genreFilter)));
-    if (sort === "match") list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
-    else if (sort === "lowest") list.sort((a, b) => (a._pct || 0) - (b._pct || 0));
-    else if (sort === "genre") list.sort((a, b) => {
-      const ag = genreNames(a.genreIds, a.mediaType)[0] || "";
-      const bg = genreNames(b.genreIds, b.mediaType)[0] || "";
-      return ag.localeCompare(bg);
-    });
+    list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
     return list;
-  }, [items, taste, sort, genreFilter, ownedKeys]);
+  }, [items, taste, genreFilter, ownedKeys]);
 
   const note = (item, pct) => {
     if (pct == null) return null;
@@ -2984,7 +3151,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
       {logging && (
         <Modal onClose={() => setLogging(null)}>
           <h3 className="modal-title">{logging.title}</h3>
-          <LogForm mediaType={logging.mediaType} saveLabel="Add to collection" onCancel={() => setLogging(null)} onSave={(entry) => { onLogNew(logging, entry); setLogging(null); }} />
+          <LogForm mediaType={logging.mediaType} tmdb={tmdb} item={logging} saveLabel="Add to collection" onCancel={() => setLogging(null)} onSave={(entry) => { onLogNew(logging, entry); setLogging(null); }} />
         </Modal>
       )}
 
@@ -2992,9 +3159,13 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
         <ZipBanner settings={settings} onSaveSettings={onSaveSettings} />
       )}
 
-      <div className="chip-scroll" style={{ marginBottom: 12 }}>
-        <button className={"chip" + (sort === "match" ? " chip-active" : "")} onClick={() => setSort("match")}>Highest match</button>
-        <button className={"chip" + (sort === "lowest" ? " chip-active" : "")} onClick={() => setSort("lowest")}>Lowest match</button>
+      <div className="filter-row" style={{ marginBottom: 12 }}>
+        <select className="filter-select" value={genreFilter} onChange={(e) => setGenreFilter(e.target.value)} aria-label="Filter by genre">
+          <option value="all">All genres</option>
+          {genreOpts.map((g) => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
+        </select>
       </div>
 
 
@@ -3077,7 +3248,10 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
     const isAsk = /(\blike\b|\bsimilar\b|recommend|suggest|\bmovies? about\b|\bshows? about\b|something to watch|what should i|\?)/i.test(q);
     try {
       if (isAsk) {
-        setResults(await smartSearch(q, tmdb));
+        const ai = await smartSearch(q, tmdb);
+        ai.forEach((it) => { it._pct = matchMeta(it, taste, people, crowd).pct; });
+        ai.sort((a, b) => (b._pct ?? 0) - (a._pct ?? 0));
+        setResults(ai);
         setAiMode(true);
       } else {
         const hits = await tmdbSearch();
@@ -3085,7 +3259,13 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
           setResults(hits);
         } else {
           // no title match — fall back to AI suggestions
-          try { setResults(await smartSearch(q, tmdb)); setAiMode(true); }
+          try {
+            const ai = await smartSearch(q, tmdb);
+            ai.forEach((it) => { it._pct = matchMeta(it, taste, people, crowd).pct; });
+            ai.sort((a, b) => (b._pct ?? 0) - (a._pct ?? 0));
+            setResults(ai);
+            setAiMode(true);
+          }
           catch { setResults([]); }
         }
       }
@@ -3185,7 +3365,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
       {logging && (
         <Modal onClose={() => setLogging(null)}>
           <h3 className="modal-title">{logging.title}</h3>
-          <LogForm mediaType={logging.mediaType} saveLabel="Add to collection" onCancel={() => setLogging(null)} onSave={(entry) => { onLogNew(logging, entry); setLogging(null); }} />
+          <LogForm mediaType={logging.mediaType} tmdb={tmdb} item={logging} saveLabel="Add to collection" onCancel={() => setLogging(null)} onSave={(entry) => { onLogNew(logging, entry); setLogging(null); }} />
         </Modal>
       )}
     </div>
@@ -3485,7 +3665,7 @@ async function resolveRedditUrl(title, year) {
 
 async function smartSearch(query, tmdb) {
   const data = await callProxy({
-    model: "claude-sonnet-4-6",
+    model: "claude-haiku-4-5",
     max_tokens: 500,
     messages: [{
       role: "user",
@@ -3499,11 +3679,21 @@ async function smartSearch(query, tmdb) {
   const hydrated = await Promise.all(
     suggestions.map(async (s) => {
       try {
+        // among the top hits, prefer an exact-title match, then the most popular
+        // one - first-hit grabbing is how a wrestling PPV once stood in for a film
+        const normT = (t) => (t || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+        const pickBest = (results) => {
+          const cands = (results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").slice(0, 5);
+          if (!cands.length) return null;
+          const exact = cands.filter((r) => normT(r.title || r.name) === normT(s.title));
+          const pool = exact.length ? exact : cands;
+          return pool.sort((a, b) => (b.popularity || 0) - (a.popularity || 0))[0];
+        };
         let res = await tmdb.searchMulti(`${s.title} ${s.year || ""}`.trim());
-        let hit = (res.results || []).find((r) => r.media_type === "movie" || r.media_type === "tv");
+        let hit = pickBest(res.results);
         if (!hit) {
           res = await tmdb.searchMulti(s.title);
-          hit = (res.results || []).find((r) => r.media_type === "movie" || r.media_type === "tv");
+          hit = pickBest(res.results);
         }
         if (hit) return normalize(hit);
       } catch { /* skip */ }
@@ -3823,7 +4013,10 @@ export default function App() {
   function addToWatchlist(item) {
     setWatchlist((w) => {
       if (w.find((x) => x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)) return w;
-      return [{ ...item, addedAt: Date.now() }, ...w];
+      // never persist runtime-computed fields (_pct, _conf) into cloud state
+      const clean = {};
+      Object.keys(item).forEach((k) => { if (!k.startsWith("_")) clean[k] = item[k]; });
+      return [{ ...clean, addedAt: Date.now() }, ...w];
     });
     fireBurst("want");
   }
@@ -4112,7 +4305,7 @@ export default function App() {
       {showFavorites && (
         <Modal onClose={() => setShowFavorites(false)} wide>
           <h3 className="modal-title">Favorites</h3>
-          <FavoritesView collection={collection} people={people} taste={taste} crowd={crowd} tmdb={tmdb} onUpdateTicket={updateTicket} />
+          <FavoritesView collection={collection} people={people} taste={taste} crowd={crowd} tmdb={tmdb} settings={settings} onUpdateTicket={updateTicket} onAddToWatchlist={addToWatchlist} onLogNew={logNew} />
         </Modal>
       )}
     </div>
@@ -4397,9 +4590,9 @@ input, textarea { font-family: inherit; }
 .edit-log-time { font-family: 'Space Mono', monospace; font-size: 10.5px; flex-shrink: 0; }
 
 /* discover swipe */
-.view-discover { display: flex; flex-direction: column; align-items: center; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.view-discover { display: flex; flex-direction: column; align-items: center; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-x; overscroll-behavior: contain; }
 .view-discover * { user-select: none; -webkit-user-select: none; }
-.swipe-stack { width: 100%; max-width: 354px; height: calc(100vh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); height: calc(100dvh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; position: relative; z-index: 1; margin: 2px auto 0; border-radius: 19px; box-shadow: 0 20px 34px -14px rgba(0,0,0,0.25); }
+.swipe-stack { touch-action: pan-x; width: 100%; max-width: 354px; height: calc(100vh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); height: calc(100dvh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; position: relative; z-index: 1; margin: 2px auto 0; border-radius: 19px; box-shadow: 0 20px 34px -14px rgba(0,0,0,0.25); }
 .swipe-card {
   background: var(--velvet); border-radius: 18px; overflow: hidden; position: relative;
   touch-action: none; user-select: none;
@@ -4627,6 +4820,16 @@ input, textarea { font-family: inherit; }
 .ring-info-legend { font-size: 12px; }
 .ring-info-conf { font-size: 12px; color: var(--muted); }
 .ring-info-card .btn { margin-top: 10px; width: 100%; }
+.ring-info-lines { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 10px; }
+.ring-info-line { font-size: 13px; line-height: 1.45; color: var(--cream-text); padding-left: 13px; position: relative; }
+.ring-info-line::before { content: ""; position: absolute; left: 0; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--brass); }
+.stub-rate-badge { position: absolute; top: 5px; right: 5px; width: 34px; height: 34px; z-index: 3; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6)); }
+.stub-rate-star { fill: var(--brass); color: var(--brass); }
+.stub-rate-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; margin-top: 3px; font-family: 'Space Mono', monospace; font-size: 9.5px; font-weight: 700; color: #1c1206; letter-spacing: -0.02em; }
+.wl-unreleased { flex: 1; background: rgba(255,255,255,0.08); color: var(--muted); border-radius: 999px; padding: 5px 8px; font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }
+.season-group-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 14px 0 4px; }
+button.suggest-row-btn { width: 100%; text-align: left; border: none; font: inherit; color: inherit; }
+button.suggest-row-btn:active { transform: scale(0.99); }
 .logged-undo { background: none; border: none; color: var(--muted); cursor: pointer; padding: 2px; display: inline-flex; align-items: center; margin-left: 4px; }
 .logged-undo:active { color: var(--brass-bright); }
 .match-high { background: rgba(34,150,86,0.88); color: #eafff3; border: 1px solid rgba(120,240,170,0.9); }
