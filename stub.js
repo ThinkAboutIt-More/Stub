@@ -190,13 +190,22 @@ function genreNames(ids, mediaType) {
   const map = mediaType === "tv" ? TV_GENRES : MOVIE_GENRES;
   return (ids || []).map(id => map[id]).filter(Boolean);
 }
+
+// AMC has no title-constructible URL: real pages need an internal numeric id
+// (/movies/buddy-83749), slug-only resolves to the WRONG movie, and their
+// /search endpoint is bot-walled. Google's showtimes panel is the reliable
+// title+zip landing: it lists AMC theaters near the zip with times + buy links.
 function buildAmcLink(title, zip) {
-  const q = encodeURIComponent(title);
-  return zip ? `https://www.amctheatres.com/showtimes/${q}?zip=${encodeURIComponent(zip)}` : `https://www.amctheatres.com/movie-theatres?q=${q}`;
+  const q = `${title} AMC showtimes ${zip ? zip : "near me"}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
 }
+
+// Regal is the same story: /movies/<title> 404s without their ho- id and
+// /search ignores the query entirely, so deep links can't be built from a
+// title. Google showtimes lands on Regal theaters near the zip instead.
 function buildRegalLink(title, zip) {
-  const q = encodeURIComponent(title);
-  return `https://www.regmovies.com/movies/${q}${zip ? `?zip=${encodeURIComponent(zip)}` : ""}`;
+  const q = `${title} Regal showtimes ${zip ? zip : "near me"}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
 }
 function buildBelcourtLink(title) {
   return `https://www.belcourt.org/?s=${encodeURIComponent(title)}`;
@@ -2771,7 +2780,7 @@ function SwipeCard({
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "99";
+const APP_VERSION = "100";
 const posterGradCache = {};
 const DEFAULT_GRAD = {
   a: "#c98f2e",
