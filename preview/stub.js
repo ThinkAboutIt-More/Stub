@@ -2430,7 +2430,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
             it._pct = matchMeta(it, taste, people, crowd).pct;
           });
           film.items.sort((a, b) => (b._pct ?? 0) - (a._pct ?? 0));
-          setResults(film.items.slice(0, 24));
+          setResults(film.items.slice(0, 48));
           setPersonName(film.person.name);
         } else if (hits.length) {
           setResults(hits);
