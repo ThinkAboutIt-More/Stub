@@ -855,6 +855,12 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings, tas
   function withLog(t, text) {
     return { ...t, log: [...t.log || [], { at: Date.now(), text }] };
   }
+  function handleRateViewing(viewingId, n) {
+    let t = { ...ticket, history: pushHistory(ticket) };
+    t.viewings = t.viewings.map((v) => v.id === viewingId ? { ...v, rating: n } : v);
+    t = withLog(t, `Rated it ${n}/10`);
+    onUpdate(t);
+  }
   function handleSaveViewing(entry) {
     let t = { ...ticket, history: pushHistory(ticket) };
     const exists = t.viewings.find((v) => v.id === entry.id);
@@ -900,7 +906,7 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings, tas
         onSave: handleSaveViewing,
         onCancel: () => setEditingViewingId(null)
       }
-    ) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "viewing-top" }, /* @__PURE__ */ React.createElement("div", { className: "viewing-date" }, /* @__PURE__ */ React.createElement(CalendarDays, { size: 12 }), " ", v.undated || !v.date ? "Anytime" : formatDate(v.date)), /* @__PURE__ */ React.createElement(Stars, { value: v.rating, size: 14 })), v.location && /* @__PURE__ */ React.createElement("div", { className: "viewing-loc" }, /* @__PURE__ */ React.createElement(MapPin, { size: 12 }), " ", v.location), v.notes && /* @__PURE__ */ React.createElement("div", { className: "viewing-notes" }, v.notes), /* @__PURE__ */ React.createElement("div", { className: "viewing-actions" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setEditingViewingId(v.id), "aria-label": "Edit" }, /* @__PURE__ */ React.createElement(Pencil, { size: 13 })), ticket.viewings.length > 1 && /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => handleRemoveViewing(v.id), "aria-label": "Remove this entry" }, /* @__PURE__ */ React.createElement(Trash2, { size: 13 })))));
+    ) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "viewing-top" }, /* @__PURE__ */ React.createElement("div", { className: "viewing-date" }, /* @__PURE__ */ React.createElement(CalendarDays, { size: 12 }), " ", v.undated || !v.date ? "Anytime" : formatDate(v.date)), /* @__PURE__ */ React.createElement(Stars, { value: v.rating, size: 18, onChange: (n) => handleRateViewing(v.id, n) })), v.location && /* @__PURE__ */ React.createElement("div", { className: "viewing-loc" }, /* @__PURE__ */ React.createElement(MapPin, { size: 12 }), " ", v.location), v.notes && /* @__PURE__ */ React.createElement("div", { className: "viewing-notes" }, v.notes), /* @__PURE__ */ React.createElement("div", { className: "viewing-actions" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setEditingViewingId(v.id), "aria-label": "Edit" }, /* @__PURE__ */ React.createElement(Pencil, { size: 13 })), ticket.viewings.length > 1 && /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => handleRemoveViewing(v.id), "aria-label": "Remove this entry" }, /* @__PURE__ */ React.createElement(Trash2, { size: 13 })))));
     const hasSeasons = ticket.mediaType === "tv" && ticket.viewings.some((v) => v.season != null);
     if (!hasSeasons) return sortedViewings.map(renderViewing);
     const groups = /* @__PURE__ */ new Map();
