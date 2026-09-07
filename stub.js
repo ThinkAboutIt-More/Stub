@@ -1,4 +1,4 @@
-import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+// stub.jsx
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -30,7 +30,7 @@ import {
   Download,
   Upload
 } from "lucide-react";
-const MOVIE_GENRES = {
+var MOVIE_GENRES = {
   28: "Action",
   12: "Adventure",
   16: "Animation",
@@ -51,7 +51,7 @@ const MOVIE_GENRES = {
   10752: "War",
   37: "Western"
 };
-const TV_GENRES = {
+var TV_GENRES = {
   10759: "Action & Adventure",
   16: "Animation",
   35: "Comedy",
@@ -69,15 +69,15 @@ const TV_GENRES = {
   10768: "War & Politics",
   37: "Western"
 };
-const STORAGE_KEYS = {
+var STORAGE_KEYS = {
   settings: "stub-settings",
   collection: "stub-collection",
   watchlist: "stub-watchlist",
   feedback: "stub-discover-feedback"
 };
-const SKIP_COOLDOWN_MS = 14 * 24 * 60 * 60 * 1e3;
-const DEFAULT_SETTINGS = { tmdbKey: "", omdbKey: "5f3a67c7", zip: "", country: "US" };
-const PROXY_URL = "https://watchlist-proxy.xphazemusic.workers.dev";
+var SKIP_COOLDOWN_MS = 14 * 24 * 60 * 60 * 1e3;
+var DEFAULT_SETTINGS = { tmdbKey: "", omdbKey: "5f3a67c7", zip: "", country: "US" };
+var PROXY_URL = "https://watchlist-proxy.xphazemusic.workers.dev";
 async function callProxy(body) {
   const res = await fetch(PROXY_URL, {
     method: "POST",
@@ -88,7 +88,7 @@ async function callProxy(body) {
   if (!res.ok) throw new Error(data.error || `Proxy ${res.status}`);
   return data;
 }
-const CONNECTION_KEY = "stub-connection";
+var CONNECTION_KEY = "stub-connection";
 function getConnection() {
   try {
     const raw = localStorage.getItem(CONNECTION_KEY);
@@ -168,10 +168,6 @@ function tmdbImg(path, size = "w500") {
   if (!path) return null;
   return `https://image.tmdb.org/t/p/${size}${path}`;
 }
-function genreNames(ids, mediaType) {
-  const map = mediaType === "tv" ? TV_GENRES : MOVIE_GENRES;
-  return (ids || []).map((id) => map[id]).filter(Boolean);
-}
 function buildAmcLink(title, zip) {
   const q = `${title} AMC showtimes ${zip ? zip : "near me"}`;
   return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
@@ -179,9 +175,6 @@ function buildAmcLink(title, zip) {
 function buildRegalLink(title, zip) {
   const q = `${title} Regal showtimes ${zip ? zip : "near me"}`;
   return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
-}
-function buildBelcourtLink(title) {
-  return `https://www.belcourt.org/?s=${encodeURIComponent(title)}`;
 }
 function buildRedditLink(title, year) {
   const q = `${title}${year ? " " + year : ""} official discussion`;
@@ -232,6 +225,26 @@ function normalize(item) {
     voteAverage: item.vote_average ?? null,
     voteCount: item.vote_count ?? 0
   };
+}
+function cleanProviderNames(raw) {
+  const names = [];
+  (raw || []).forEach((n) => {
+    let clean = String(n).trim();
+    let prev;
+    do {
+      prev = clean;
+      clean = clean.replace(/\s+(with Ads|Amazon Channel|Apple TV Channel|Premium|Essential|Standard|Basic)$/i, "").trim();
+    } while (clean !== prev);
+    if (clean && !names.some((x) => x.toLowerCase() === clean.toLowerCase())) names.push(clean);
+  });
+  return names;
+}
+var TV_JUNK_GENRES = /* @__PURE__ */ new Set([10763, 10764, 10766, 10767]);
+function isJunkTv(x) {
+  return !!x && x.mediaType === "tv" && (x.genreIds || []).some((g) => TV_JUNK_GENRES.has(g));
+}
+function isJunkTvRaw(r) {
+  return !!r && (r.media_type === "tv" || !!r.first_air_date) && (r.genre_ids || []).some((g) => TV_JUNK_GENRES.has(g));
 }
 function buildTasteProfile(collection, feedback) {
   const weights = {};
@@ -355,12 +368,12 @@ function peopleAffinity(item, people) {
   });
   return best;
 }
-let SCORING_CTX = null;
+var SCORING_CTX = null;
 function setScoringContext(ctx) {
   SCORING_CTX = ctx;
 }
-let LB_RATINGS = null;
-let LB_LOADING = null;
+var LB_RATINGS = null;
+var LB_LOADING = null;
 function loadLetterboxd() {
   if (LB_RATINGS) return Promise.resolve(LB_RATINGS);
   if (LB_LOADING) return LB_LOADING;
@@ -380,7 +393,7 @@ function letterboxdRating(item) {
   const r = LB_RATINGS[item.tmdbId];
   return typeof r === "number" ? r : null;
 }
-let OWN_RATINGS = {};
+var OWN_RATINGS = {};
 function setOwnRatings(collection) {
   const map = {};
   (collection || []).forEach((t) => {
@@ -458,6 +471,10 @@ function matchMetaFull(item, taste, people, crowd) {
     shrink = Math.max(0.15, Math.min(1, vc / 300));
     pct = Math.round(50 + (pct - 50) * shrink);
   }
+  if (shrink < 1) {
+    if (shrink < 0.5) conf = "low";
+    else if (conf === "high") conf = "medium";
+  }
   return {
     meta: { pct, conf },
     detail: { peopleScore, genreScore, qualityScore, calibBonus, crowdW, cappedBy, effReception, lbRating, shrink }
@@ -521,9 +538,6 @@ function explainMatch(item, taste, people, crowd, collection) {
   if (!lines.length) lines.push("A blend of your genre history and the crowd consensus.");
   return { ...meta, lines };
 }
-function matchPercent(item, taste, people, crowd) {
-  return matchMeta(item, taste, people, crowd).pct;
-}
 function hasEnoughTaste(collection, feedback) {
   const rated = collection.filter((c) => c.viewings.some((v) => v.rating)).length;
   const swipes = (feedback.wantedIds || []).length + (feedback.skippedIds || []).length;
@@ -546,46 +560,42 @@ function badgesFor(item, people, tasteWeights) {
 function Stars({ value = 0, onChange, size = 18 }) {
   const lpRef = useRef(null);
   const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-  return /* @__PURE__ */ jsx("div", { className: "stars", style: { height: size }, children: slots.map((n) => {
+  return /* @__PURE__ */ React.createElement("div", { className: "stars", style: { height: size } }, slots.map((n) => {
     const clip = value >= n ? "inset(0 0 0 0)" : value >= n - 0.5 ? "inset(0 50% 0 0)" : "inset(0 100% 0 0)";
-    return /* @__PURE__ */ jsxs("div", { className: "star-slot", style: { width: size, height: size }, children: [
-      /* @__PURE__ */ jsx(Star, { className: "star-bg", size, strokeWidth: 1.5 }),
-      /* @__PURE__ */ jsx("div", { className: "star-fill", style: { clipPath: clip }, children: /* @__PURE__ */ jsx(Star, { className: "star-fg", size, fill: "currentColor", strokeWidth: 1.5 }) }),
-      onChange && /* @__PURE__ */ jsx(
-        "button",
-        {
-          type: "button",
-          className: "star-hit star-hit-full",
-          "aria-label": `Rate ${n} of 10 (hold for ${n - 0.5})`,
-          onTouchStart: () => {
-            lpRef.current = { fired: false, t: setTimeout(() => {
-              lpRef.current.fired = true;
-              onChange(n - 0.5);
-            }, 420) };
-          },
-          onTouchEnd: () => {
-            if (lpRef.current) clearTimeout(lpRef.current.t);
-          },
-          onMouseDown: () => {
-            lpRef.current = { fired: false, t: setTimeout(() => {
-              lpRef.current.fired = true;
-              onChange(n - 0.5);
-            }, 420) };
-          },
-          onMouseUp: () => {
-            if (lpRef.current) clearTimeout(lpRef.current.t);
-          },
-          onClick: () => {
-            if (lpRef.current && lpRef.current.fired) {
-              lpRef.current.fired = false;
-              return;
-            }
-            onChange(n);
+    return /* @__PURE__ */ React.createElement("div", { className: "star-slot", key: n, style: { width: size, height: size } }, /* @__PURE__ */ React.createElement(Star, { className: "star-bg", size, strokeWidth: 1.5 }), /* @__PURE__ */ React.createElement("div", { className: "star-fill", style: { clipPath: clip } }, /* @__PURE__ */ React.createElement(Star, { className: "star-fg", size, fill: "currentColor", strokeWidth: 1.5 })), onChange && /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        className: "star-hit star-hit-full",
+        "aria-label": `Rate ${n} of 10 (hold for ${n - 0.5})`,
+        onTouchStart: () => {
+          lpRef.current = { fired: false, t: setTimeout(() => {
+            lpRef.current.fired = true;
+            onChange(n - 0.5);
+          }, 420) };
+        },
+        onTouchEnd: () => {
+          if (lpRef.current) clearTimeout(lpRef.current.t);
+        },
+        onMouseDown: () => {
+          lpRef.current = { fired: false, t: setTimeout(() => {
+            lpRef.current.fired = true;
+            onChange(n - 0.5);
+          }, 420) };
+        },
+        onMouseUp: () => {
+          if (lpRef.current) clearTimeout(lpRef.current.t);
+        },
+        onClick: () => {
+          if (lpRef.current && lpRef.current.fired) {
+            lpRef.current.fired = false;
+            return;
           }
+          onChange(n);
         }
-      )
-    ] }, n);
-  }) });
+      }
+    ));
+  }));
 }
 function Modal({ onClose, children, wide }) {
   const dragStartY = useRef(null);
@@ -602,13 +612,7 @@ function Modal({ onClose, children, wide }) {
   const onTE = () => {
     dragStartY.current = null;
   };
-  return /* @__PURE__ */ jsxs("div", { className: "modal-veil", onClick: onClose, children: [
-    /* @__PURE__ */ jsxs("div", { className: "modal-card" + (wide ? " modal-wide" : ""), onClick: (e) => e.stopPropagation(), onTouchStart: onTS, onTouchMove: onTM, onTouchEnd: onTE, children: [
-      /* @__PURE__ */ jsx("div", { className: "modal-grip" }),
-      children
-    ] }),
-    /* @__PURE__ */ jsx("button", { className: "modal-close", onClick: onClose, "aria-label": "Close", children: /* @__PURE__ */ jsx(X, { size: 18 }) })
-  ] });
+  return /* @__PURE__ */ React.createElement("div", { className: "modal-veil", onClick: onClose }, /* @__PURE__ */ React.createElement("div", { className: "modal-card" + (wide ? " modal-wide" : ""), onClick: (e) => e.stopPropagation(), onTouchStart: onTS, onTouchMove: onTM, onTouchEnd: onTE }, /* @__PURE__ */ React.createElement("div", { className: "modal-grip" }), children), /* @__PURE__ */ React.createElement("button", { className: "modal-close", onClick: onClose, "aria-label": "Close" }, /* @__PURE__ */ React.createElement(X, { size: 18 })));
 }
 function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, onLogNew, redditAfter }) {
   const [data, setData] = useState(null);
@@ -638,110 +642,33 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
   const release = data ? data.release_date || data.first_air_date || "" : item.year;
   const runtime = data ? data.runtime || data.episode_run_time && data.episode_run_time[0] : null;
   const keywords = data ? data.keywords?.keywords || data.keywords?.results || [] : [];
-  return /* @__PURE__ */ jsx(Modal, { onClose, wide: true, children: /* @__PURE__ */ jsxs("div", { className: "detail-modal", children: [
-    /* @__PURE__ */ jsxs("div", { className: "detail-head", children: [
-      item.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w342"), alt: "", className: "detail-head-poster" }) : /* @__PURE__ */ jsx("div", { className: "detail-head-poster detail-poster-fallback", children: item.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 36 }) : /* @__PURE__ */ jsx(Film, { size: 36 }) }),
-      /* @__PURE__ */ jsxs("div", { className: "detail-head-info", children: [
-        /* @__PURE__ */ jsx("h2", { className: "detail-title", children: item.title }),
-        /* @__PURE__ */ jsx("div", { className: "detail-genres", children: item.mediaType === "tv" ? "TV SHOW" : "MOVIE" }),
-        badges && badges.length > 0 && /* @__PURE__ */ jsx("div", { className: "badge-row", children: badges.map((b, i) => /* @__PURE__ */ jsx("span", { className: "badge badge-" + b.kind, children: b.text }, i)) }),
-        (() => {
-          if (!SCORING_CTX || !SCORING_CTX.taste) return null;
-          const m = matchMeta(item, SCORING_CTX.taste, SCORING_CTX.people, SCORING_CTX.crowd);
-          if (m.pct == null) return null;
-          const lb = letterboxdRating(item);
-          const aud5 = lb != null ? lb / 2 : item.voteAverage != null && (item.voteCount ?? 0) >= 50 ? item.voteAverage / 2 : null;
-          return /* @__PURE__ */ jsxs("div", { className: "detail-score", children: [
-            /* @__PURE__ */ jsxs("span", { className: "match-pill", style: matchStyle(m.pct), children: [
-              m.pct,
-              "% match"
-            ] }),
-            /* @__PURE__ */ jsxs("span", { className: "detail-score-conf", children: [
-              m.conf,
-              " confidence"
-            ] }),
-            aud5 != null && /* @__PURE__ */ jsxs("span", { className: "detail-score-aud", children: [
-              "audience ",
-              aud5.toFixed(1),
-              "/5"
-            ] })
-          ] });
-        })()
-      ] })
-    ] }),
-    loading && /* @__PURE__ */ jsxs("div", { className: "detail-loading", children: [
-      /* @__PURE__ */ jsx(RefreshCw, { size: 20, className: "spin" }),
-      " Loading details"
-    ] }),
-    err && /* @__PURE__ */ jsxs("div", { className: "detail-loading", children: [
-      "Couldn't load full details (",
-      err,
-      ")."
-    ] }),
-    data && /* @__PURE__ */ jsxs("div", { className: "detail-body", children: [
-      /* @__PURE__ */ jsxs("div", { className: "detail-facts", children: [
-        release && /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("span", { children: "Release" }),
-          formatDate(release.slice(0, 10)) || release
-        ] }),
-        director && /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("span", { children: "Director" }),
-          director.name
-        ] }),
-        producer && /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("span", { children: "Producer" }),
-          producer.name
-        ] })
-      ] }),
-      slim && slim.cast.length > 0 && /* @__PURE__ */ jsxs("div", { className: "detail-cast", children: [
-        /* @__PURE__ */ jsx("div", { className: "detail-cast-label", children: "Cast" }),
-        /* @__PURE__ */ jsx("div", { className: "detail-cast-list", children: slim.cast.slice(0, 6).map((c) => /* @__PURE__ */ jsx("span", { className: "cast-chip", children: c.name }, c.id)) })
-      ] }),
-      providers && /* @__PURE__ */ jsxs("div", { className: "detail-cast", children: [
-        /* @__PURE__ */ jsx("div", { className: "detail-cast-label", children: "Where to watch" }),
-        /* @__PURE__ */ jsx("div", { className: "suggest-links", children: providers.names.map((name) => /* @__PURE__ */ jsx("a", { className: "link-pill link-pill-stream", href: providers.link, target: "_blank", rel: "noreferrer", children: name }, name)) })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "detail-actions", children: [
-      onAddToWatchlist && /* @__PURE__ */ jsxs("button", { className: "btn btn-outline btn-sm", onClick: () => {
-        onAddToWatchlist(item);
+  return /* @__PURE__ */ React.createElement(Modal, { onClose, wide: true }, /* @__PURE__ */ React.createElement("div", { className: "detail-modal" }, /* @__PURE__ */ React.createElement("div", { className: "detail-head" }, item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w342"), alt: "", className: "detail-head-poster" }) : /* @__PURE__ */ React.createElement("div", { className: "detail-head-poster detail-poster-fallback" }, item.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 36 }) : /* @__PURE__ */ React.createElement(Film, { size: 36 })), /* @__PURE__ */ React.createElement("div", { className: "detail-head-info" }, /* @__PURE__ */ React.createElement("h2", { className: "detail-title" }, item.title), /* @__PURE__ */ React.createElement("div", { className: "detail-genres" }, item.mediaType === "tv" ? "TV SHOW" : "MOVIE"), badges && badges.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "badge-row" }, badges.map((b, i) => /* @__PURE__ */ React.createElement("span", { key: i, className: "badge badge-" + b.kind }, b.text))), (() => {
+    if (!SCORING_CTX || !SCORING_CTX.taste) return null;
+    const m = matchMeta(item, SCORING_CTX.taste, SCORING_CTX.people, SCORING_CTX.crowd);
+    if (m.pct == null) return null;
+    const lb = letterboxdRating(item);
+    const aud5 = lb != null ? lb / 2 : item.voteAverage != null && (item.voteCount ?? 0) >= 50 ? item.voteAverage / 2 : null;
+    return /* @__PURE__ */ React.createElement("div", { className: "detail-score" }, /* @__PURE__ */ React.createElement("span", { className: "match-pill", style: matchStyle(m.pct) }, m.pct, "% match"), /* @__PURE__ */ React.createElement("span", { className: "detail-score-conf" }, m.conf, " confidence"), aud5 != null && /* @__PURE__ */ React.createElement("span", { className: "detail-score-aud" }, "audience ", aud5.toFixed(1), "/5"));
+  })())), loading && /* @__PURE__ */ React.createElement("div", { className: "detail-loading" }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 20, className: "spin" }), " Loading details"), err && /* @__PURE__ */ React.createElement("div", { className: "detail-loading" }, "Couldn't load full details (", err, ")."), data && /* @__PURE__ */ React.createElement("div", { className: "detail-body" }, /* @__PURE__ */ React.createElement("div", { className: "detail-facts" }, release && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", null, "Release"), formatDate(release.slice(0, 10)) || release), director && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", null, "Director"), director.name), producer && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", null, "Producer"), producer.name)), slim && slim.cast.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "detail-cast" }, /* @__PURE__ */ React.createElement("div", { className: "detail-cast-label" }, "Cast"), /* @__PURE__ */ React.createElement("div", { className: "detail-cast-list" }, slim.cast.slice(0, 6).map((c) => /* @__PURE__ */ React.createElement("span", { key: c.id, className: "cast-chip" }, c.name)))), providers && /* @__PURE__ */ React.createElement("div", { className: "detail-cast" }, /* @__PURE__ */ React.createElement("div", { className: "detail-cast-label" }, "Where to watch"), /* @__PURE__ */ React.createElement("div", { className: "suggest-links" }, providers.names.map((name) => /* @__PURE__ */ React.createElement("a", { key: name, className: "link-pill link-pill-stream", href: providers.link, target: "_blank", rel: "noreferrer" }, name))))), /* @__PURE__ */ React.createElement("div", { className: "detail-actions" }, onAddToWatchlist && /* @__PURE__ */ React.createElement("button", { className: "btn btn-outline btn-sm", onClick: () => {
+    onAddToWatchlist(item);
+    onClose();
+  } }, /* @__PURE__ */ React.createElement(Eye, { size: 14 }), " Wishlist"), onLogNew && /* @__PURE__ */ React.createElement("button", { className: "btn btn-primary btn-sm", onClick: () => setLogging(true) }, /* @__PURE__ */ React.createElement(Check, { size: 14 }), " Seen it"), /* @__PURE__ */ React.createElement("a", { className: "btn btn-outline btn-sm", href: buildAmcLink(item.title, settings?.zip || ""), target: "_blank", rel: "noreferrer" }, "AMC"), /* @__PURE__ */ React.createElement("a", { className: "btn btn-outline btn-sm", href: buildRegalLink(item.title, settings?.zip || ""), target: "_blank", rel: "noreferrer" }, "Regal"), /* @__PURE__ */ React.createElement("a", { className: "btn btn-outline btn-sm", href: buildRedditLink(item.title, item.year), target: "_blank", rel: "noreferrer" }, /* @__PURE__ */ React.createElement(ExternalLink, { size: 14 }), " Reddit")), logging && /* @__PURE__ */ React.createElement(Modal, { onClose: () => setLogging(false) }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, item.title), /* @__PURE__ */ React.createElement(
+    LogForm,
+    {
+      mediaType: item.mediaType,
+      tmdb,
+      item,
+      saveLabel: "Add to collection",
+      onCancel: () => setLogging(false),
+      onSave: (entry) => {
+        onLogNew(item, entry, slim, { runtime, keywords });
+        setLogging(false);
         onClose();
-      }, children: [
-        /* @__PURE__ */ jsx(Eye, { size: 14 }),
-        " Wishlist"
-      ] }),
-      onLogNew && /* @__PURE__ */ jsxs("button", { className: "btn btn-primary btn-sm", onClick: () => setLogging(true), children: [
-        /* @__PURE__ */ jsx(Check, { size: 14 }),
-        " Seen it"
-      ] }),
-      /* @__PURE__ */ jsx("a", { className: "btn btn-outline btn-sm", href: buildAmcLink(item.title, settings?.zip || ""), target: "_blank", rel: "noreferrer", children: "AMC" }),
-      /* @__PURE__ */ jsx("a", { className: "btn btn-outline btn-sm", href: buildRegalLink(item.title, settings?.zip || ""), target: "_blank", rel: "noreferrer", children: "Regal" }),
-      /* @__PURE__ */ jsxs("a", { className: "btn btn-outline btn-sm", href: buildRedditLink(item.title, item.year), target: "_blank", rel: "noreferrer", children: [
-        /* @__PURE__ */ jsx(ExternalLink, { size: 14 }),
-        " Reddit"
-      ] })
-    ] }),
-    logging && /* @__PURE__ */ jsxs(Modal, { onClose: () => setLogging(false), children: [
-      /* @__PURE__ */ jsx("h3", { className: "modal-title", children: item.title }),
-      /* @__PURE__ */ jsx(
-        LogForm,
-        {
-          mediaType: item.mediaType,
-          tmdb,
-          item,
-          saveLabel: "Add to collection",
-          onCancel: () => setLogging(false),
-          onSave: (entry) => {
-            onLogNew(item, entry, slim, { runtime, keywords });
-            setLogging(false);
-            onClose();
-          }
-        }
-      )
-    ] })
-  ] }) });
+      }
+    }
+  ))));
 }
-const WHERE_PRESETS = ["AMC", "Regal", "Belcourt", "Home", "Plane", "Other"];
+var WHERE_PRESETS = ["AMC", "Regal", "Belcourt", "Home", "Plane", "Other"];
 function LogForm({ initial, onSave, onCancel, saveLabel, mediaType, tmdb, item }) {
   const isTv = mediaType === "tv";
   const [seasons, setSeasons] = useState(null);
@@ -775,139 +702,61 @@ function LogForm({ initial, onSave, onCancel, saveLabel, mediaType, tmdb, item }
   }
   const yearOptions = [];
   for (let y = (/* @__PURE__ */ new Date()).getFullYear(); y >= 1970; y--) yearOptions.push(y);
-  return /* @__PURE__ */ jsxs("div", { className: "log-form", children: [
-    /* @__PURE__ */ jsx("label", { className: "field-label", children: isTv ? "Year watched" : "Date watched" }),
-    isTv ? /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, alignItems: "center" }, children: [
-      /* @__PURE__ */ jsx("select", { className: "field-input", value: approxYear, disabled: dateMode === "anytime", onChange: (e) => {
-        setApproxYear(e.target.value);
-        setDateMode("year");
-      }, style: { flex: 1 }, children: yearOptions.map((y) => /* @__PURE__ */ jsx("option", { value: y, children: y }, y)) }),
-      /* @__PURE__ */ jsx("button", { type: "button", className: "approx-chip" + (dateMode === "anytime" ? " approx-chip-active" : ""), onClick: () => setDateMode(dateMode === "anytime" ? "year" : "anytime"), children: "Don't know" })
-    ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
-      /* @__PURE__ */ jsxs("div", { className: "approx-toggle", children: [
-        /* @__PURE__ */ jsx("button", { type: "button", className: "approx-chip" + (dateMode === "exact" ? " approx-chip-active" : ""), onClick: () => setDateMode("exact"), children: "Exact date" }),
-        /* @__PURE__ */ jsx("button", { type: "button", className: "approx-chip" + (dateMode === "year" ? " approx-chip-active" : ""), onClick: () => setDateMode("year"), children: "Just the year" }),
-        /* @__PURE__ */ jsx("button", { type: "button", className: "approx-chip" + (dateMode === "anytime" ? " approx-chip-active" : ""), onClick: () => setDateMode("anytime"), children: "Anytime" })
-      ] }),
-      dateMode === "exact" ? /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, alignItems: "center" }, children: [
-        /* @__PURE__ */ jsx("input", { className: "field-input", type: "date", value: date, onChange: (e) => setDate(e.target.value), style: { flex: 1 } }),
-        /* @__PURE__ */ jsx("button", { type: "button", className: "approx-chip approx-chip-active", onClick: () => setDate(todayISO()), style: { whiteSpace: "nowrap", flexShrink: 0 }, children: "Today" })
-      ] }) : dateMode === "year" ? /* @__PURE__ */ jsx("select", { className: "field-input", value: approxYear, onChange: (e) => setApproxYear(e.target.value), children: yearOptions.map((y) => /* @__PURE__ */ jsx("option", { value: y, children: y }, y)) }) : /* @__PURE__ */ jsx("div", { className: "anytime-hint", children: "No specific date. Good for shows you've watched on and off, like a long-running series." })
-    ] }),
-    isTv && seasons && seasons.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
-      /* @__PURE__ */ jsx("label", { className: "field-label", children: "Season" }),
-      /* @__PURE__ */ jsxs("select", { className: "field-input", value: season == null ? "" : String(season), onChange: (e) => setSeason(e.target.value === "" ? null : Number(e.target.value)), children: [
-        /* @__PURE__ */ jsx("option", { value: "", children: "Whole show" }),
-        seasons.map((s) => /* @__PURE__ */ jsx("option", { value: s.season_number, children: s.season_number === 0 ? "Specials" : `Season ${s.season_number}` }, s.season_number))
-      ] })
-    ] }),
-    /* @__PURE__ */ jsx("label", { className: "field-label", children: "Where" }),
-    /* @__PURE__ */ jsx("div", { className: "where-presets", children: WHERE_PRESETS.map((p) => /* @__PURE__ */ jsx(
-      "button",
-      {
-        type: "button",
-        className: "where-chip" + (selectedPreset === p ? " where-chip-active" : ""),
-        onClick: () => pickPreset(p),
-        children: p
-      },
-      p
-    )) }),
-    selectedPreset === "Other" && /* @__PURE__ */ jsx(
-      "input",
-      {
-        className: "field-input",
-        style: { marginTop: 8 },
-        type: "text",
-        placeholder: "Where did you watch it?",
-        value: customLoc,
-        onChange: (e) => {
-          setCustomLoc(e.target.value);
-          setLocation(e.target.value);
-        }
+  return /* @__PURE__ */ React.createElement("div", { className: "log-form" }, /* @__PURE__ */ React.createElement("label", { className: "field-label" }, isTv ? "Year watched" : "Date watched"), isTv ? /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center" } }, /* @__PURE__ */ React.createElement("select", { className: "field-input", value: approxYear, disabled: dateMode === "anytime", onChange: (e) => {
+    setApproxYear(e.target.value);
+    setDateMode("year");
+  }, style: { flex: 1 } }, yearOptions.map((y) => /* @__PURE__ */ React.createElement("option", { key: y, value: y }, y))), /* @__PURE__ */ React.createElement("button", { type: "button", className: "approx-chip" + (dateMode === "anytime" ? " approx-chip-active" : ""), onClick: () => setDateMode(dateMode === "anytime" ? "year" : "anytime") }, "Don't know")) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "approx-toggle" }, /* @__PURE__ */ React.createElement("button", { type: "button", className: "approx-chip" + (dateMode === "exact" ? " approx-chip-active" : ""), onClick: () => setDateMode("exact") }, "Exact date"), /* @__PURE__ */ React.createElement("button", { type: "button", className: "approx-chip" + (dateMode === "year" ? " approx-chip-active" : ""), onClick: () => setDateMode("year") }, "Just the year"), /* @__PURE__ */ React.createElement("button", { type: "button", className: "approx-chip" + (dateMode === "anytime" ? " approx-chip-active" : ""), onClick: () => setDateMode("anytime") }, "Anytime")), dateMode === "exact" ? /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center" } }, /* @__PURE__ */ React.createElement("input", { className: "field-input", type: "date", value: date, onChange: (e) => setDate(e.target.value), style: { flex: 1 } }), /* @__PURE__ */ React.createElement("button", { type: "button", className: "approx-chip approx-chip-active", onClick: () => setDate(todayISO()), style: { whiteSpace: "nowrap", flexShrink: 0 } }, "Today")) : dateMode === "year" ? /* @__PURE__ */ React.createElement("select", { className: "field-input", value: approxYear, onChange: (e) => setApproxYear(e.target.value) }, yearOptions.map((y) => /* @__PURE__ */ React.createElement("option", { key: y, value: y }, y))) : /* @__PURE__ */ React.createElement("div", { className: "anytime-hint" }, "No specific date. Good for shows you've watched on and off, like a long-running series.")), isTv && seasons && seasons.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("label", { className: "field-label" }, "Season"), /* @__PURE__ */ React.createElement("select", { className: "field-input", value: season == null ? "" : String(season), onChange: (e) => setSeason(e.target.value === "" ? null : Number(e.target.value)) }, /* @__PURE__ */ React.createElement("option", { value: "" }, "Whole show"), seasons.map((s) => /* @__PURE__ */ React.createElement("option", { key: s.season_number, value: s.season_number }, s.season_number === 0 ? "Specials" : `Season ${s.season_number}`)))), /* @__PURE__ */ React.createElement("label", { className: "field-label" }, "Where"), /* @__PURE__ */ React.createElement("div", { className: "where-presets" }, WHERE_PRESETS.map((p) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: p,
+      type: "button",
+      className: "where-chip" + (selectedPreset === p ? " where-chip-active" : ""),
+      onClick: () => pickPreset(p)
+    },
+    p
+  ))), selectedPreset === "Other" && /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      className: "field-input",
+      style: { marginTop: 8 },
+      type: "text",
+      placeholder: "Where did you watch it?",
+      value: customLoc,
+      onChange: (e) => {
+        setCustomLoc(e.target.value);
+        setLocation(e.target.value);
       }
-    ),
-    /* @__PURE__ */ jsx("label", { className: "field-label", children: "Your rating" }),
-    /* @__PURE__ */ jsx(Stars, { value: rating, onChange: setRating, size: 28 }),
-    /* @__PURE__ */ jsx("label", { className: "field-label", children: "Notes" }),
-    /* @__PURE__ */ jsx(
-      "textarea",
-      {
-        className: "field-input field-textarea",
-        placeholder: "First reaction, what stuck with you, anything you want future-you to remember...",
-        value: notes,
-        onChange: (e) => setNotes(e.target.value)
-      }
-    ),
-    /* @__PURE__ */ jsxs("div", { className: "form-actions", children: [
-      /* @__PURE__ */ jsx("button", { className: "btn btn-ghost", onClick: onCancel, children: "Cancel" }),
-      /* @__PURE__ */ jsx(
-        "button",
-        {
-          className: "btn btn-primary",
-          onClick: () => onSave({ id: initial?.id || uid(), date: effectiveDate, undated: dateMode === "anytime", location: location2, rating, notes, season: isTv ? season : null, loggedAt: Date.now() }),
-          children: saveLabel || "Save"
-        }
-      )
-    ] })
-  ] });
+    }
+  ), /* @__PURE__ */ React.createElement("label", { className: "field-label" }, "Your rating"), /* @__PURE__ */ React.createElement(Stars, { value: rating, onChange: setRating, size: 28 }), /* @__PURE__ */ React.createElement("label", { className: "field-label" }, "Notes"), /* @__PURE__ */ React.createElement(
+    "textarea",
+    {
+      className: "field-input field-textarea",
+      placeholder: "First reaction, what stuck with you, anything you want future-you to remember...",
+      value: notes,
+      onChange: (e) => setNotes(e.target.value)
+    }
+  ), /* @__PURE__ */ React.createElement("div", { className: "form-actions" }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost", onClick: onCancel }, "Cancel"), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      className: "btn btn-primary",
+      onClick: () => onSave({ id: initial?.id || uid(), date: effectiveDate, undated: dateMode === "anytime", location: location2, rating, notes, season: isTv ? season : null, loggedAt: Date.now() })
+    },
+    saveLabel || "Save"
+  )));
 }
 function TicketStub({ ticket, onOpen }) {
   const last = ticket.viewings[ticket.viewings.length - 1];
-  return /* @__PURE__ */ jsxs("button", { className: "stub", onClick: () => onOpen(ticket), children: [
-    /* @__PURE__ */ jsxs("div", { className: "stub-poster", children: [
-      ticket.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(ticket.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ jsx("div", { className: "stub-poster-fallback", children: ticket.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 28 }) : /* @__PURE__ */ jsx(Film, { size: 28 }) }),
-      last.rating != null && last.rating > 0 && /* @__PURE__ */ jsxs("div", { className: "stub-rate-badge", "aria-label": `Rated ${last.rating} out of 10`, children: [
-        /* @__PURE__ */ jsx(Star, { size: 34, strokeWidth: 1, className: "stub-rate-star" }),
-        /* @__PURE__ */ jsx("span", { className: "stub-rate-num", children: last.rating % 1 ? last.rating.toFixed(1) : last.rating })
-      ] }),
-      /* @__PURE__ */ jsx("div", { className: "stub-perf" })
-    ] }),
-    /* @__PURE__ */ jsx("div", { className: "stub-tab", children: /* @__PURE__ */ jsxs("div", { className: "stub-tab-top", children: [
-      /* @__PURE__ */ jsx("div", { className: "stub-title", children: ticket.title }),
-      ticket.viewings.length > 1 && /* @__PURE__ */ jsxs("div", { className: "stub-rewatch-inline", children: [
-        ticket.viewings.length,
-        "\xD7"
-      ] })
-    ] }) }),
-    /* @__PURE__ */ jsx("span", { className: "stub-shine" })
-  ] });
+  return /* @__PURE__ */ React.createElement("button", { className: "stub", onClick: () => onOpen(ticket) }, /* @__PURE__ */ React.createElement("div", { className: "stub-poster" }, ticket.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(ticket.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ React.createElement("div", { className: "stub-poster-fallback" }, ticket.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 28 }) : /* @__PURE__ */ React.createElement(Film, { size: 28 })), last.rating != null && last.rating > 0 && /* @__PURE__ */ React.createElement("div", { className: "stub-rate-badge", "aria-label": `Rated ${last.rating} out of 10` }, /* @__PURE__ */ React.createElement(Star, { size: 34, strokeWidth: 1, className: "stub-rate-star" }), /* @__PURE__ */ React.createElement("span", { className: "stub-rate-num" }, last.rating % 1 ? last.rating.toFixed(1) : last.rating)), /* @__PURE__ */ React.createElement("div", { className: "stub-perf" })), /* @__PURE__ */ React.createElement("div", { className: "stub-tab" }, /* @__PURE__ */ React.createElement("div", { className: "stub-tab-top" }, /* @__PURE__ */ React.createElement("div", { className: "stub-title" }, ticket.title), ticket.viewings.length > 1 && /* @__PURE__ */ React.createElement("div", { className: "stub-rewatch-inline" }, ticket.viewings.length, "\xD7"))), /* @__PURE__ */ React.createElement("span", { className: "stub-shine" }));
 }
-function WatchlistStub({ item, onClick, onLog, onRemove, inTheaters, zip }) {
+function WatchlistStub({ item, onClick, onLog, onRemove, inTheaters, zip, streamNames, streamNew }) {
   const unreleased = item.releaseDate ? item.releaseDate > todayISO() : item.year && Number(item.year) > (/* @__PURE__ */ new Date()).getFullYear();
-  return /* @__PURE__ */ jsxs("div", { className: "stub", children: [
-    /* @__PURE__ */ jsx("button", { className: "stub-poster-link", onClick, "aria-label": item.title, children: /* @__PURE__ */ jsxs("div", { className: "stub-poster", children: [
-      item.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ jsx("div", { className: "stub-poster-fallback", children: item.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 28 }) : /* @__PURE__ */ jsx(Film, { size: 28 }) }),
-      /* @__PURE__ */ jsx("div", { className: "stub-perf" })
-    ] }) }),
-    /* @__PURE__ */ jsxs("div", { className: "stub-tab", children: [
-      /* @__PURE__ */ jsx("div", { className: "stub-tab-top", children: /* @__PURE__ */ jsx("div", { className: "stub-title", children: item.title }) }),
-      inTheaters && !unreleased && /* @__PURE__ */ jsxs("div", { className: "wl-showtimes", onClick: (e) => e.stopPropagation(), children: [
-        /* @__PURE__ */ jsx("span", { className: "wl-showtimes-label", children: "In theaters" }),
-        /* @__PURE__ */ jsxs("span", { className: "wl-showtimes-links", children: [
-          /* @__PURE__ */ jsx("a", { href: buildAmcLink(item.title, zip || ""), target: "_blank", rel: "noreferrer", children: "AMC" }),
-          /* @__PURE__ */ jsx("a", { href: buildRegalLink(item.title, zip || ""), target: "_blank", rel: "noreferrer", children: "Regal" })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "wl-actions", children: [
-        unreleased ? /* @__PURE__ */ jsxs("div", { className: "wl-unreleased", title: "Not released yet", children: [
-          /* @__PURE__ */ jsx(CalendarDays, { size: 12 }),
-          " ",
-          item.releaseDate ? `Out ${formatDate(item.releaseDate)}` : `Out ${item.year}`
-        ] }) : /* @__PURE__ */ jsxs("button", { className: "wl-watched-btn", onClick: (e) => {
-          e.stopPropagation();
-          onLog();
-        }, children: [
-          /* @__PURE__ */ jsx(Check, { size: 12 }),
-          " Mark watched"
-        ] }),
-        /* @__PURE__ */ jsx("button", { className: "wl-remove-btn", onClick: (e) => {
-          e.stopPropagation();
-          onRemove();
-        }, "aria-label": "Remove", children: /* @__PURE__ */ jsx(X, { size: 13 }) })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsx("span", { className: "stub-shine" })
-  ] });
+  return /* @__PURE__ */ React.createElement("div", { className: "stub" }, /* @__PURE__ */ React.createElement("button", { className: "stub-poster-link", onClick, "aria-label": item.title }, /* @__PURE__ */ React.createElement("div", { className: "stub-poster" }, item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ React.createElement("div", { className: "stub-poster-fallback" }, item.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 28 }) : /* @__PURE__ */ React.createElement(Film, { size: 28 })), /* @__PURE__ */ React.createElement("div", { className: "stub-perf" }))), /* @__PURE__ */ React.createElement("div", { className: "stub-tab" }, /* @__PURE__ */ React.createElement("div", { className: "stub-tab-top" }, /* @__PURE__ */ React.createElement("div", { className: "stub-title" }, item.title)), streamNew && /* @__PURE__ */ React.createElement("div", { className: "wl-stream wl-stream-new" }, "Just landed on ", streamNames.slice(0, 3).join(", ")), !streamNew && streamNames && streamNames.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "wl-stream" }, "On ", streamNames.slice(0, 3).join(", ")), inTheaters && !unreleased && /* @__PURE__ */ React.createElement("div", { className: "wl-showtimes", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("span", { className: "wl-showtimes-label" }, "In theaters"), /* @__PURE__ */ React.createElement("span", { className: "wl-showtimes-links" }, /* @__PURE__ */ React.createElement("a", { href: buildAmcLink(item.title, zip || ""), target: "_blank", rel: "noreferrer" }, "AMC"), /* @__PURE__ */ React.createElement("a", { href: buildRegalLink(item.title, zip || ""), target: "_blank", rel: "noreferrer" }, "Regal"))), /* @__PURE__ */ React.createElement("div", { className: "wl-actions" }, unreleased ? /* @__PURE__ */ React.createElement("div", { className: "wl-unreleased", title: "Not released yet" }, /* @__PURE__ */ React.createElement(CalendarDays, { size: 12 }), " ", item.releaseDate ? `Out ${formatDate(item.releaseDate)}` : `Out ${item.year}`) : /* @__PURE__ */ React.createElement("button", { className: "wl-watched-btn", onClick: (e) => {
+    e.stopPropagation();
+    onLog();
+  } }, /* @__PURE__ */ React.createElement(Check, { size: 12 }), " Mark watched"), /* @__PURE__ */ React.createElement("button", { className: "wl-remove-btn", onClick: (e) => {
+    e.stopPropagation();
+    onRemove();
+  }, "aria-label": "Remove" }, /* @__PURE__ */ React.createElement(X, { size: 13 })))), /* @__PURE__ */ React.createElement("span", { className: "stub-shine" }));
 }
 function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
   const [showPoster, setShowPoster] = useState(false);
@@ -985,141 +834,33 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
     };
     onUpdate(t);
   }
-  return /* @__PURE__ */ jsx(Modal, { onClose, wide: true, children: /* @__PURE__ */ jsx("div", { className: "ticket-detail", children: showPoster ? /* @__PURE__ */ jsxs("div", { className: "td-poster-view", children: [
-    ticket.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(ticket.posterPath, "w500"), alt: "", className: "detail-poster" }) : /* @__PURE__ */ jsx("div", { className: "detail-poster detail-poster-fallback", children: ticket.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 48 }) : /* @__PURE__ */ jsx(Film, { size: 48 }) }),
-    /* @__PURE__ */ jsxs("button", { className: "btn btn-ghost flip-hint", onClick: () => setShowPoster(false), children: [
-      /* @__PURE__ */ jsx(ChevronLeft, { size: 14 }),
-      " Back to details"
-    ] })
-  ] }) : /* @__PURE__ */ jsxs("div", { className: "td-back", children: [
-    backdrop ? /* @__PURE__ */ jsxs("div", { className: "td-hero", onClick: () => setShowPoster(true), children: [
-      /* @__PURE__ */ jsx("img", { src: tmdbImg(backdrop, "w780"), alt: "", className: "td-hero-img" }),
-      /* @__PURE__ */ jsxs("div", { className: "td-hero-overlay", children: [
-        /* @__PURE__ */ jsx("div", { className: "td-hero-title", children: ticket.title }),
-        /* @__PURE__ */ jsx("div", { className: "td-hero-genres", children: ticket.mediaType === "tv" ? "TV SHOW" : "MOVIE" })
-      ] })
-    ] }) : null,
-    /* @__PURE__ */ jsxs("div", { className: "td-back-header", style: backdrop ? { marginTop: 12 } : {}, children: [
-      !backdrop && /* @__PURE__ */ jsx("button", { className: "td-thumb-btn", onClick: () => setShowPoster(true), "aria-label": "View poster", children: ticket.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(ticket.posterPath, "w185"), alt: "", className: "td-back-thumb" }) : /* @__PURE__ */ jsx("div", { className: "td-back-thumb td-thumb-fallback", children: ticket.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 22 }) : /* @__PURE__ */ jsx(Film, { size: 22 }) }) }),
-      /* @__PURE__ */ jsxs("div", { className: "td-back-meta", children: [
-        !backdrop && /* @__PURE__ */ jsx("h2", { className: "td-back-title", children: ticket.title }),
-        !backdrop && /* @__PURE__ */ jsx("div", { className: "td-back-genres", children: ticket.mediaType === "tv" ? "TV SHOW" : "MOVIE" }),
-        ticket.viewings.length > 1 && /* @__PURE__ */ jsxs("div", { className: "td-rewatch-count", children: [
-          /* @__PURE__ */ jsx(RefreshCw, { size: 12 }),
-          " Watched ",
-          ticket.viewings.length,
-          "\xD7"
-        ] })
-      ] })
-    ] }),
-    overview && /* @__PURE__ */ jsx("p", { className: "td-overview", children: overview }),
-    (tdRelease || tdRuntime || tdDirector || tdImdb || tdBoxOffice || ticket.voteAverage > 0) && /* @__PURE__ */ jsxs("div", { className: "td-stats", children: [
-      tdRelease && /* @__PURE__ */ jsxs("div", { className: "td-stat", children: [
-        /* @__PURE__ */ jsx("span", { children: "Released" }),
-        formatDate(tdRelease.slice(0, 10)) || tdRelease
-      ] }),
-      tdRuntime && /* @__PURE__ */ jsxs("div", { className: "td-stat", children: [
-        /* @__PURE__ */ jsx("span", { children: "Runtime" }),
-        tdRuntime,
-        " min"
-      ] }),
-      tdDirector && /* @__PURE__ */ jsxs("div", { className: "td-stat", children: [
-        /* @__PURE__ */ jsx("span", { children: "Director" }),
-        tdDirector.name
-      ] }),
-      tdImdb && tdImdb !== "N/A" && /* @__PURE__ */ jsxs("div", { className: "td-stat", children: [
-        /* @__PURE__ */ jsx("span", { children: "IMDb" }),
-        tdImdb,
-        "/10"
-      ] }),
-      ticket.voteAverage > 0 && /* @__PURE__ */ jsxs("div", { className: "td-stat", children: [
-        /* @__PURE__ */ jsx("span", { children: "TMDB" }),
-        ticket.voteAverage.toFixed(1),
-        "/10"
-      ] }),
-      tdBoxOffice && tdBoxOffice !== "N/A" && /* @__PURE__ */ jsxs("div", { className: "td-stat", children: [
-        /* @__PURE__ */ jsx("span", { children: "Box Office" }),
-        tdBoxOffice
-      ] })
-    ] }),
-    tdCast.length > 0 && /* @__PURE__ */ jsxs("div", { className: "td-cast-section", children: [
-      /* @__PURE__ */ jsx("div", { className: "td-cast-label", children: "Cast" }),
-      /* @__PURE__ */ jsx("div", { className: "td-cast-list", children: tdCast.map((c) => /* @__PURE__ */ jsx("span", { className: "cast-chip", children: c.name }, c.id)) })
-    ] }),
-    /* @__PURE__ */ jsxs("a", { className: "btn btn-outline btn-sm td-reddit-btn", href: buildRedditLink(ticket.title, ticket.year), target: "_blank", rel: "noreferrer", children: [
-      /* @__PURE__ */ jsx(ExternalLink, { size: 13 }),
-      " Reddit discussion"
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "td-toolbar", children: [
-      /* @__PURE__ */ jsxs("button", { className: "td-tool-btn", disabled: !ticket.history || !ticket.history.length, onClick: handleUndo, children: [
-        /* @__PURE__ */ jsx(Undo2, { size: 14 }),
-        /* @__PURE__ */ jsx("span", { children: "Undo" })
-      ] }),
-      /* @__PURE__ */ jsxs("button", { className: "td-tool-btn", onClick: () => setLogging(true), children: [
-        /* @__PURE__ */ jsx(Plus, { size: 14 }),
-        /* @__PURE__ */ jsx("span", { children: "Rewatch" })
-      ] }),
-      /* @__PURE__ */ jsxs("button", { className: "td-tool-btn td-tool-danger", onClick: () => onDelete(ticket.id), children: [
-        /* @__PURE__ */ jsx(Trash2, { size: 14 }),
-        /* @__PURE__ */ jsx("span", { children: "Remove" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "viewing-list", children: [
-      (() => {
-        const sortedViewings = ticket.viewings.slice().sort((a, b) => (a.date || "") < (b.date || "") ? 1 : -1);
-        const renderViewing = (v) => /* @__PURE__ */ jsx("div", { className: "viewing-row", children: editingViewingId === v.id ? /* @__PURE__ */ jsx(
-          LogForm,
-          {
-            initial: v,
-            mediaType: ticket.mediaType,
-            tmdb,
-            item: ticket,
-            saveLabel: "Save changes",
-            onSave: handleSaveViewing,
-            onCancel: () => setEditingViewingId(null)
-          }
-        ) : /* @__PURE__ */ jsxs(Fragment, { children: [
-          /* @__PURE__ */ jsxs("div", { className: "viewing-top", children: [
-            /* @__PURE__ */ jsxs("div", { className: "viewing-date", children: [
-              /* @__PURE__ */ jsx(CalendarDays, { size: 12 }),
-              " ",
-              v.undated || !v.date ? "Anytime" : formatDate(v.date)
-            ] }),
-            /* @__PURE__ */ jsx(Stars, { value: v.rating, size: 14 })
-          ] }),
-          v.location && /* @__PURE__ */ jsxs("div", { className: "viewing-loc", children: [
-            /* @__PURE__ */ jsx(MapPin, { size: 12 }),
-            " ",
-            v.location
-          ] }),
-          v.notes && /* @__PURE__ */ jsx("div", { className: "viewing-notes", children: v.notes }),
-          /* @__PURE__ */ jsxs("div", { className: "viewing-actions", children: [
-            /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => setEditingViewingId(v.id), "aria-label": "Edit", children: /* @__PURE__ */ jsx(Pencil, { size: 13 }) }),
-            ticket.viewings.length > 1 && /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => handleRemoveViewing(v.id), "aria-label": "Remove this entry", children: /* @__PURE__ */ jsx(Trash2, { size: 13 }) })
-          ] })
-        ] }) }, v.id);
-        const hasSeasons = ticket.mediaType === "tv" && ticket.viewings.some((v) => v.season != null);
-        if (!hasSeasons) return sortedViewings.map(renderViewing);
-        const groups = /* @__PURE__ */ new Map();
-        sortedViewings.forEach((v) => {
-          const k = v.season == null ? "whole" : v.season;
-          if (!groups.has(k)) groups.set(k, []);
-          groups.get(k).push(v);
-        });
-        const keys = [...groups.keys()].sort(
-          (a, b) => a === "whole" ? 1 : b === "whole" ? -1 : a - b
-        );
-        return keys.map((k) => /* @__PURE__ */ jsxs("div", { className: "season-group", children: [
-          /* @__PURE__ */ jsx("div", { className: "season-group-label", children: k === "whole" ? "Whole show" : `Season ${k}` }),
-          groups.get(k).map(renderViewing)
-        ] }, String(k)));
-      })(),
-      logging && /* @__PURE__ */ jsxs("div", { className: "viewing-row viewing-row-new", children: [
-        /* @__PURE__ */ jsx("div", { className: "field-label", style: { marginTop: 0 }, children: "New viewing" }),
-        /* @__PURE__ */ jsx(LogForm, { mediaType: ticket.mediaType, tmdb, item: ticket, saveLabel: "Add to ticket", onSave: handleSaveViewing, onCancel: () => setLogging(false) })
-      ] })
-    ] })
-  ] }) }) });
+  return /* @__PURE__ */ React.createElement(Modal, { onClose, wide: true }, /* @__PURE__ */ React.createElement("div", { className: "ticket-detail" }, showPoster ? /* @__PURE__ */ React.createElement("div", { className: "td-poster-view" }, ticket.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(ticket.posterPath, "w500"), alt: "", className: "detail-poster" }) : /* @__PURE__ */ React.createElement("div", { className: "detail-poster detail-poster-fallback" }, ticket.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 48 }) : /* @__PURE__ */ React.createElement(Film, { size: 48 })), /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost flip-hint", onClick: () => setShowPoster(false) }, /* @__PURE__ */ React.createElement(ChevronLeft, { size: 14 }), " Back to details")) : /* @__PURE__ */ React.createElement("div", { className: "td-back" }, backdrop ? /* @__PURE__ */ React.createElement("div", { className: "td-hero", onClick: () => setShowPoster(true) }, /* @__PURE__ */ React.createElement("img", { src: tmdbImg(backdrop, "w780"), alt: "", className: "td-hero-img" }), /* @__PURE__ */ React.createElement("div", { className: "td-hero-overlay" }, /* @__PURE__ */ React.createElement("div", { className: "td-hero-title" }, ticket.title), /* @__PURE__ */ React.createElement("div", { className: "td-hero-genres" }, ticket.mediaType === "tv" ? "TV SHOW" : "MOVIE"))) : null, /* @__PURE__ */ React.createElement("div", { className: "td-back-header", style: backdrop ? { marginTop: 12 } : {} }, !backdrop && /* @__PURE__ */ React.createElement("button", { className: "td-thumb-btn", onClick: () => setShowPoster(true), "aria-label": "View poster" }, ticket.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(ticket.posterPath, "w185"), alt: "", className: "td-back-thumb" }) : /* @__PURE__ */ React.createElement("div", { className: "td-back-thumb td-thumb-fallback" }, ticket.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 22 }) : /* @__PURE__ */ React.createElement(Film, { size: 22 }))), /* @__PURE__ */ React.createElement("div", { className: "td-back-meta" }, !backdrop && /* @__PURE__ */ React.createElement("h2", { className: "td-back-title" }, ticket.title), !backdrop && /* @__PURE__ */ React.createElement("div", { className: "td-back-genres" }, ticket.mediaType === "tv" ? "TV SHOW" : "MOVIE"), ticket.viewings.length > 1 && /* @__PURE__ */ React.createElement("div", { className: "td-rewatch-count" }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 12 }), " Watched ", ticket.viewings.length, "\xD7"))), overview && /* @__PURE__ */ React.createElement("p", { className: "td-overview" }, overview), (tdRelease || tdRuntime || tdDirector || tdImdb || tdBoxOffice || ticket.voteAverage > 0) && /* @__PURE__ */ React.createElement("div", { className: "td-stats" }, tdRelease && /* @__PURE__ */ React.createElement("div", { className: "td-stat" }, /* @__PURE__ */ React.createElement("span", null, "Released"), formatDate(tdRelease.slice(0, 10)) || tdRelease), tdRuntime && /* @__PURE__ */ React.createElement("div", { className: "td-stat" }, /* @__PURE__ */ React.createElement("span", null, "Runtime"), tdRuntime, " min"), tdDirector && /* @__PURE__ */ React.createElement("div", { className: "td-stat" }, /* @__PURE__ */ React.createElement("span", null, "Director"), tdDirector.name), tdImdb && tdImdb !== "N/A" && /* @__PURE__ */ React.createElement("div", { className: "td-stat" }, /* @__PURE__ */ React.createElement("span", null, "IMDb"), tdImdb, "/10"), ticket.voteAverage > 0 && /* @__PURE__ */ React.createElement("div", { className: "td-stat" }, /* @__PURE__ */ React.createElement("span", null, "TMDB"), ticket.voteAverage.toFixed(1), "/10"), tdBoxOffice && tdBoxOffice !== "N/A" && /* @__PURE__ */ React.createElement("div", { className: "td-stat" }, /* @__PURE__ */ React.createElement("span", null, "Box Office"), tdBoxOffice)), tdCast.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "td-cast-section" }, /* @__PURE__ */ React.createElement("div", { className: "td-cast-label" }, "Cast"), /* @__PURE__ */ React.createElement("div", { className: "td-cast-list" }, tdCast.map((c) => /* @__PURE__ */ React.createElement("span", { key: c.id, className: "cast-chip" }, c.name)))), /* @__PURE__ */ React.createElement("a", { className: "btn btn-outline btn-sm td-reddit-btn", href: buildRedditLink(ticket.title, ticket.year), target: "_blank", rel: "noreferrer" }, /* @__PURE__ */ React.createElement(ExternalLink, { size: 13 }), " Reddit discussion"), /* @__PURE__ */ React.createElement("div", { className: "td-toolbar" }, /* @__PURE__ */ React.createElement("button", { className: "td-tool-btn", disabled: !ticket.history || !ticket.history.length, onClick: handleUndo }, /* @__PURE__ */ React.createElement(Undo2, { size: 14 }), /* @__PURE__ */ React.createElement("span", null, "Undo")), /* @__PURE__ */ React.createElement("button", { className: "td-tool-btn", onClick: () => setLogging(true) }, /* @__PURE__ */ React.createElement(Plus, { size: 14 }), /* @__PURE__ */ React.createElement("span", null, "Rewatch")), /* @__PURE__ */ React.createElement("button", { className: "td-tool-btn td-tool-danger", onClick: () => onDelete(ticket.id) }, /* @__PURE__ */ React.createElement(Trash2, { size: 14 }), /* @__PURE__ */ React.createElement("span", null, "Remove"))), /* @__PURE__ */ React.createElement("div", { className: "viewing-list" }, (() => {
+    const sortedViewings = ticket.viewings.slice().sort((a, b) => (a.date || "") < (b.date || "") ? 1 : -1);
+    const renderViewing = (v) => /* @__PURE__ */ React.createElement("div", { className: "viewing-row", key: v.id }, editingViewingId === v.id ? /* @__PURE__ */ React.createElement(
+      LogForm,
+      {
+        initial: v,
+        mediaType: ticket.mediaType,
+        tmdb,
+        item: ticket,
+        saveLabel: "Save changes",
+        onSave: handleSaveViewing,
+        onCancel: () => setEditingViewingId(null)
+      }
+    ) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "viewing-top" }, /* @__PURE__ */ React.createElement("div", { className: "viewing-date" }, /* @__PURE__ */ React.createElement(CalendarDays, { size: 12 }), " ", v.undated || !v.date ? "Anytime" : formatDate(v.date)), /* @__PURE__ */ React.createElement(Stars, { value: v.rating, size: 14 })), v.location && /* @__PURE__ */ React.createElement("div", { className: "viewing-loc" }, /* @__PURE__ */ React.createElement(MapPin, { size: 12 }), " ", v.location), v.notes && /* @__PURE__ */ React.createElement("div", { className: "viewing-notes" }, v.notes), /* @__PURE__ */ React.createElement("div", { className: "viewing-actions" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setEditingViewingId(v.id), "aria-label": "Edit" }, /* @__PURE__ */ React.createElement(Pencil, { size: 13 })), ticket.viewings.length > 1 && /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => handleRemoveViewing(v.id), "aria-label": "Remove this entry" }, /* @__PURE__ */ React.createElement(Trash2, { size: 13 })))));
+    const hasSeasons = ticket.mediaType === "tv" && ticket.viewings.some((v) => v.season != null);
+    if (!hasSeasons) return sortedViewings.map(renderViewing);
+    const groups = /* @__PURE__ */ new Map();
+    sortedViewings.forEach((v) => {
+      const k = v.season == null ? "whole" : v.season;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(v);
+    });
+    const keys = [...groups.keys()].sort(
+      (a, b) => a === "whole" ? 1 : b === "whole" ? -1 : a - b
+    );
+    return keys.map((k) => /* @__PURE__ */ React.createElement("div", { className: "season-group", key: String(k) }, /* @__PURE__ */ React.createElement("div", { className: "season-group-label" }, k === "whole" ? "Whole show" : `Season ${k}`), groups.get(k).map(renderViewing)));
+  })(), logging && /* @__PURE__ */ React.createElement("div", { className: "viewing-row viewing-row-new" }, /* @__PURE__ */ React.createElement("div", { className: "field-label", style: { marginTop: 0 } }, "New viewing"), /* @__PURE__ */ React.createElement(LogForm, { mediaType: ticket.mediaType, tmdb, item: ticket, saveLabel: "Add to ticket", onSave: handleSaveViewing, onCancel: () => setLogging(false) }))))));
 }
 function TicketScanner({ tmdb, onClose, onLogNew }) {
   const [stage, setStage] = useState("upload");
@@ -1171,7 +912,7 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
       }
       setStatusText("Matching to a movie...");
       const res = await tmdb.searchMulti(title);
-      const hits = (res.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
+      const hits = (res.results || []).filter((r) => (r.media_type === "movie" || r.media_type === "tv") && !isJunkTvRaw(r)).map(normalize);
       setCandidates(hits.slice(0, 5));
       setChosen(hits[0] || null);
       setStage("confirm");
@@ -1185,7 +926,7 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
     setManualSearching(true);
     try {
       const res = await tmdb.searchMulti(q.trim());
-      const hits = (res.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
+      const hits = (res.results || []).filter((r) => (r.media_type === "movie" || r.media_type === "tv") && !isJunkTvRaw(r)).map(normalize);
       setCandidates(hits.slice(0, 6));
       setChosen(hits[0] || null);
       setStage("confirm");
@@ -1193,93 +934,41 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
     }
     setManualSearching(false);
   }
-  return /* @__PURE__ */ jsxs(Modal, { onClose, children: [
-    /* @__PURE__ */ jsx("h3", { className: "modal-title", children: "Add from ticket" }),
-    stage === "upload" && /* @__PURE__ */ jsxs("div", { children: [
-      /* @__PURE__ */ jsx("p", { className: "sync-note", children: "Choose a photo from your Photo Library \u2014 a ticket stub, AMC/Regal confirmation, or any image with the movie title. AI reads it automatically." }),
-      /* @__PURE__ */ jsxs("button", { className: "btn btn-primary", style: { width: "100%", marginTop: 12 }, onClick: () => fileRef.current && fileRef.current.click(), children: [
-        /* @__PURE__ */ jsx(Camera, { size: 16 }),
-        " Choose from Photos"
-      ] }),
-      /* @__PURE__ */ jsx("input", { ref: fileRef, type: "file", accept: "image/*", style: { display: "none" }, onChange: handleFile }),
-      /* @__PURE__ */ jsx("button", { className: "btn btn-ghost", style: { width: "100%", marginTop: 10 }, onClick: () => setStage("manual"), children: "Type the title instead" })
-    ] }),
-    stage === "reading" && /* @__PURE__ */ jsxs("div", { className: "detail-loading", children: [
-      /* @__PURE__ */ jsx(RefreshCw, { size: 20, className: "spin" }),
-      " ",
-      statusText
-    ] }),
-    stage === "manual" && /* @__PURE__ */ jsxs("div", { children: [
-      statusText && /* @__PURE__ */ jsx("p", { className: "sync-note", style: { marginBottom: 10 }, children: "Couldn't read the screenshot automatically. Search for the title below." }),
-      /* @__PURE__ */ jsxs("div", { className: "search-bar", style: { marginBottom: 10 }, children: [
-        /* @__PURE__ */ jsx(Search, { size: 15 }),
-        /* @__PURE__ */ jsx(
-          "input",
-          {
-            className: "search-input",
-            placeholder: "Type movie title...",
-            value: manualQuery,
-            onChange: (e) => setManualQuery(e.target.value),
-            onKeyDown: (e) => e.key === "Enter" && runManualSearch(manualQuery),
-            autoFocus: true
-          }
-        )
-      ] }),
-      /* @__PURE__ */ jsxs("button", { className: "btn btn-primary", style: { width: "100%" }, disabled: manualSearching || !manualQuery.trim(), onClick: () => runManualSearch(manualQuery), children: [
-        manualSearching ? /* @__PURE__ */ jsx(RefreshCw, { size: 14, className: "spin" }) : /* @__PURE__ */ jsx(Search, { size: 14 }),
-        " Search"
-      ] })
-    ] }),
-    stage === "confirm" && /* @__PURE__ */ jsxs("div", { children: [
-      candidates.length > 0 ? /* @__PURE__ */ jsxs(Fragment, { children: [
-        /* @__PURE__ */ jsx("label", { className: "field-label", children: "Which movie?" }),
-        /* @__PURE__ */ jsx("div", { className: "scan-candidates", children: candidates.map((c) => /* @__PURE__ */ jsxs(
-          "button",
-          {
-            className: "scan-cand" + (chosen && chosen.tmdbId === c.tmdbId ? " scan-cand-active" : ""),
-            onClick: () => setChosen(c),
-            children: [
-              c.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(c.posterPath, "w92"), alt: "" }) : /* @__PURE__ */ jsx("div", { className: "scan-cand-fallback", children: /* @__PURE__ */ jsx(Film, { size: 16 }) }),
-              /* @__PURE__ */ jsxs("span", { children: [
-                c.title,
-                " ",
-                c.year ? `(${c.year})` : ""
-              ] })
-            ]
-          },
-          c.tmdbId + c.mediaType
-        )) })
-      ] }) : /* @__PURE__ */ jsx("p", { className: "sync-note", children: "No results. Try a different title." }),
-      /* @__PURE__ */ jsx("label", { className: "field-label", children: "Date watched" }),
-      /* @__PURE__ */ jsx("input", { className: "field-input", type: "date", value: guessedDate, onChange: (e) => setGuessedDate(e.target.value) }),
-      /* @__PURE__ */ jsxs("label", { className: "field-label", style: { marginTop: 12 }, children: [
-        "Your rating ",
-        scanRating ? `(${scanRating}/10)` : "(optional)"
-      ] }),
-      /* @__PURE__ */ jsx(Stars, { value: scanRating, onChange: setScanRating, size: 28 }),
-      /* @__PURE__ */ jsxs("div", { className: "form-actions", children: [
-        /* @__PURE__ */ jsx("button", { className: "btn btn-ghost", onClick: () => setStage("upload"), children: "Back" }),
-        /* @__PURE__ */ jsxs(
-          "button",
-          {
-            className: "btn btn-primary",
-            disabled: !chosen,
-            onClick: () => {
-              if (!chosen) return;
-              onLogNew(chosen, { id: uid(), date: guessedDate, location: "", rating: scanRating || null, notes: "", loggedAt: Date.now() });
-              onClose();
-            },
-            children: [
-              /* @__PURE__ */ jsx(Check, { size: 14 }),
-              " Add to collection"
-            ]
-          }
-        )
-      ] })
-    ] })
-  ] });
+  return /* @__PURE__ */ React.createElement(Modal, { onClose }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, "Add from ticket"), stage === "upload" && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("p", { className: "sync-note" }, "Choose a photo from your Photo Library \u2014 a ticket stub, AMC/Regal confirmation, or any image with the movie title. AI reads it automatically."), /* @__PURE__ */ React.createElement("button", { className: "btn btn-primary", style: { width: "100%", marginTop: 12 }, onClick: () => fileRef.current && fileRef.current.click() }, /* @__PURE__ */ React.createElement(Camera, { size: 16 }), " Choose from Photos"), /* @__PURE__ */ React.createElement("input", { ref: fileRef, type: "file", accept: "image/*", style: { display: "none" }, onChange: handleFile }), /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost", style: { width: "100%", marginTop: 10 }, onClick: () => setStage("manual") }, "Type the title instead")), stage === "reading" && /* @__PURE__ */ React.createElement("div", { className: "detail-loading" }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 20, className: "spin" }), " ", statusText), stage === "manual" && /* @__PURE__ */ React.createElement("div", null, statusText && /* @__PURE__ */ React.createElement("p", { className: "sync-note", style: { marginBottom: 10 } }, "Couldn't read the screenshot automatically. Search for the title below."), /* @__PURE__ */ React.createElement("div", { className: "search-bar", style: { marginBottom: 10 } }, /* @__PURE__ */ React.createElement(Search, { size: 15 }), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      className: "search-input",
+      placeholder: "Type movie title...",
+      value: manualQuery,
+      onChange: (e) => setManualQuery(e.target.value),
+      onKeyDown: (e) => e.key === "Enter" && runManualSearch(manualQuery),
+      autoFocus: true
+    }
+  )), /* @__PURE__ */ React.createElement("button", { className: "btn btn-primary", style: { width: "100%" }, disabled: manualSearching || !manualQuery.trim(), onClick: () => runManualSearch(manualQuery) }, manualSearching ? /* @__PURE__ */ React.createElement(RefreshCw, { size: 14, className: "spin" }) : /* @__PURE__ */ React.createElement(Search, { size: 14 }), " Search")), stage === "confirm" && /* @__PURE__ */ React.createElement("div", null, candidates.length > 0 ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("label", { className: "field-label" }, "Which movie?"), /* @__PURE__ */ React.createElement("div", { className: "scan-candidates" }, candidates.map((c) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: c.tmdbId + c.mediaType,
+      className: "scan-cand" + (chosen && chosen.tmdbId === c.tmdbId ? " scan-cand-active" : ""),
+      onClick: () => setChosen(c)
+    },
+    c.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(c.posterPath, "w92"), alt: "" }) : /* @__PURE__ */ React.createElement("div", { className: "scan-cand-fallback" }, /* @__PURE__ */ React.createElement(Film, { size: 16 })),
+    /* @__PURE__ */ React.createElement("span", null, c.title, " ", c.year ? `(${c.year})` : "")
+  )))) : /* @__PURE__ */ React.createElement("p", { className: "sync-note" }, "No results. Try a different title."), /* @__PURE__ */ React.createElement("label", { className: "field-label" }, "Date watched"), /* @__PURE__ */ React.createElement("input", { className: "field-input", type: "date", value: guessedDate, onChange: (e) => setGuessedDate(e.target.value) }), /* @__PURE__ */ React.createElement("label", { className: "field-label", style: { marginTop: 12 } }, "Your rating ", scanRating ? `(${scanRating}/10)` : "(optional)"), /* @__PURE__ */ React.createElement(Stars, { value: scanRating, onChange: setScanRating, size: 28 }), /* @__PURE__ */ React.createElement("div", { className: "form-actions" }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost", onClick: () => setStage("upload") }, "Back"), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      className: "btn btn-primary",
+      disabled: !chosen,
+      onClick: () => {
+        if (!chosen) return;
+        onLogNew(chosen, { id: uid(), date: guessedDate, location: "", rating: scanRating || null, notes: "", loggedAt: Date.now() });
+        onClose();
+      }
+    },
+    /* @__PURE__ */ React.createElement(Check, { size: 14 }),
+    " Add to collection"
+  ))));
 }
-function CollectionView({ collection, watchlist, tmdb, taste, settings, people, onUpdateTicket, onDeleteTicket, onLogFromWatchlist, onAddToWatchlist, onLogNew, onRemoveFromWatchlist, onShowYIR }) {
+function CollectionView({ collection, watchlist, tmdb, taste, settings, people, onUpdateTicket, onDeleteTicket, onLogFromWatchlist, onAddToWatchlist, onLogNew, onRemoveFromWatchlist, onShowYIR, streamMap, newStreamKeys, onDismissStreamAlerts }) {
   const [open, setOpen] = useState(null);
   const [showWatchlist, setShowWatchlist] = useState(false);
   const [loggingWl, setLoggingWl] = useState(null);
@@ -1351,7 +1040,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
     return list;
   }, [collection, query, genreFilter, sort, yearFilter]);
   if (open) {
-    return /* @__PURE__ */ jsx(
+    return /* @__PURE__ */ React.createElement(
       TicketDetail,
       {
         ticket: open,
@@ -1370,143 +1059,73 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
     );
   }
   const showControls = collection.length > 0;
-  return /* @__PURE__ */ jsxs("div", { className: "view", children: [
-    detail && /* @__PURE__ */ jsx(
-      DetailModal,
-      {
-        item: detail,
-        tmdb,
-        badges: [],
-        settings,
-        onClose: () => setDetail(null),
-        onAddToWatchlist: null,
-        onLogNew: (it, entry, credits) => {
-          onLogNew(it, entry, credits);
-          onRemoveFromWatchlist(it);
-        }
+  return /* @__PURE__ */ React.createElement("div", { className: "view" }, detail && /* @__PURE__ */ React.createElement(
+    DetailModal,
+    {
+      item: detail,
+      tmdb,
+      badges: [],
+      settings,
+      onClose: () => setDetail(null),
+      onAddToWatchlist: null,
+      onLogNew: (it, entry, credits) => {
+        onLogNew(it, entry, credits);
+        onRemoveFromWatchlist(it);
       }
-    ),
-    /* @__PURE__ */ jsxs("div", { className: "view-toggle", children: [
-      /* @__PURE__ */ jsxs("button", { className: !showWatchlist ? "toggle-pill active" : "toggle-pill", onClick: () => setShowWatchlist(false), children: [
-        "Collected (",
-        collection.length,
-        ")"
-      ] }),
-      /* @__PURE__ */ jsxs("button", { className: showWatchlist ? "toggle-pill active" : "toggle-pill", onClick: () => setShowWatchlist(true), children: [
-        "Wishlist (",
-        watchlist.length,
-        ")"
-      ] })
-    ] }),
-    !showWatchlist && (collection.length === 0 ? /* @__PURE__ */ jsx(
-      EmptyState,
-      {
-        icon: /* @__PURE__ */ jsx(Ticket, { size: 32 }),
-        title: "Your binder is empty",
-        body: "Log the next thing you watch and it'll show up here as a ticket stub you can flip open any time."
-      }
-    ) : /* @__PURE__ */ jsxs(Fragment, { children: [
-      showControls && /* @__PURE__ */ jsxs("div", { className: "collection-controls", children: [
-        /* @__PURE__ */ jsxs("div", { className: "search-bar collection-search", children: [
-          /* @__PURE__ */ jsx(Search, { size: 15 }),
-          /* @__PURE__ */ jsx(
-            "input",
-            {
-              className: "search-input",
-              placeholder: "Search your collection",
-              value: query,
-              onChange: (e) => setQuery(e.target.value)
-            }
-          )
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "filter-row", children: [
-          /* @__PURE__ */ jsxs("select", { className: "filter-select", value: sort, onChange: (e) => setSort(e.target.value), children: [
-            /* @__PURE__ */ jsx("option", { value: "recent", children: "Recently collected" }),
-            /* @__PURE__ */ jsx("option", { value: "oldest", children: "Oldest first" }),
-            /* @__PURE__ */ jsx("option", { value: "highest", children: "Highest rated" }),
-            /* @__PURE__ */ jsx("option", { value: "lowest", children: "Lowest rated" })
-          ] }),
-          /* @__PURE__ */ jsxs("select", { className: "filter-select", value: genreFilter, onChange: (e) => setGenreFilter(e.target.value), children: [
-            /* @__PURE__ */ jsx("option", { value: "all", children: "All genres" }),
-            genreOptions.map((g) => /* @__PURE__ */ jsx("option", { value: g.id, children: g.name }, g.id))
-          ] }),
-          /* @__PURE__ */ jsxs("select", { className: "filter-select", value: yearFilter, onChange: (e) => setYearFilter(e.target.value), children: [
-            /* @__PURE__ */ jsx("option", { value: "all", children: "All years" }),
-            yearOptions.map((y) => /* @__PURE__ */ jsx("option", { value: y, children: y }, y))
-          ] })
-        ] })
-      ] }),
-      visibleCollection.length === 0 ? /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Search, { size: 28 }), title: "No matches", body: "Nothing in your collection fits that filter." }) : /* @__PURE__ */ jsx("div", { className: "stub-grid stub-grid-compact", children: visibleCollection.map((t) => /* @__PURE__ */ jsx(TicketStub, { ticket: t, onOpen: setOpen }, t.id)) })
-    ] })),
-    loggingWl && /* @__PURE__ */ jsxs(Modal, { onClose: () => setLoggingWl(null), children: [
-      /* @__PURE__ */ jsx("h3", { className: "modal-title", children: loggingWl.title }),
-      /* @__PURE__ */ jsx(LogForm, { mediaType: loggingWl.mediaType, tmdb, item: loggingWl, saveLabel: "Add to collection", onCancel: () => setLoggingWl(null), onSave: (entry) => {
-        onLogNew(loggingWl, entry);
-        setLoggingWl(null);
-      } })
-    ] }),
-    showWatchlist && (watchlist.length === 0 ? /* @__PURE__ */ jsx(
-      EmptyState,
-      {
-        icon: /* @__PURE__ */ jsx(Heart, { size: 32 }),
-        title: "Wishlist is empty",
-        body: "Swipe right on something in Discover, or save it from Search, and it'll wait here until you've watched it."
-      }
-    ) : /* @__PURE__ */ jsxs(Fragment, { children: [
-      /* @__PURE__ */ jsxs("div", { className: "collection-controls", children: [
-        /* @__PURE__ */ jsxs("div", { className: "search-bar collection-search", children: [
-          /* @__PURE__ */ jsx(Search, { size: 15 }),
-          /* @__PURE__ */ jsx(
-            "input",
-            {
-              className: "search-input",
-              placeholder: "Search your wishlist",
-              value: wlQuery,
-              onChange: (e) => setWlQuery(e.target.value)
-            }
-          )
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "filter-row", children: [
-          /* @__PURE__ */ jsxs("select", { className: "filter-select", value: wlSort, onChange: (e) => setWlSort(e.target.value), children: [
-            /* @__PURE__ */ jsx("option", { value: "added", children: "Recently added" }),
-            /* @__PURE__ */ jsx("option", { value: "title", children: "Title A\u2013Z" }),
-            /* @__PURE__ */ jsx("option", { value: "year", children: "Newest release" })
-          ] }),
-          wlGenreOptions.length > 0 && /* @__PURE__ */ jsxs("select", { className: "filter-select", value: wlGenre, onChange: (e) => setWlGenre(e.target.value), children: [
-            /* @__PURE__ */ jsx("option", { value: "all", children: "All genres" }),
-            wlGenreOptions.map((g) => /* @__PURE__ */ jsx("option", { value: g.id, children: g.name }, g.id))
-          ] })
-        ] })
-      ] }),
-      visibleWatchlist.length === 0 ? /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Search, { size: 28 }), title: "No matches", body: "Nothing in your wishlist fits that filter." }) : /* @__PURE__ */ jsx("div", { className: "stub-grid stub-grid-compact", children: visibleWatchlist.map((w) => /* @__PURE__ */ jsx(
-        WatchlistStub,
-        {
-          item: w,
-          inTheaters: w.mediaType !== "tv" && nowPlayingIds.has(w.tmdbId),
-          zip: settings.zip || "",
-          onClick: () => setDetail(w),
-          onLog: () => setLoggingWl(w),
-          onRemove: () => onRemoveFromWatchlist(w)
-        },
-        w.tmdbId + w.mediaType
-      )) })
-    ] })),
-    /* @__PURE__ */ jsx("div", { style: { height: "24px" } })
-  ] });
+    }
+  ), /* @__PURE__ */ React.createElement("div", { className: "view-toggle" }, /* @__PURE__ */ React.createElement("button", { className: !showWatchlist ? "toggle-pill active" : "toggle-pill", onClick: () => setShowWatchlist(false) }, "Collected (", collection.length, ")"), /* @__PURE__ */ React.createElement("button", { className: showWatchlist ? "toggle-pill active" : "toggle-pill", onClick: () => setShowWatchlist(true) }, "Wishlist (", watchlist.length, ")")), !showWatchlist && (collection.length === 0 ? /* @__PURE__ */ React.createElement(
+    EmptyState,
+    {
+      icon: /* @__PURE__ */ React.createElement(Ticket, { size: 32 }),
+      title: "Your binder is empty",
+      body: "Log the next thing you watch and it'll show up here as a ticket stub you can flip open any time."
+    }
+  ) : /* @__PURE__ */ React.createElement(React.Fragment, null, showControls && /* @__PURE__ */ React.createElement("div", { className: "collection-controls" }, /* @__PURE__ */ React.createElement("div", { className: "search-bar collection-search" }, /* @__PURE__ */ React.createElement(Search, { size: 15 }), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      className: "search-input",
+      placeholder: "Search your collection",
+      value: query,
+      onChange: (e) => setQuery(e.target.value)
+    }
+  )), /* @__PURE__ */ React.createElement("div", { className: "filter-row" }, /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: sort, onChange: (e) => setSort(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "recent" }, "Recently collected"), /* @__PURE__ */ React.createElement("option", { value: "oldest" }, "Oldest first"), /* @__PURE__ */ React.createElement("option", { value: "highest" }, "Highest rated"), /* @__PURE__ */ React.createElement("option", { value: "lowest" }, "Lowest rated")), /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: genreFilter, onChange: (e) => setGenreFilter(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "all" }, "All genres"), genreOptions.map((g) => /* @__PURE__ */ React.createElement("option", { key: g.id, value: g.id }, g.name))), /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: yearFilter, onChange: (e) => setYearFilter(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "all" }, "All years"), yearOptions.map((y) => /* @__PURE__ */ React.createElement("option", { key: y, value: y }, y))))), visibleCollection.length === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Search, { size: 28 }), title: "No matches", body: "Nothing in your collection fits that filter." }) : /* @__PURE__ */ React.createElement("div", { className: "stub-grid stub-grid-compact" }, visibleCollection.map((t) => /* @__PURE__ */ React.createElement(TicketStub, { ticket: t, key: t.id, onOpen: setOpen }))))), loggingWl && /* @__PURE__ */ React.createElement(Modal, { onClose: () => setLoggingWl(null) }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, loggingWl.title), /* @__PURE__ */ React.createElement(LogForm, { mediaType: loggingWl.mediaType, tmdb, item: loggingWl, saveLabel: "Add to collection", onCancel: () => setLoggingWl(null), onSave: (entry) => {
+    onLogNew(loggingWl, entry);
+    setLoggingWl(null);
+  } })), showWatchlist && (watchlist.length === 0 ? /* @__PURE__ */ React.createElement(
+    EmptyState,
+    {
+      icon: /* @__PURE__ */ React.createElement(Heart, { size: 32 }),
+      title: "Wishlist is empty",
+      body: "Swipe right on something in Discover, or save it from Search, and it'll wait here until you've watched it."
+    }
+  ) : /* @__PURE__ */ React.createElement(React.Fragment, null, newStreamKeys && newStreamKeys.size > 0 && /* @__PURE__ */ React.createElement("div", { className: "stream-banner" }, /* @__PURE__ */ React.createElement("span", { className: "stream-banner-text" }, "New on streaming from your wishlist: ", watchlist.filter((w) => newStreamKeys.has(w.tmdbId + w.mediaType)).map((w) => w.title).slice(0, 4).join(", "), newStreamKeys.size > 4 ? ` +${newStreamKeys.size - 4} more` : ""), /* @__PURE__ */ React.createElement("button", { className: "stream-banner-btn", onClick: onDismissStreamAlerts }, "Got it")), /* @__PURE__ */ React.createElement("div", { className: "collection-controls" }, /* @__PURE__ */ React.createElement("div", { className: "search-bar collection-search" }, /* @__PURE__ */ React.createElement(Search, { size: 15 }), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      className: "search-input",
+      placeholder: "Search your wishlist",
+      value: wlQuery,
+      onChange: (e) => setWlQuery(e.target.value)
+    }
+  )), /* @__PURE__ */ React.createElement("div", { className: "filter-row" }, /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: wlSort, onChange: (e) => setWlSort(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "added" }, "Recently added"), /* @__PURE__ */ React.createElement("option", { value: "title" }, "Title A\u2013Z"), /* @__PURE__ */ React.createElement("option", { value: "year" }, "Newest release")), wlGenreOptions.length > 0 && /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: wlGenre, onChange: (e) => setWlGenre(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "all" }, "All genres"), wlGenreOptions.map((g) => /* @__PURE__ */ React.createElement("option", { key: g.id, value: g.id }, g.name))))), visibleWatchlist.length === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Search, { size: 28 }), title: "No matches", body: "Nothing in your wishlist fits that filter." }) : /* @__PURE__ */ React.createElement("div", { className: "stub-grid stub-grid-compact" }, visibleWatchlist.map((w) => /* @__PURE__ */ React.createElement(
+    WatchlistStub,
+    {
+      key: w.tmdbId + w.mediaType,
+      item: w,
+      inTheaters: w.mediaType !== "tv" && nowPlayingIds.has(w.tmdbId),
+      zip: settings.zip || "",
+      streamNames: streamMap ? streamMap[w.tmdbId + w.mediaType] : null,
+      streamNew: !!(newStreamKeys && newStreamKeys.has(w.tmdbId + w.mediaType)),
+      onClick: () => setDetail(w),
+      onLog: () => setLoggingWl(w),
+      onRemove: () => onRemoveFromWatchlist(w)
+    }
+  ))))), /* @__PURE__ */ React.createElement("div", { style: { height: "24px" } }));
 }
 function EmptyState({ icon, title, body }) {
-  return /* @__PURE__ */ jsxs("div", { className: "empty-state", children: [
-    /* @__PURE__ */ jsx("div", { className: "empty-icon", children: icon }),
-    /* @__PURE__ */ jsx("div", { className: "empty-title", children: title }),
-    /* @__PURE__ */ jsx("div", { className: "empty-body", children: body })
-  ] });
+  return /* @__PURE__ */ React.createElement("div", { className: "empty-state" }, /* @__PURE__ */ React.createElement("div", { className: "empty-icon" }, icon), /* @__PURE__ */ React.createElement("div", { className: "empty-title" }, title), /* @__PURE__ */ React.createElement("div", { className: "empty-body" }, body));
 }
 function SwipeButtons({ onSkip, onSeen, onWant }) {
-  return /* @__PURE__ */ jsxs("div", { className: "swipe-buttons", children: [
-    /* @__PURE__ */ jsx("button", { className: "round-btn round-btn-skip", onClick: onSkip, "aria-label": "Skip", children: /* @__PURE__ */ jsx(X, { size: 22 }) }),
-    /* @__PURE__ */ jsx("button", { className: "round-btn round-btn-seen", onClick: onSeen, "aria-label": "Already seen it", children: /* @__PURE__ */ jsx(Eye, { size: 26 }) }),
-    /* @__PURE__ */ jsx("button", { className: "round-btn round-btn-want", onClick: onWant, "aria-label": "Save to want-to-see", children: /* @__PURE__ */ jsx(Bookmark, { size: 20 }) })
-  ] });
+  return /* @__PURE__ */ React.createElement("div", { className: "swipe-buttons" }, /* @__PURE__ */ React.createElement("button", { className: "round-btn round-btn-skip", onClick: onSkip, "aria-label": "Skip" }, /* @__PURE__ */ React.createElement(X, { size: 22 })), /* @__PURE__ */ React.createElement("button", { className: "round-btn round-btn-seen", onClick: onSeen, "aria-label": "Already seen it" }, /* @__PURE__ */ React.createElement(Eye, { size: 26 })), /* @__PURE__ */ React.createElement("button", { className: "round-btn round-btn-want", onClick: onWant, "aria-label": "Save to want-to-see" }, /* @__PURE__ */ React.createElement(Bookmark, { size: 20 })));
 }
 function matchColor(pct) {
   const t = Math.max(0, Math.min(100, pct)) / 100;
@@ -1530,35 +1149,23 @@ function MatchRing({ pct, conf }) {
   const c = 2 * Math.PI * r;
   const off = c * (1 - Math.max(1, Math.min(99, pct)) / 100);
   const mc = matchColor(pct);
-  return /* @__PURE__ */ jsxs("div", { className: "match-ring", children: [
-    /* @__PURE__ */ jsxs("svg", { width: "72", height: "72", viewBox: "0 0 72 72", children: [
-      /* @__PURE__ */ jsx("circle", { cx: "36", cy: "36", r, fill: "rgba(15,1,0,0.6)", stroke: "rgba(255,245,245,0.16)", strokeWidth: "4.5" }),
-      /* @__PURE__ */ jsx(
-        "circle",
-        {
-          cx: "36",
-          cy: "36",
-          r,
-          fill: "none",
-          stroke: mc.stroke,
-          strokeWidth: "4.5",
-          strokeLinecap: "round",
-          strokeDasharray: c,
-          strokeDashoffset: off,
-          transform: "rotate(-90 36 36)",
-          className: "match-ring-arc",
-          style: { filter: `drop-shadow(0 0 5px ${mc.glow})` }
-        }
-      )
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "match-ring-label", children: [
-      /* @__PURE__ */ jsxs("b", { children: [
-        pct,
-        "%"
-      ] }),
-      /* @__PURE__ */ jsx("span", { style: { color: mc.stroke }, children: "match" })
-    ] })
-  ] });
+  return /* @__PURE__ */ React.createElement("div", { className: "match-ring" }, /* @__PURE__ */ React.createElement("svg", { width: "72", height: "72", viewBox: "0 0 72 72" }, /* @__PURE__ */ React.createElement("circle", { cx: "36", cy: "36", r, fill: "rgba(15,1,0,0.6)", stroke: "rgba(255,245,245,0.16)", strokeWidth: "4.5" }), /* @__PURE__ */ React.createElement(
+    "circle",
+    {
+      cx: "36",
+      cy: "36",
+      r,
+      fill: "none",
+      stroke: mc.stroke,
+      strokeWidth: "4.5",
+      strokeLinecap: "round",
+      strokeDasharray: c,
+      strokeDashoffset: off,
+      transform: "rotate(-90 36 36)",
+      className: "match-ring-arc",
+      style: { filter: `drop-shadow(0 0 5px ${mc.glow})` }
+    }
+  )), /* @__PURE__ */ React.createElement("div", { className: "match-ring-label" }, /* @__PURE__ */ React.createElement("b", null, pct, "%"), /* @__PURE__ */ React.createElement("span", { style: { color: mc.stroke } }, "match")));
 }
 function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection, tmdb, onSkip, onWant, onRate, onTapInfo }) {
   const [drag, setDrag] = useState({ x: 0, active: false });
@@ -1647,7 +1254,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
   const dragPct = Math.min(1, Math.abs(drag.x) / 120);
   const dragScale = drag.active && Math.abs(drag.x) > 4 ? 1.015 : 1;
   const flyClass = flying ? ` swipe-fly-${flying}` : "";
-  return /* @__PURE__ */ jsxs(
+  return /* @__PURE__ */ React.createElement(
     "div",
     {
       ref: cardRef,
@@ -1661,109 +1268,66 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
       onTouchStart: down,
       onTouchMove: move,
       onTouchEnd: up,
-      onTouchCancel: () => setDrag({ x: 0, active: false }),
-      children: [
-        drag.x !== 0 && !flying && /* @__PURE__ */ jsx("div", { className: "swipe-glow " + (drag.x > 0 ? "swipe-glow-want" : "swipe-glow-skip"), style: { opacity: dragPct * 0.95 } }),
-        drag.x > 0 && /* @__PURE__ */ jsx("div", { className: "swipe-flag swipe-flag-want", style: { opacity: dragPct, transform: `rotate(-8deg) scale(${0.55 + dragPct * 0.55})` }, children: "SAVE IT" }),
-        drag.x < 0 && /* @__PURE__ */ jsx("div", { className: "swipe-flag swipe-flag-skip", style: { opacity: dragPct, transform: `rotate(8deg) scale(${0.55 + dragPct * 0.55})` }, children: "SKIP" }),
-        matchPct != null && /* @__PURE__ */ jsx(
-          "button",
-          {
-            className: "match-ring-btn",
-            "aria-label": "What does the match score mean",
-            onTouchStart: (e) => e.stopPropagation(),
-            onClick: (e) => {
-              e.stopPropagation();
-              setShowRingInfo(true);
-            },
-            children: /* @__PURE__ */ jsx(MatchRing, { pct: matchPct, conf: matchConf })
-          }
-        ),
-        showRingInfo && /* @__PURE__ */ jsx("div", { className: "ring-info-overlay", onTouchStart: (e) => e.stopPropagation(), onClick: (e) => {
+      onTouchCancel: () => setDrag({ x: 0, active: false })
+    },
+    drag.x !== 0 && !flying && /* @__PURE__ */ React.createElement("div", { className: "swipe-glow " + (drag.x > 0 ? "swipe-glow-want" : "swipe-glow-skip"), style: { opacity: dragPct * 0.95 } }),
+    drag.x > 0 && /* @__PURE__ */ React.createElement("div", { className: "swipe-flag swipe-flag-want", style: { opacity: dragPct, transform: `rotate(-8deg) scale(${0.55 + dragPct * 0.55})` } }, "SAVE IT"),
+    drag.x < 0 && /* @__PURE__ */ React.createElement("div", { className: "swipe-flag swipe-flag-skip", style: { opacity: dragPct, transform: `rotate(8deg) scale(${0.55 + dragPct * 0.55})` } }, "SKIP"),
+    matchPct != null && /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        className: "match-ring-btn",
+        "aria-label": "What does the match score mean",
+        onTouchStart: (e) => e.stopPropagation(),
+        onClick: (e) => {
           e.stopPropagation();
-          setShowRingInfo(false);
-        }, children: /* @__PURE__ */ jsxs("div", { className: "ring-info-card", onClick: (e) => e.stopPropagation(), children: [
-          /* @__PURE__ */ jsxs("div", { className: "ring-info-title", children: [
-            matchPct,
-            "% match"
-          ] }),
-          /* @__PURE__ */ jsx("div", { className: "ring-info-lines", children: explainMatch(item, taste, people, crowd, collection).lines.map((l, i) => /* @__PURE__ */ jsx("div", { className: "ring-info-line", children: l }, i)) }),
-          /* @__PURE__ */ jsxs("p", { className: "ring-info-legend", children: [
-            /* @__PURE__ */ jsx("span", { style: { color: "hsl(4,85%,56%)" }, children: "red" }),
-            " under 50 \xB7 ",
-            /* @__PURE__ */ jsx("span", { style: { color: "hsl(42,96%,55%)" }, children: "amber" }),
-            " 50-69 \xB7 ",
-            /* @__PURE__ */ jsx("span", { style: { color: "hsl(145,70%,48%)" }, children: "green" }),
-            " 70+"
-          ] }),
-          matchConf && /* @__PURE__ */ jsxs("p", { className: "ring-info-conf", children: [
-            "Confidence: ",
-            matchConf,
-            " - it sharpens as you rate more."
-          ] }),
-          /* @__PURE__ */ jsx("button", { className: "btn btn-primary", onClick: (e) => {
-            e.stopPropagation();
-            setShowRingInfo(false);
-          }, children: "Got it" })
-        ] }) }),
-        /* @__PURE__ */ jsx(
-          "button",
-          {
-            className: "swipe-poster-btn",
-            onClick: () => {
-              if (!moved.current) onTapInfo();
-            },
-            "aria-label": "More info",
-            children: item.posterPath ? /* @__PURE__ */ jsxs(Fragment, { children: [
-              /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w500"), alt: "", className: "swipe-poster-blur", draggable: false }),
-              /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w500"), alt: "", className: "swipe-poster", draggable: false })
-            ] }) : /* @__PURE__ */ jsx("div", { className: "swipe-poster swipe-poster-fallback", children: item.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 40 }) : /* @__PURE__ */ jsx(Film, { size: 40 }) })
-          }
-        ),
-        /* @__PURE__ */ jsxs("div", { className: "swipe-meta", children: [
-          /* @__PURE__ */ jsx("div", { className: "swipe-title", children: item.title }),
-          /* @__PURE__ */ jsxs("div", { className: "swipe-sub", children: [
-            item.year ? `${item.year} \xB7 ` : "",
-            item.mediaType === "tv" ? "TV SHOW" : "MOVIE"
-          ] }),
-          /* @__PURE__ */ jsx("div", { className: "swipe-perf" }),
-          /* @__PURE__ */ jsx(WhyWatch, { item, matchPct })
-        ] }),
-        /* @__PURE__ */ jsx("div", { className: "swipe-buttons-wrap", children: /* @__PURE__ */ jsx(
-          SwipeButtons,
-          {
-            onSkip: () => fly("left", onSkip),
-            onSeen: () => setChoice("rate"),
-            onWant: () => fly("right", onWant)
-          }
-        ) }),
-        choice && /* @__PURE__ */ jsx("div", { className: "choice-overlay", onMouseDown: (e) => e.stopPropagation(), onTouchStart: (e) => e.stopPropagation(), children: choice === "choose" ? /* @__PURE__ */ jsxs(Fragment, { children: [
-          /* @__PURE__ */ jsx("div", { className: "choice-title", children: item.title }),
-          /* @__PURE__ */ jsx("button", { className: "choice-btn choice-btn-want", onClick: () => fly("right", onWant), children: "WANT TO WATCH" }),
-          /* @__PURE__ */ jsx("button", { className: "choice-btn choice-btn-seen", onClick: () => setChoice("rate"), children: "I'VE SEEN IT" }),
-          /* @__PURE__ */ jsx("button", { className: "choice-dismiss", onClick: () => setChoice(null), children: "not now" })
-        ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
-          /* @__PURE__ */ jsx("div", { className: "choice-title", children: "Rate it" }),
-          /* @__PURE__ */ jsx("div", { className: "choice-stars", children: /* @__PURE__ */ jsx(Stars, { value: rateVal, onChange: setRateVal, size: 30 }) }),
-          /* @__PURE__ */ jsx(
-            "button",
-            {
-              className: "choice-btn choice-btn-want",
-              disabled: !rateVal,
-              style: !rateVal ? { opacity: 0.45 } : void 0,
-              onClick: () => rateVal && fly("up", () => onRate(item, { id: uid(), date: todayISO(), undated: false, location: "", rating: rateVal, notes: "", loggedAt: Date.now() })),
-              children: "LOG IT"
-            }
-          ),
-          /* @__PURE__ */ jsx("button", { className: "choice-dismiss", onClick: () => setChoice("choose"), children: "back" })
-        ] }) })
-      ]
-    }
+          setShowRingInfo(true);
+        }
+      },
+      /* @__PURE__ */ React.createElement(MatchRing, { pct: matchPct, conf: matchConf })
+    ),
+    showRingInfo && /* @__PURE__ */ React.createElement("div", { className: "ring-info-overlay", onTouchStart: (e) => e.stopPropagation(), onClick: (e) => {
+      e.stopPropagation();
+      setShowRingInfo(false);
+    } }, /* @__PURE__ */ React.createElement("div", { className: "ring-info-card", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "ring-info-title" }, matchPct, "% match"), /* @__PURE__ */ React.createElement("div", { className: "ring-info-lines" }, explainMatch(item, taste, people, crowd, collection).lines.map((l, i) => /* @__PURE__ */ React.createElement("div", { className: "ring-info-line", key: i }, l))), /* @__PURE__ */ React.createElement("p", { className: "ring-info-legend" }, /* @__PURE__ */ React.createElement("span", { style: { color: "hsl(4,85%,56%)" } }, "red"), " under 50 \xB7 ", /* @__PURE__ */ React.createElement("span", { style: { color: "hsl(42,96%,55%)" } }, "amber"), " 50-69 \xB7 ", /* @__PURE__ */ React.createElement("span", { style: { color: "hsl(145,70%,48%)" } }, "green"), " 70+"), matchConf && /* @__PURE__ */ React.createElement("p", { className: "ring-info-conf" }, "Confidence: ", matchConf, " - it sharpens as you rate more."), /* @__PURE__ */ React.createElement("button", { className: "btn btn-primary", onClick: (e) => {
+      e.stopPropagation();
+      setShowRingInfo(false);
+    } }, "Got it"))),
+    /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        className: "swipe-poster-btn",
+        onClick: () => {
+          if (!moved.current) onTapInfo();
+        },
+        "aria-label": "More info"
+      },
+      item.posterPath ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w500"), alt: "", className: "swipe-poster-blur", draggable: false }), /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w500"), alt: "", className: "swipe-poster", draggable: false })) : /* @__PURE__ */ React.createElement("div", { className: "swipe-poster swipe-poster-fallback" }, item.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 40 }) : /* @__PURE__ */ React.createElement(Film, { size: 40 }))
+    ),
+    /* @__PURE__ */ React.createElement("div", { className: "swipe-meta" }, /* @__PURE__ */ React.createElement("div", { className: "swipe-title" }, item.title), /* @__PURE__ */ React.createElement("div", { className: "swipe-sub" }, item.year ? `${item.year} \xB7 ` : "", item.mediaType === "tv" ? "TV SHOW" : "MOVIE"), /* @__PURE__ */ React.createElement("div", { className: "swipe-perf" }), /* @__PURE__ */ React.createElement(WhyWatch, { item, matchPct })),
+    /* @__PURE__ */ React.createElement("div", { className: "swipe-buttons-wrap" }, /* @__PURE__ */ React.createElement(
+      SwipeButtons,
+      {
+        onSkip: () => fly("left", onSkip),
+        onSeen: () => setChoice("rate"),
+        onWant: () => fly("right", onWant)
+      }
+    )),
+    choice && /* @__PURE__ */ React.createElement("div", { className: "choice-overlay", onMouseDown: (e) => e.stopPropagation(), onTouchStart: (e) => e.stopPropagation() }, choice === "choose" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "choice-title" }, item.title), /* @__PURE__ */ React.createElement("button", { className: "choice-btn choice-btn-want", onClick: () => fly("right", onWant) }, "WANT TO WATCH"), /* @__PURE__ */ React.createElement("button", { className: "choice-btn choice-btn-seen", onClick: () => setChoice("rate") }, "I'VE SEEN IT"), /* @__PURE__ */ React.createElement("button", { className: "choice-dismiss", onClick: () => setChoice(null) }, "not now")) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "choice-title" }, "Rate it"), /* @__PURE__ */ React.createElement("div", { className: "choice-stars" }, /* @__PURE__ */ React.createElement(Stars, { value: rateVal, onChange: setRateVal, size: 30 })), /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        className: "choice-btn choice-btn-want",
+        disabled: !rateVal,
+        style: !rateVal ? { opacity: 0.45 } : void 0,
+        onClick: () => rateVal && fly("up", () => onRate(item, { id: uid(), date: todayISO(), undated: false, location: "", rating: rateVal, notes: "", loggedAt: Date.now() }))
+      },
+      "LOG IT"
+    ), /* @__PURE__ */ React.createElement("button", { className: "choice-dismiss", onClick: () => setChoice("choose") }, "back")))
   );
 }
-const APP_VERSION = "102";
-const posterGradCache = {};
-const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" };
+var APP_VERSION = "103";
+var posterGradCache = {};
+var DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" };
 function usePosterGradient(item) {
   const [grad, setGrad] = useState(DEFAULT_GRAD);
   useEffect(() => {
@@ -1914,11 +1478,13 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
     try {
       const topGenres = Object.entries(getWeights(taste)).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g).join(",");
       const pageNum = pageRef.current;
+      const deep = reloadAttemptsRef.current >= 4;
+      const pageCap = deep ? 39 : 19;
       const intlLangs = ["ko", "ja", "fr", "es", "it", "de", "hi", "zh"];
       const langA = intlLangs[pageNum % intlLangs.length];
       const langB = intlLangs[(pageNum + 3) % intlLangs.length];
       const yr = (/* @__PURE__ */ new Date()).getFullYear();
-      const recentFloor = `${yr - 6}-01-01`;
+      const recentFloor = deep ? `${yr - 40}-01-01` : `${yr - 6}-01-01`;
       const freshFloor = `${yr - 2}-01-01`;
       const decades = [1960, 1970, 1980, 1990, 2e3, 2010];
       const dec = decades[pageNum % decades.length];
@@ -1929,10 +1495,10 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
         tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "vote_count.gte": 50, "primary_release_date.gte": freshFloor }),
         tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: langA, "vote_count.gte": 40, "primary_release_date.gte": recentFloor }),
         tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: langB, "vote_count.gte": 40, "primary_release_date.gte": recentFloor }),
-        tmdb.discoverTv({ sort_by: "popularity.desc", page: pageNum, "vote_count.gte": 200, without_genres: "10763,10767" }),
+        tmdb.discoverTv({ sort_by: "popularity.desc", page: pageNum, "vote_count.gte": 200, without_genres: "10763,10764,10766,10767" }),
         tmdb.nowPlaying(pageNum),
         tmdb.topRatedMovies(pageNum),
-        tmdb.discoverTv({ sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 400, without_genres: "10763,10767" }),
+        tmdb.discoverTv({ sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 400, without_genres: "10763,10764,10766,10767" }),
         tmdb.discoverMovie({ sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 300, "primary_release_date.gte": `${dec}-01-01`, "primary_release_date.lte": `${dec + 9}-12-31` }),
         // blockbuster deep cut: the big recent English movies (1000+ votes, last 3
         // years) sit several pages deep once he's logged the front page, so pull two
@@ -1943,11 +1509,11 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
       if (topGenres) {
         calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "primary_release_date.gte": recentFloor }));
         calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 200, "primary_release_date.gte": recentFloor }));
-        calls.push(tmdb.discoverTv({ with_genres: topGenres, sort_by: "popularity.desc", page: pageNum, with_original_language: "en" }));
+        calls.push(tmdb.discoverTv({ with_genres: topGenres, sort_by: "popularity.desc", page: pageNum, with_original_language: "en", without_genres: "10763,10764,10766,10767" }));
       }
       const pages = await Promise.all(calls);
-      const all = pages.flatMap((p) => p.results || []).map(normalize);
-      pageRef.current = all.length === 0 || pageNum + 2 > 9 ? 1 : pageNum + 2;
+      const all = pages.flatMap((p) => p.results || []).map(normalize).filter((x) => !isJunkTv(x));
+      pageRef.current = all.length === 0 || pageNum + 2 > pageCap ? 1 : pageNum + 2;
       const skipSet = seenIdSet;
       const fresh = all.filter((a) => !skipSet.has(a.tmdbId + a.mediaType) && !ownedSet.has(a.tmdbId + a.mediaType));
       const dedup = Array.from(new Map(fresh.map((f) => [f.tmdbId + f.mediaType, f])).values());
@@ -1996,7 +1562,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
       reloadAttemptsRef.current = 0;
       return;
     }
-    if (reloadAttemptsRef.current >= 25) return;
+    if (reloadAttemptsRef.current >= 40) return;
     reloadAttemptsRef.current += 1;
     loadPool(true);
   }, [pool.length, loading, error]);
@@ -2019,6 +1585,19 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
     setPool((prev) => prev.map(rescore));
     setForYouList((prev) => prev.map(rescore).sort((a, b) => (b._pct || 50) - (a._pct || 50)));
   }, [lbReady]);
+  const tasteInitRef = useRef(true);
+  useEffect(() => {
+    if (tasteInitRef.current) {
+      tasteInitRef.current = false;
+      return;
+    }
+    const rescore = (x) => {
+      const m = matchMeta(x, taste, people, crowdRef.current);
+      return { ...x, _pct: m.pct, _conf: m.conf };
+    };
+    setPool((prev) => prev.map(rescore));
+    setForYouList((prev) => prev.map(rescore).sort((a, b) => (b._pct || 50) - (a._pct || 50)));
+  }, [taste, people]);
   const loadForYouList = useCallback(async () => {
     setForYouLoading(true);
     try {
@@ -2033,7 +1612,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
         const pages = await Promise.all(
           topRated.map((t) => tmdb.recommendations(t.mediaType, t.tmdbId).catch(() => ({ results: [] })))
         );
-        const all = pages.flatMap((p) => (p.results || []).map(normalize));
+        const all = pages.flatMap((p) => (p.results || []).map(normalize)).filter((x) => !isJunkTv(x));
         const dedup = Array.from(new Map(all.map((f) => [f.tmdbId + f.mediaType, f])).values());
         const fresh = dedup.filter((x) => !ownedSet.has(x.tmdbId + x.mediaType) && !seenIdSet.has(x.tmdbId + x.mediaType));
         const scored = fresh.map((x) => {
@@ -2105,120 +1684,71 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   }
   const enough = hasEnoughTaste(collection, feedback);
   const current = pool[0];
-  return /* @__PURE__ */ jsxs("div", { className: "view", children: [
-    /* @__PURE__ */ jsxs("div", { className: "view-toggle", children: [
-      /* @__PURE__ */ jsx("button", { className: mode === "swipe" ? "toggle-pill active" : "toggle-pill", onClick: () => setMode("swipe"), children: "Swipe" }),
-      /* @__PURE__ */ jsx("button", { className: mode === "list" ? "toggle-pill active" : "toggle-pill", onClick: () => setMode("list"), children: "For You" })
-    ] }),
-    infoItem && /* @__PURE__ */ jsx(
-      DetailModal,
-      {
-        item: infoItem,
-        tmdb,
-        badges: badgesFor(infoItem, people, taste),
-        settings,
-        onClose: () => setInfoItem(null),
-        onAddToWatchlist: (it) => {
-          want(it);
-        },
-        onLogNew: (it, entry, credits) => {
-          onLogNew(it, entry, credits);
-          recordFeedback("seenIds", it);
-          advance();
-        }
+  return /* @__PURE__ */ React.createElement("div", { className: "view" }, /* @__PURE__ */ React.createElement("div", { className: "view-toggle" }, /* @__PURE__ */ React.createElement("button", { className: mode === "swipe" ? "toggle-pill active" : "toggle-pill", onClick: () => setMode("swipe") }, "Swipe"), /* @__PURE__ */ React.createElement("button", { className: mode === "list" ? "toggle-pill active" : "toggle-pill", onClick: () => setMode("list") }, "For You")), infoItem && /* @__PURE__ */ React.createElement(
+    DetailModal,
+    {
+      item: infoItem,
+      tmdb,
+      badges: badgesFor(infoItem, people, taste),
+      settings,
+      onClose: () => setInfoItem(null),
+      onAddToWatchlist: (it) => {
+        want(it);
+      },
+      onLogNew: (it, entry, credits) => {
+        onLogNew(it, entry, credits);
+        recordFeedback("seenIds", it);
+        advance();
       }
-    ),
-    mode === "swipe" && /* @__PURE__ */ jsxs("div", { className: "view-discover", children: [
-      loading && !current && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 32, className: "spin" }), title: "Shuffling the deck", body: "Pulling titles you haven't seen yet." }),
-      !loading && error && !current && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Info, { size: 32 }), title: "Couldn't load new titles", body: `TMDB said: ${error}. Check your API key in settings, then reopen the app.` }),
-      !loading && !error && !current && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Sparkles, { size: 32 }), title: "That's everything for now", body: "You've been through the pool. Replay your skipped titles to see them again." }),
-      current && /* @__PURE__ */ jsxs("div", { className: "swipe-stack", children: [
-        pool.slice(1, 4).map((p) => p.posterPath && /* @__PURE__ */ jsx("img", { src: tmdbImg(p.posterPath, "w500"), alt: "", style: { display: "none" }, loading: "eager" }, p.tmdbId + p.mediaType)),
-        /* @__PURE__ */ jsx(
-          SwipeCard,
-          {
-            item: current,
-            matchPct: enough ? current._pct : null,
-            matchConf: enough ? current._conf : null,
-            taste,
-            people,
-            crowd: crowdRef.current,
-            tmdb,
-            collection,
-            onSkip: () => skip(current),
-            onWant: () => want(current),
-            onRate: rateInline,
-            onTapInfo: () => setInfoItem(current)
-          },
-          current.tmdbId + current.mediaType
-        )
-      ] }),
-      justLogged && /* @__PURE__ */ jsxs("div", { className: "logged-toast", children: [
-        /* @__PURE__ */ jsx("span", { children: "Logged!" }),
-        /* @__PURE__ */ jsxs("a", { href: justLogged.url, target: "_blank", rel: "noreferrer", onClick: () => setJustLogged(null), children: [
-          /* @__PURE__ */ jsx(ExternalLink, { size: 12 }),
-          " Reddit"
-        ] }),
-        /* @__PURE__ */ jsx("button", { className: "toast-close", onClick: () => setJustLogged(null), children: /* @__PURE__ */ jsx(X, { size: 12 }) })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "discover-foot discover-foot-bottom", children: [
-        lastAction && /* @__PURE__ */ jsxs("button", { className: "btn btn-ghost btn-sm", onClick: undoLast, children: [
-          /* @__PURE__ */ jsx(Undo2, { size: 14 }),
-          " Undo skip"
-        ] }),
-        skippedPool.length > 0 && /* @__PURE__ */ jsxs("button", { className: "btn btn-ghost btn-sm", onClick: replaySkipped, children: [
-          /* @__PURE__ */ jsx(Undo2, { size: 14 }),
-          " Replay skipped (",
-          skippedPool.length,
-          ")"
-        ] })
-      ] })
-    ] }),
-    mode === "list" && /* @__PURE__ */ jsxs(Fragment, { children: [
-      !enough && /* @__PURE__ */ jsxs("div", { className: "hint-banner", children: [
-        /* @__PURE__ */ jsx(Sparkles, { size: 14 }),
-        " Rate a few films or swipe through and these match scores sharpen up."
-      ] }),
-      /* @__PURE__ */ jsx("div", { className: "discover-foot", style: { justifyContent: "flex-end", marginTop: 0, marginBottom: 10 }, children: /* @__PURE__ */ jsxs("button", { className: "btn btn-ghost btn-sm", onClick: () => {
-        forYouLoadedRef.current = false;
-        loadForYouList();
-      }, children: [
-        /* @__PURE__ */ jsx(RefreshCw, { size: 14 }),
-        " Refresh list"
-      ] }) }),
-      forYouLoading && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 32, className: "spin" }), title: "Building your list", body: "Finding titles based on what you've rated." }),
-      !forYouLoading && forYouList.length === 0 && collection.length === 0 && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Heart, { size: 32 }), title: "Nothing yet", body: "Rate a few films in your collection and this list will fill up." }),
-      !forYouLoading && forYouList.length === 0 && collection.length > 0 && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Sparkles, { size: 32 }), title: "No recommendations yet", body: "Rate a few films 7 stars or higher and we'll find you similar ones." }),
-      !forYouLoading && forYouList.length > 0 && /* @__PURE__ */ jsx("div", { className: "suggest-list", children: forYouList.map((item) => /* @__PURE__ */ jsx(
-        SuggestionRow,
-        {
-          item,
-          matchPct: enough ? item._pct : null,
-          matchConf: enough ? item._conf : null,
-          collection,
-          taste,
-          people,
-          settings,
-          tmdb,
-          onSkip: (it) => {
-            recordFeedback("skippedIds", it);
-            setForYouList((l) => l.filter((x) => !(x.tmdbId === it.tmdbId && x.mediaType === it.mediaType)));
-          },
-          onSeen: (it, entry) => {
-            onLogNew(it, entry);
-            recordFeedback("seenIds", it);
-            setForYouList((l) => l.filter((x) => !(x.tmdbId === it.tmdbId && x.mediaType === it.mediaType)));
-          },
-          onAddToWatchlist: (it) => {
-            want(it);
-            setForYouList((l) => l.filter((x) => !(x.tmdbId === it.tmdbId && x.mediaType === it.mediaType)));
-          },
-          onInfo: () => setInfoItem(item)
-        },
-        item.tmdbId + item.mediaType
-      )) })
-    ] })
-  ] });
+    }
+  ), mode === "swipe" && /* @__PURE__ */ React.createElement("div", { className: "view-discover" }, loading && !current && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(RefreshCw, { size: 32, className: "spin" }), title: "Shuffling the deck", body: "Pulling titles you haven't seen yet." }), !loading && error && !current && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Info, { size: 32 }), title: "Couldn't load new titles", body: `TMDB said: ${error}. Check your API key in settings, then reopen the app.` }), !loading && !error && !current && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Sparkles, { size: 32 }), title: "That's everything for now", body: "You've been through the pool. Replay your skipped titles to see them again." }), current && /* @__PURE__ */ React.createElement("div", { className: "swipe-stack" }, pool.slice(1, 4).map((p) => p.posterPath && /* @__PURE__ */ React.createElement("img", { key: p.tmdbId + p.mediaType, src: tmdbImg(p.posterPath, "w500"), alt: "", style: { display: "none" }, loading: "eager" })), /* @__PURE__ */ React.createElement(
+    SwipeCard,
+    {
+      key: current.tmdbId + current.mediaType,
+      item: current,
+      matchPct: enough ? current._pct : null,
+      matchConf: enough ? current._conf : null,
+      taste,
+      people,
+      crowd: crowdRef.current,
+      tmdb,
+      collection,
+      onSkip: () => skip(current),
+      onWant: () => want(current),
+      onRate: rateInline,
+      onTapInfo: () => setInfoItem(current)
+    }
+  )), justLogged && /* @__PURE__ */ React.createElement("div", { className: "logged-toast" }, /* @__PURE__ */ React.createElement("span", null, "Logged!"), /* @__PURE__ */ React.createElement("a", { href: justLogged.url, target: "_blank", rel: "noreferrer", onClick: () => setJustLogged(null) }, /* @__PURE__ */ React.createElement(ExternalLink, { size: 12 }), " Reddit"), /* @__PURE__ */ React.createElement("button", { className: "toast-close", onClick: () => setJustLogged(null) }, /* @__PURE__ */ React.createElement(X, { size: 12 }))), /* @__PURE__ */ React.createElement("div", { className: "discover-foot discover-foot-bottom" }, lastAction && /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: undoLast }, /* @__PURE__ */ React.createElement(Undo2, { size: 14 }), " Undo skip"), skippedPool.length > 0 && /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: replaySkipped }, /* @__PURE__ */ React.createElement(Undo2, { size: 14 }), " Replay skipped (", skippedPool.length, ")"))), mode === "list" && /* @__PURE__ */ React.createElement(React.Fragment, null, !enough && /* @__PURE__ */ React.createElement("div", { className: "hint-banner" }, /* @__PURE__ */ React.createElement(Sparkles, { size: 14 }), " Rate a few films or swipe through and these match scores sharpen up."), /* @__PURE__ */ React.createElement("div", { className: "discover-foot", style: { justifyContent: "flex-end", marginTop: 0, marginBottom: 10 } }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => {
+    forYouLoadedRef.current = false;
+    loadForYouList();
+  } }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 14 }), " Refresh list")), forYouLoading && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(RefreshCw, { size: 32, className: "spin" }), title: "Building your list", body: "Finding titles based on what you've rated." }), !forYouLoading && forYouList.length === 0 && collection.length === 0 && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Heart, { size: 32 }), title: "Nothing yet", body: "Rate a few films in your collection and this list will fill up." }), !forYouLoading && forYouList.length === 0 && collection.length > 0 && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Sparkles, { size: 32 }), title: "No recommendations yet", body: "Rate a few films 7 stars or higher and we'll find you similar ones." }), !forYouLoading && forYouList.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "suggest-list" }, forYouList.map((item) => /* @__PURE__ */ React.createElement(
+    SuggestionRow,
+    {
+      key: item.tmdbId + item.mediaType,
+      item,
+      matchPct: enough ? item._pct : null,
+      matchConf: enough ? item._conf : null,
+      collection,
+      taste,
+      people,
+      settings,
+      tmdb,
+      onSkip: (it) => {
+        recordFeedback("skippedIds", it);
+        setForYouList((l) => l.filter((x) => !(x.tmdbId === it.tmdbId && x.mediaType === it.mediaType)));
+      },
+      onSeen: (it, entry) => {
+        onLogNew(it, entry);
+        recordFeedback("seenIds", it);
+        setForYouList((l) => l.filter((x) => !(x.tmdbId === it.tmdbId && x.mediaType === it.mediaType)));
+      },
+      onAddToWatchlist: (it) => {
+        want(it);
+        setForYouList((l) => l.filter((x) => !(x.tmdbId === it.tmdbId && x.mediaType === it.mediaType)));
+      },
+      onInfo: () => setInfoItem(item)
+    }
+  )))));
 }
 function useExtraInfo(item, settings, tmdb) {
   const [imdb, setImdb] = useState(null);
@@ -2252,50 +1782,16 @@ function SuggestionRow({ item, matchPct, matchConf, settings, tmdb, taste, peopl
   const [logging, setLogging] = useState(false);
   const { imdb, providers } = useExtraInfo(item, settings, tmdb);
   const badges = people ? badgesFor(item, people, taste) : [];
-  return /* @__PURE__ */ jsxs("div", { className: "suggest-row", onClick: () => setExpanded((x) => !x), children: [
-    /* @__PURE__ */ jsx("button", { className: "suggest-thumb-btn", onClick: (e) => {
-      e.stopPropagation();
-      onInfo();
-    }, "aria-label": `Details for ${item.title}`, children: item.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w154"), alt: "", className: "suggest-thumb" }) : /* @__PURE__ */ jsx("div", { className: "suggest-thumb suggest-thumb-fallback", children: item.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 18 }) : /* @__PURE__ */ jsx(Film, { size: 18 }) }) }),
-    /* @__PURE__ */ jsxs("div", { className: "suggest-info", children: [
-      /* @__PURE__ */ jsxs("div", { className: "suggest-title-row", children: [
-        /* @__PURE__ */ jsxs("button", { className: "suggest-title-btn", onClick: (e) => {
-          e.stopPropagation();
-          onInfo();
-        }, children: [
-          item.title,
-          " ",
-          item.year ? `\xB7 ${item.year}` : ""
-        ] }),
-        matchPct != null && /* @__PURE__ */ jsxs("span", { className: "match-pill", style: matchStyle(matchPct), children: [
-          matchPct,
-          "%",
-          matchConf ? ` \xB7 ${matchConf.toUpperCase()}` : ""
-        ] })
-      ] }),
-      badges.length > 0 && /* @__PURE__ */ jsx("div", { className: "badge-row", children: badges.map((b, i) => /* @__PURE__ */ jsx("span", { className: "badge badge-" + b.kind, children: b.text }, i)) }),
-      item.aiReason && /* @__PURE__ */ jsx("div", { className: "why-watch", children: item.aiReason }),
-      taste && !item.aiReason && /* @__PURE__ */ jsx(WhyWatch, { item, matchPct }),
-      expanded && /* @__PURE__ */ jsxs("div", { className: "suggest-links", onClick: (e) => e.stopPropagation(), children: [
-        providers && providers.names.map((name) => /* @__PURE__ */ jsx("a", { className: "link-pill link-pill-stream", href: providers.link, target: "_blank", rel: "noreferrer", children: name }, name)),
-        /* @__PURE__ */ jsx("a", { className: "link-pill", href: buildAmcLink(item.title, settings.zip), target: "_blank", rel: "noreferrer", children: "AMC" }),
-        /* @__PURE__ */ jsx("a", { className: "link-pill", href: buildRegalLink(item.title, settings.zip), target: "_blank", rel: "noreferrer", children: "Regal" }),
-        /* @__PURE__ */ jsx("a", { className: "link-pill", href: buildRedditLink(item.title, item.year), target: "_blank", rel: "noreferrer", children: "Reddit" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "suggest-actions", onClick: (e) => e.stopPropagation(), children: [
-      onSkip && /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => onSkip(item), "aria-label": "Skip", children: /* @__PURE__ */ jsx(X, { size: 15 }) }),
-      onSeen && /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => setLogging(true), "aria-label": "Mark as seen", children: /* @__PURE__ */ jsx(Eye, { size: 15 }) }),
-      /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => onAddToWatchlist(item), "aria-label": "Save to watchlist", children: /* @__PURE__ */ jsx(Bookmark, { size: 15 }) })
-    ] }),
-    logging && /* @__PURE__ */ jsxs(Modal, { onClose: () => setLogging(false), children: [
-      /* @__PURE__ */ jsx("h3", { className: "modal-title", children: item.title }),
-      /* @__PURE__ */ jsx(LogForm, { mediaType: item.mediaType, tmdb, item, saveLabel: "Add to collection", onCancel: () => setLogging(false), onSave: (entry) => {
-        onSeen(item, entry);
-        setLogging(false);
-      } })
-    ] })
-  ] });
+  return /* @__PURE__ */ React.createElement("div", { className: "suggest-row", onClick: () => setExpanded((x) => !x) }, /* @__PURE__ */ React.createElement("button", { className: "suggest-thumb-btn", onClick: (e) => {
+    e.stopPropagation();
+    onInfo();
+  }, "aria-label": `Details for ${item.title}` }, item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w154"), alt: "", className: "suggest-thumb" }) : /* @__PURE__ */ React.createElement("div", { className: "suggest-thumb suggest-thumb-fallback" }, item.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 18 }) : /* @__PURE__ */ React.createElement(Film, { size: 18 }))), /* @__PURE__ */ React.createElement("div", { className: "suggest-info" }, /* @__PURE__ */ React.createElement("div", { className: "suggest-title-row" }, /* @__PURE__ */ React.createElement("button", { className: "suggest-title-btn", onClick: (e) => {
+    e.stopPropagation();
+    onInfo();
+  } }, item.title, " ", item.year ? `\xB7 ${item.year}` : ""), matchPct != null && /* @__PURE__ */ React.createElement("span", { className: "match-pill", style: matchStyle(matchPct) }, matchPct, "%", matchConf ? ` \xB7 ${matchConf.toUpperCase()}` : "")), badges.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "badge-row" }, badges.map((b, i) => /* @__PURE__ */ React.createElement("span", { key: i, className: "badge badge-" + b.kind }, b.text))), item.aiReason && /* @__PURE__ */ React.createElement("div", { className: "why-watch" }, item.aiReason), taste && !item.aiReason && /* @__PURE__ */ React.createElement(WhyWatch, { item, matchPct }), expanded && /* @__PURE__ */ React.createElement("div", { className: "suggest-links", onClick: (e) => e.stopPropagation() }, providers && providers.names.map((name) => /* @__PURE__ */ React.createElement("a", { key: name, className: "link-pill link-pill-stream", href: providers.link, target: "_blank", rel: "noreferrer" }, name)), /* @__PURE__ */ React.createElement("a", { className: "link-pill", href: buildAmcLink(item.title, settings.zip), target: "_blank", rel: "noreferrer" }, "AMC"), /* @__PURE__ */ React.createElement("a", { className: "link-pill", href: buildRegalLink(item.title, settings.zip), target: "_blank", rel: "noreferrer" }, "Regal"), /* @__PURE__ */ React.createElement("a", { className: "link-pill", href: buildRedditLink(item.title, item.year), target: "_blank", rel: "noreferrer" }, "Reddit"))), /* @__PURE__ */ React.createElement("div", { className: "suggest-actions", onClick: (e) => e.stopPropagation() }, onSkip && /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => onSkip(item), "aria-label": "Skip" }, /* @__PURE__ */ React.createElement(X, { size: 15 })), onSeen && /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setLogging(true), "aria-label": "Mark as seen" }, /* @__PURE__ */ React.createElement(Eye, { size: 15 })), /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => onAddToWatchlist(item), "aria-label": "Save to watchlist" }, /* @__PURE__ */ React.createElement(Bookmark, { size: 15 }))), logging && /* @__PURE__ */ React.createElement(Modal, { onClose: () => setLogging(false) }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, item.title), /* @__PURE__ */ React.createElement(LogForm, { mediaType: item.mediaType, tmdb, item, saveLabel: "Add to collection", onCancel: () => setLogging(false), onSave: (entry) => {
+    onSeen(item, entry);
+    setLogging(false);
+  } })));
 }
 function FavoritesView({ collection, people, taste, crowd, tmdb, settings, onUpdateTicket, onAddToWatchlist, onLogNew }) {
   const [person, setPerson] = useState(null);
@@ -2351,121 +1847,57 @@ function FavoritesView({ collection, people, taste, crowd, tmdb, settings, onUpd
     [collection]
   );
   if (collection.length === 0) {
-    return /* @__PURE__ */ jsx("div", { className: "view", children: /* @__PURE__ */ jsx(
+    return /* @__PURE__ */ React.createElement("div", { className: "view" }, /* @__PURE__ */ React.createElement(
       EmptyState,
       {
-        icon: /* @__PURE__ */ jsx(Heart, { size: 32 }),
+        icon: /* @__PURE__ */ React.createElement(Heart, { size: 32 }),
         title: "No favorites yet",
         body: "Once you collect and rate a few films, this tab learns your go-to directors, writers, and actors."
       }
-    ) });
+    ));
   }
-  const Section = ({ title, list, kind }) => list && list.length > 0 ? /* @__PURE__ */ jsxs("div", { className: "fav-section", children: [
-    /* @__PURE__ */ jsx("div", { className: "fav-section-title", children: title }),
-    /* @__PURE__ */ jsx("div", { className: "fav-chips", children: list.slice(0, 8).map((p) => /* @__PURE__ */ jsx("button", { className: "fav-chip fav-chip-btn", onClick: () => openPerson(p, kind), children: p.name }, p.id)) })
-  ] }) : null;
+  const Section = ({ title, list, kind }) => list && list.length > 0 ? /* @__PURE__ */ React.createElement("div", { className: "fav-section" }, /* @__PURE__ */ React.createElement("div", { className: "fav-section-title" }, title), /* @__PURE__ */ React.createElement("div", { className: "fav-chips" }, list.slice(0, 8).map((p) => /* @__PURE__ */ React.createElement("button", { key: p.id, className: "fav-chip fav-chip-btn", onClick: () => openPerson(p, kind) }, p.name)))) : null;
   if (person) {
-    return /* @__PURE__ */ jsxs("div", { className: "view", children: [
-      detail && /* @__PURE__ */ jsx(
-        DetailModal,
-        {
-          item: detail,
-          tmdb,
-          badges: badgesFor(detail, people, taste),
-          settings: settings || {},
-          onClose: () => setDetail(null),
-          onAddToWatchlist: onAddToWatchlist ? (it) => {
-            onAddToWatchlist(it);
-          } : null,
-          onLogNew: onLogNew || null
-        }
-      ),
-      /* @__PURE__ */ jsxs("button", { className: "btn btn-outline btn-sm", onClick: () => {
-        setPerson(null);
-        setFilmo(null);
-      }, style: { marginBottom: 12 }, children: [
-        /* @__PURE__ */ jsx(ChevronLeft, { size: 14 }),
-        " All favorites"
-      ] }),
-      /* @__PURE__ */ jsx("div", { className: "fav-section-title", children: person.name }),
-      filmoLoading && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 28, className: "spin" }), title: "Pulling filmography", body: "One second." }),
-      !filmoLoading && filmo && filmo.length === 0 && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Film, { size: 28 }), title: "Nothing found", body: "No credits on file for this person yet." }),
-      !filmoLoading && filmo && filmo.length > 0 && /* @__PURE__ */ jsx("div", { className: "suggest-list", children: filmo.map((item) => /* @__PURE__ */ jsxs("button", { className: "suggest-row suggest-row-btn", onClick: () => setDetail(item), "aria-label": `Details for ${item.title}`, children: [
-        item.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w154"), alt: "", className: "suggest-thumb" }) : /* @__PURE__ */ jsx("div", { className: "suggest-thumb suggest-thumb-fallback", children: item.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 18 }) : /* @__PURE__ */ jsx(Film, { size: 18 }) }),
-        /* @__PURE__ */ jsx("div", { className: "suggest-info", children: /* @__PURE__ */ jsxs("div", { className: "suggest-title-row", children: [
-          /* @__PURE__ */ jsxs("span", { className: "suggest-title-btn", style: { textAlign: "left" }, children: [
-            item.title,
-            " ",
-            item.year ? `\xB7 ${item.year}` : ""
-          ] }),
-          item._pct != null && /* @__PURE__ */ jsxs("span", { className: "match-pill", style: matchStyle(item._pct), children: [
-            item._pct,
-            "%"
-          ] })
-        ] }) })
-      ] }, item.tmdbId + item.mediaType)) })
-    ] });
+    return /* @__PURE__ */ React.createElement("div", { className: "view" }, detail && /* @__PURE__ */ React.createElement(
+      DetailModal,
+      {
+        item: detail,
+        tmdb,
+        badges: badgesFor(detail, people, taste),
+        settings: settings || {},
+        onClose: () => setDetail(null),
+        onAddToWatchlist: onAddToWatchlist ? (it) => {
+          onAddToWatchlist(it);
+        } : null,
+        onLogNew: onLogNew || null
+      }
+    ), /* @__PURE__ */ React.createElement("button", { className: "btn btn-outline btn-sm", onClick: () => {
+      setPerson(null);
+      setFilmo(null);
+    }, style: { marginBottom: 12 } }, /* @__PURE__ */ React.createElement(ChevronLeft, { size: 14 }), " All favorites"), /* @__PURE__ */ React.createElement("div", { className: "fav-section-title" }, person.name), filmoLoading && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(RefreshCw, { size: 28, className: "spin" }), title: "Pulling filmography", body: "One second." }), !filmoLoading && filmo && filmo.length === 0 && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Film, { size: 28 }), title: "Nothing found", body: "No credits on file for this person yet." }), !filmoLoading && filmo && filmo.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "suggest-list" }, filmo.map((item) => /* @__PURE__ */ React.createElement("button", { className: "suggest-row suggest-row-btn", key: item.tmdbId + item.mediaType, onClick: () => setDetail(item), "aria-label": `Details for ${item.title}` }, item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w154"), alt: "", className: "suggest-thumb" }) : /* @__PURE__ */ React.createElement("div", { className: "suggest-thumb suggest-thumb-fallback" }, item.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 18 }) : /* @__PURE__ */ React.createElement(Film, { size: 18 })), /* @__PURE__ */ React.createElement("div", { className: "suggest-info" }, /* @__PURE__ */ React.createElement("div", { className: "suggest-title-row" }, /* @__PURE__ */ React.createElement("span", { className: "suggest-title-btn", style: { textAlign: "left" } }, item.title, " ", item.year ? `\xB7 ${item.year}` : ""), item._pct != null && /* @__PURE__ */ React.createElement("span", { className: "match-pill", style: matchStyle(item._pct) }, item._pct, "%")))))));
   }
-  return /* @__PURE__ */ jsxs("div", { className: "view", children: [
-    topMovies.length > 0 && /* @__PURE__ */ jsxs("div", { className: "fav-section", children: [
-      /* @__PURE__ */ jsx("div", { className: "fav-section-title", children: "Top rated in your collection" }),
-      /* @__PURE__ */ jsx("div", { className: "fav-poster-row", children: topMovies.map((m) => /* @__PURE__ */ jsx("div", { className: "fav-poster", children: m.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(m.posterPath, "w185"), alt: m.title }) : /* @__PURE__ */ jsx("div", { className: "fav-poster-fallback", children: m.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 20 }) : /* @__PURE__ */ jsx(Film, { size: 20 }) }) }, m.id)) })
-    ] }),
-    people.directors.length === 0 && people.actors.length === 0 && /* @__PURE__ */ jsxs("div", { className: "hint-banner", style: { flexDirection: "column", alignItems: "flex-start", gap: 8 }, children: [
-      /* @__PURE__ */ jsxs("span", { children: [
-        /* @__PURE__ */ jsx(Info, { size: 14 }),
-        " To learn your favorite directors and actors, the app needs to pull credits for what you've collected."
-      ] }),
-      missingCredits.length > 0 && /* @__PURE__ */ jsx("button", { className: "btn btn-primary btn-sm", onClick: enrich, disabled: enriching, children: enriching ? `Scanning ${progress.done}/${progress.total}` : `Scan ${missingCredits.length} titles` })
-    ] }),
-    /* @__PURE__ */ jsx(Section, { title: "Favorite directors", list: people.directors, kind: "director" }),
-    /* @__PURE__ */ jsx(Section, { title: "Favorite writers", list: people.writers, kind: "writer" }),
-    /* @__PURE__ */ jsx(Section, { title: "Actors you keep watching", list: people.actors, kind: "actor" }),
-    (people.directors.length > 0 || people.actors.length > 0) && missingCredits.length > 0 && /* @__PURE__ */ jsx("button", { className: "btn btn-outline btn-sm", style: { marginTop: 8 }, onClick: enrich, disabled: enriching, children: enriching ? `Scanning ${progress.done}/${progress.total}` : `Update from ${missingCredits.length} newer titles` })
-  ] });
+  return /* @__PURE__ */ React.createElement("div", { className: "view" }, topMovies.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "fav-section" }, /* @__PURE__ */ React.createElement("div", { className: "fav-section-title" }, "Top rated in your collection"), /* @__PURE__ */ React.createElement("div", { className: "fav-poster-row" }, topMovies.map((m) => /* @__PURE__ */ React.createElement("div", { className: "fav-poster", key: m.id }, m.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(m.posterPath, "w185"), alt: m.title }) : /* @__PURE__ */ React.createElement("div", { className: "fav-poster-fallback" }, m.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 20 }) : /* @__PURE__ */ React.createElement(Film, { size: 20 })))))), people.directors.length === 0 && people.actors.length === 0 && /* @__PURE__ */ React.createElement("div", { className: "hint-banner", style: { flexDirection: "column", alignItems: "flex-start", gap: 8 } }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement(Info, { size: 14 }), " To learn your favorite directors and actors, the app needs to pull credits for what you've collected."), missingCredits.length > 0 && /* @__PURE__ */ React.createElement("button", { className: "btn btn-primary btn-sm", onClick: enrich, disabled: enriching }, enriching ? `Scanning ${progress.done}/${progress.total}` : `Scan ${missingCredits.length} titles`)), /* @__PURE__ */ React.createElement(Section, { title: "Favorite directors", list: people.directors, kind: "director" }), /* @__PURE__ */ React.createElement(Section, { title: "Favorite writers", list: people.writers, kind: "writer" }), /* @__PURE__ */ React.createElement(Section, { title: "Actors you keep watching", list: people.actors, kind: "actor" }), (people.directors.length > 0 || people.actors.length > 0) && missingCredits.length > 0 && /* @__PURE__ */ React.createElement("button", { className: "btn btn-outline btn-sm", style: { marginTop: 8 }, onClick: enrich, disabled: enriching }, enriching ? `Scanning ${progress.done}/${progress.total}` : `Update from ${missingCredits.length} newer titles`));
 }
 function ComingRow({ item, badges, note, enough, added, inWatchlist, settings, onInfo, onSave, daysOutText }) {
   const [expanded, setExpanded] = useState(false);
-  return /* @__PURE__ */ jsxs("div", { className: "coming-row", onClick: () => setExpanded((x) => !x), children: [
-    /* @__PURE__ */ jsx("button", { className: "coming-thumb-btn", onClick: (e) => {
-      e.stopPropagation();
-      onInfo();
-    }, "aria-label": `Details for ${item.title}`, children: item.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w154"), alt: "", className: "coming-thumb" }) : /* @__PURE__ */ jsx("div", { className: "coming-thumb coming-thumb-fallback", children: /* @__PURE__ */ jsx(Film, { size: 18 }) }) }),
-    /* @__PURE__ */ jsxs("div", { className: "coming-info", children: [
-      /* @__PURE__ */ jsxs("div", { className: "suggest-title-row", children: [
-        /* @__PURE__ */ jsx("button", { className: "suggest-title-btn", onClick: (e) => {
-          e.stopPropagation();
-          onInfo();
-        }, children: item.title }),
-        /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }, children: [
-          inWatchlist && /* @__PURE__ */ jsx("span", { className: "watchlist-badge", children: /* @__PURE__ */ jsx(Bookmark, { size: 10 }) }),
-          enough && item._pct != null && /* @__PURE__ */ jsxs("span", { className: "match-pill", style: matchStyle(item._pct), children: [
-            item._pct,
-            "%"
-          ] })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsx("div", { className: "coming-date", children: daysOutText }),
-      badges.length > 0 && /* @__PURE__ */ jsx("div", { className: "badge-row", children: badges.map((b, i) => /* @__PURE__ */ jsx("span", { className: "badge badge-" + b.kind, children: b.text }, i)) }),
-      note && /* @__PURE__ */ jsx("div", { className: "proactive-note note-" + note.tone, children: note.text }),
-      expanded && /* @__PURE__ */ jsxs("div", { className: "suggest-links", onClick: (e) => e.stopPropagation(), children: [
-        /* @__PURE__ */ jsx("a", { className: "link-pill", href: `https://www.youtube.com/results?search_query=${encodeURIComponent(item.title + " trailer")}`, target: "_blank", rel: "noreferrer", children: "Trailer" }),
-        /* @__PURE__ */ jsx("a", { className: "link-pill", href: buildRedditLink(item.title, item.year), target: "_blank", rel: "noreferrer", children: "Reddit" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsx(
-      "button",
-      {
-        className: "icon-btn" + (added ? " icon-btn-active" : ""),
-        onClick: (e) => {
-          e.stopPropagation();
-          onSave();
-        },
-        "aria-label": "Save to wishlist",
-        children: /* @__PURE__ */ jsx(Bookmark, { size: 16 })
-      }
-    )
-  ] });
+  return /* @__PURE__ */ React.createElement("div", { className: "coming-row", onClick: () => setExpanded((x) => !x) }, /* @__PURE__ */ React.createElement("button", { className: "coming-thumb-btn", onClick: (e) => {
+    e.stopPropagation();
+    onInfo();
+  }, "aria-label": `Details for ${item.title}` }, item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w154"), alt: "", className: "coming-thumb" }) : /* @__PURE__ */ React.createElement("div", { className: "coming-thumb coming-thumb-fallback" }, /* @__PURE__ */ React.createElement(Film, { size: 18 }))), /* @__PURE__ */ React.createElement("div", { className: "coming-info" }, /* @__PURE__ */ React.createElement("div", { className: "suggest-title-row" }, /* @__PURE__ */ React.createElement("button", { className: "suggest-title-btn", onClick: (e) => {
+    e.stopPropagation();
+    onInfo();
+  } }, item.title), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 4, alignItems: "center", flexShrink: 0 } }, inWatchlist && /* @__PURE__ */ React.createElement("span", { className: "watchlist-badge" }, /* @__PURE__ */ React.createElement(Bookmark, { size: 10 })), enough && item._pct != null && /* @__PURE__ */ React.createElement("span", { className: "match-pill", style: matchStyle(item._pct) }, item._pct, "%"))), /* @__PURE__ */ React.createElement("div", { className: "coming-date" }, daysOutText), badges.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "badge-row" }, badges.map((b, i) => /* @__PURE__ */ React.createElement("span", { key: i, className: "badge badge-" + b.kind }, b.text))), note && /* @__PURE__ */ React.createElement("div", { className: "proactive-note note-" + note.tone }, note.text), expanded && /* @__PURE__ */ React.createElement("div", { className: "suggest-links", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("a", { className: "link-pill", href: `https://www.youtube.com/results?search_query=${encodeURIComponent(item.title + " trailer")}`, target: "_blank", rel: "noreferrer" }, "Trailer"), /* @__PURE__ */ React.createElement("a", { className: "link-pill", href: buildRedditLink(item.title, item.year), target: "_blank", rel: "noreferrer" }, "Reddit"))), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      className: "icon-btn" + (added ? " icon-btn-active" : ""),
+      onClick: (e) => {
+        e.stopPropagation();
+        onSave();
+      },
+      "aria-label": "Save to wishlist"
+    },
+    /* @__PURE__ */ React.createElement(Bookmark, { size: 16 })
+  ));
 }
 function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, feedback, onAddToWatchlist, onLogNew }) {
   const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
@@ -2579,116 +2011,69 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
     { id: "nextyear", label: `${thisYr + 1}` },
     { id: "beyond", label: "Beyond" }
   ];
-  return /* @__PURE__ */ jsxs("div", { className: "view", children: [
-    infoItem && /* @__PURE__ */ jsx(
-      DetailModal,
+  return /* @__PURE__ */ React.createElement("div", { className: "view" }, infoItem && /* @__PURE__ */ React.createElement(
+    DetailModal,
+    {
+      item: infoItem,
+      tmdb,
+      badges: badgesFor(infoItem, people, taste),
+      settings,
+      onClose: () => setInfoItem(null),
+      onAddToWatchlist: (it) => {
+        onAddToWatchlist(it);
+        setAdded((a) => ({ ...a, [it.tmdbId]: true }));
+      },
+      onLogNew
+    }
+  ), /* @__PURE__ */ React.createElement("div", { className: "filter-row", style: { marginBottom: 12, flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: window2, onChange: (e) => setWindow(e.target.value) }, WINDOWS.map((w) => /* @__PURE__ */ React.createElement("option", { key: w.id, value: w.id }, w.label))), enough && /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: sort, onChange: (e) => setSort(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "highest" }, "Highest match"), /* @__PURE__ */ React.createElement("option", { value: "lowest" }, "Lowest match"))), loading && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(RefreshCw, { size: 32, className: "spin" }), title: "Checking the calendar", body: "Pulling what's headed to theaters." }), !loading && error && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Info, { size: 32 }), title: "Couldn't load release dates", body: `TMDB said: ${error}` }), !loading && !error && processed.length === 0 && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(CalendarDays, { size: 32 }), title: "Nothing in that window", body: "Try a wider time range." }), !loading && !error && /* @__PURE__ */ React.createElement("div", { className: "coming-list" }, processed.map((item) => {
+    const badges = badgesFor(item, people, taste);
+    const n = enough ? note(item, item._pct) : null;
+    const inWl = (watchlist || []).some((w) => w.tmdbId === item.tmdbId && w.mediaType === item.mediaType);
+    return /* @__PURE__ */ React.createElement(
+      ComingRow,
       {
-        item: infoItem,
-        tmdb,
-        badges: badgesFor(infoItem, people, taste),
+        key: item.tmdbId,
+        item,
+        badges,
+        note: n,
+        enough,
+        added: added[item.tmdbId],
+        inWatchlist: inWl || added[item.tmdbId],
         settings,
-        onClose: () => setInfoItem(null),
-        onAddToWatchlist: (it) => {
-          onAddToWatchlist(it);
-          setAdded((a) => ({ ...a, [it.tmdbId]: true }));
+        onInfo: () => setInfoItem(item),
+        onSave: () => {
+          onAddToWatchlist(item);
+          setAdded((a) => ({ ...a, [item.tmdbId]: true }));
         },
-        onLogNew
+        daysOutText: daysOut(item.releaseDate)
       }
-    ),
-    /* @__PURE__ */ jsxs("div", { className: "filter-row", style: { marginBottom: 12, flexWrap: "wrap" }, children: [
-      /* @__PURE__ */ jsx("select", { className: "filter-select", value: window2, onChange: (e) => setWindow(e.target.value), children: WINDOWS.map((w) => /* @__PURE__ */ jsx("option", { value: w.id, children: w.label }, w.id)) }),
-      enough && /* @__PURE__ */ jsxs("select", { className: "filter-select", value: sort, onChange: (e) => setSort(e.target.value), children: [
-        /* @__PURE__ */ jsx("option", { value: "highest", children: "Highest match" }),
-        /* @__PURE__ */ jsx("option", { value: "lowest", children: "Lowest match" })
-      ] })
-    ] }),
-    loading && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 32, className: "spin" }), title: "Checking the calendar", body: "Pulling what's headed to theaters." }),
-    !loading && error && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Info, { size: 32 }), title: "Couldn't load release dates", body: `TMDB said: ${error}` }),
-    !loading && !error && processed.length === 0 && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(CalendarDays, { size: 32 }), title: "Nothing in that window", body: "Try a wider time range." }),
-    !loading && !error && /* @__PURE__ */ jsx("div", { className: "coming-list", children: processed.map((item) => {
-      const badges = badgesFor(item, people, taste);
-      const n = enough ? note(item, item._pct) : null;
-      const inWl = (watchlist || []).some((w) => w.tmdbId === item.tmdbId && w.mediaType === item.mediaType);
-      return /* @__PURE__ */ jsx(
-        ComingRow,
-        {
-          item,
-          badges,
-          note: n,
-          enough,
-          added: added[item.tmdbId],
-          inWatchlist: inWl || added[item.tmdbId],
-          settings,
-          onInfo: () => setInfoItem(item),
-          onSave: () => {
-            onAddToWatchlist(item);
-            setAdded((a) => ({ ...a, [item.tmdbId]: true }));
-          },
-          daysOutText: daysOut(item.releaseDate)
-        },
-        item.tmdbId
-      );
-    }) })
-  ] });
+    );
+  })));
 }
 function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCollection, ownedRating, availability, inWatchlist, showtimesZip, providers, onInfo, onSave, onSeen }) {
-  return /* @__PURE__ */ jsxs("div", { className: "outnow-hero", onClick: onInfo, style: { cursor: "pointer" }, children: [
-    item.backdropPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.backdropPath, "w780"), alt: "", className: "outnow-hero-img" }) : item.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w500"), alt: "", className: "outnow-hero-img" }) : /* @__PURE__ */ jsx("div", { className: "outnow-hero-img outnow-hero-blank", children: /* @__PURE__ */ jsx(Film, { size: 28 }) }),
-    /* @__PURE__ */ jsx(
-      "button",
-      {
-        className: "outnow-seen-btn",
-        onClick: (e) => {
-          e.stopPropagation();
-          onSeen();
-        },
-        "aria-label": "Mark as seen",
-        children: /* @__PURE__ */ jsx(Eye, { size: 15 })
-      }
-    ),
-    /* @__PURE__ */ jsx(
-      "button",
-      {
-        className: "outnow-save-btn" + (isOwned ? " outnow-save-btn-active" : ""),
-        onClick: (e) => {
-          e.stopPropagation();
-          onSave();
-        },
-        "aria-label": "Save to wishlist",
-        children: /* @__PURE__ */ jsx(Bookmark, { size: 14 })
-      }
-    ),
-    availability && /* @__PURE__ */ jsx("span", { className: "avail-tag avail-" + availability, children: availability === "theaters" ? /* @__PURE__ */ jsxs(Fragment, { children: [
-      /* @__PURE__ */ jsx(Ticket, { size: 9 }),
-      " In theaters"
-    ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
-      /* @__PURE__ */ jsx(Tv, { size: 9 }),
-      " Streaming"
-    ] }) }),
-    /* @__PURE__ */ jsxs("div", { className: "outnow-hero-overlay", children: [
-      /* @__PURE__ */ jsxs("div", { className: "outnow-hero-top", children: [
-        inWatchlist && /* @__PURE__ */ jsx("span", { className: "watchlist-badge", children: /* @__PURE__ */ jsx(Bookmark, { size: 10 }) }),
-        inCollection ? /* @__PURE__ */ jsx("span", { className: "match-pill match-seen", title: "In your collection", children: ownedRating != null ? /* @__PURE__ */ jsxs(Fragment, { children: [
-          "Seen \xB7 ",
-          ownedRating,
-          /* @__PURE__ */ jsx(Star, { size: 9, style: { marginLeft: 2, verticalAlign: "-1px" }, fill: "currentColor" })
-        ] }) : "Seen" }) : /* @__PURE__ */ jsxs(Fragment, { children: [
-          enough && item._pct != null && /* @__PURE__ */ jsxs("span", { className: "match-pill", style: matchStyle(item._pct), children: [
-            item._pct,
-            "%"
-          ] }),
-          itemNote && /* @__PURE__ */ jsx("span", { className: "proactive-note note-" + itemNote.tone, style: { margin: 0 }, children: itemNote.text })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsx("div", { className: "outnow-hero-title" + (idx > 0 ? " outnow-hero-title-sm" : ""), children: item.title }),
-      itemBadges.length > 0 && /* @__PURE__ */ jsx("div", { className: "badge-row", children: itemBadges.map((b, i) => /* @__PURE__ */ jsx("span", { className: "badge badge-" + b.kind, children: b.text }, i)) }),
-      providers && providers.length > 0 && /* @__PURE__ */ jsx("div", { className: "outnow-providers", children: providers.slice(0, 3).join(" \xB7 ") }),
-      showtimesZip !== void 0 && showtimesZip !== null && /* @__PURE__ */ jsxs("div", { className: "outnow-showtimes", onClick: (e) => e.stopPropagation(), children: [
-        /* @__PURE__ */ jsx("a", { href: buildAmcLink(item.title, showtimesZip), target: "_blank", rel: "noreferrer", children: "AMC" }),
-        /* @__PURE__ */ jsx("a", { href: buildRegalLink(item.title, showtimesZip), target: "_blank", rel: "noreferrer", children: "Regal" })
-      ] })
-    ] })
-  ] });
+  return /* @__PURE__ */ React.createElement("div", { className: "outnow-hero", onClick: onInfo, style: { cursor: "pointer" } }, item.backdropPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.backdropPath, "w780"), alt: "", className: "outnow-hero-img" }) : item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w500"), alt: "", className: "outnow-hero-img" }) : /* @__PURE__ */ React.createElement("div", { className: "outnow-hero-img outnow-hero-blank" }, /* @__PURE__ */ React.createElement(Film, { size: 28 })), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      className: "outnow-seen-btn",
+      onClick: (e) => {
+        e.stopPropagation();
+        onSeen();
+      },
+      "aria-label": "Mark as seen"
+    },
+    /* @__PURE__ */ React.createElement(Eye, { size: 15 })
+  ), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      className: "outnow-save-btn" + (isOwned ? " outnow-save-btn-active" : ""),
+      onClick: (e) => {
+        e.stopPropagation();
+        onSave();
+      },
+      "aria-label": "Save to wishlist"
+    },
+    /* @__PURE__ */ React.createElement(Bookmark, { size: 14 })
+  ), availability && /* @__PURE__ */ React.createElement("span", { className: "avail-tag avail-" + availability }, availability === "theaters" ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(Ticket, { size: 9 }), " In theaters") : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(Tv, { size: 9 }), " Streaming")), /* @__PURE__ */ React.createElement("div", { className: "outnow-hero-overlay" }, /* @__PURE__ */ React.createElement("div", { className: "outnow-hero-top" }, inWatchlist && /* @__PURE__ */ React.createElement("span", { className: "watchlist-badge" }, /* @__PURE__ */ React.createElement(Bookmark, { size: 10 })), inCollection ? /* @__PURE__ */ React.createElement("span", { className: "match-pill match-seen", title: "In your collection" }, ownedRating != null ? /* @__PURE__ */ React.createElement(React.Fragment, null, "Seen \xB7 ", ownedRating, /* @__PURE__ */ React.createElement(Star, { size: 9, style: { marginLeft: 2, verticalAlign: "-1px" }, fill: "currentColor" })) : "Seen") : /* @__PURE__ */ React.createElement(React.Fragment, null, enough && item._pct != null && /* @__PURE__ */ React.createElement("span", { className: "match-pill", style: matchStyle(item._pct) }, item._pct, "%"), itemNote && /* @__PURE__ */ React.createElement("span", { className: "proactive-note note-" + itemNote.tone, style: { margin: 0 } }, itemNote.text))), /* @__PURE__ */ React.createElement("div", { className: "outnow-hero-title" + (idx > 0 ? " outnow-hero-title-sm" : "") }, item.title), itemBadges.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "badge-row" }, itemBadges.map((b, i) => /* @__PURE__ */ React.createElement("span", { key: i, className: "badge badge-" + b.kind }, b.text))), providers && providers.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "outnow-providers" }, providers.slice(0, 3).join(" \xB7 ")), showtimesZip !== void 0 && showtimesZip !== null && /* @__PURE__ */ React.createElement("div", { className: "outnow-showtimes", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("a", { href: buildAmcLink(item.title, showtimesZip), target: "_blank", rel: "noreferrer" }, "AMC"), /* @__PURE__ */ React.createElement("a", { href: buildRegalLink(item.title, showtimesZip), target: "_blank", rel: "noreferrer" }, "Regal"))));
 }
 function ZipBanner({ settings, onSaveSettings }) {
   const [editing, setEditing] = useState(false);
@@ -2701,40 +2086,28 @@ function ZipBanner({ settings, onSaveSettings }) {
     setEditing(false);
   };
   if (!zip || editing) {
-    return /* @__PURE__ */ jsxs("div", { className: "zip-banner", children: [
-      /* @__PURE__ */ jsx(MapPin, { size: 14 }),
-      /* @__PURE__ */ jsx(
-        "input",
-        {
-          className: "zip-input",
-          value: val,
-          inputMode: "numeric",
-          maxLength: 5,
-          placeholder: "ZIP for local showtimes",
-          onChange: (e) => setVal(e.target.value.replace(/[^0-9]/g, "").slice(0, 5)),
-          onKeyDown: (e) => {
-            if (e.key === "Enter") save();
-          }
+    return /* @__PURE__ */ React.createElement("div", { className: "zip-banner" }, /* @__PURE__ */ React.createElement(MapPin, { size: 14 }), /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        className: "zip-input",
+        value: val,
+        inputMode: "numeric",
+        maxLength: 5,
+        placeholder: "ZIP for local showtimes",
+        onChange: (e) => setVal(e.target.value.replace(/[^0-9]/g, "").slice(0, 5)),
+        onKeyDown: (e) => {
+          if (e.key === "Enter") save();
         }
-      ),
-      /* @__PURE__ */ jsx("button", { className: "btn btn-primary btn-sm", onClick: save, disabled: !/^\d{5}$/.test(val.trim()), children: "Save" }),
-      zip && /* @__PURE__ */ jsx("button", { className: "btn btn-ghost btn-sm", onClick: () => {
-        setVal(zip);
-        setEditing(false);
-      }, children: "Cancel" })
-    ] });
-  }
-  return /* @__PURE__ */ jsxs("div", { className: "zip-banner zip-banner-set", children: [
-    /* @__PURE__ */ jsx(MapPin, { size: 13 }),
-    /* @__PURE__ */ jsxs("span", { children: [
-      "Showtimes near ",
-      /* @__PURE__ */ jsx("b", { children: zip })
-    ] }),
-    /* @__PURE__ */ jsx("button", { className: "zip-change", onClick: () => {
+      }
+    ), /* @__PURE__ */ React.createElement("button", { className: "btn btn-primary btn-sm", onClick: save, disabled: !/^\d{5}$/.test(val.trim()) }, "Save"), zip && /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => {
       setVal(zip);
-      setEditing(true);
-    }, children: "change" })
-  ] });
+      setEditing(false);
+    } }, "Cancel"));
+  }
+  return /* @__PURE__ */ React.createElement("div", { className: "zip-banner zip-banner-set" }, /* @__PURE__ */ React.createElement(MapPin, { size: 13 }), /* @__PURE__ */ React.createElement("span", null, "Showtimes near ", /* @__PURE__ */ React.createElement("b", null, zip)), /* @__PURE__ */ React.createElement("button", { className: "zip-change", onClick: () => {
+    setVal(zip);
+    setEditing(true);
+  } }, "change"));
 }
 function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feedback, onAddToWatchlist, onLogNew, onSaveSettings }) {
   const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
@@ -2914,74 +2287,53 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
     });
     return m;
   }, [collection]);
-  return /* @__PURE__ */ jsxs("div", { className: "view", children: [
-    infoItem && /* @__PURE__ */ jsx(
-      DetailModal,
+  return /* @__PURE__ */ React.createElement("div", { className: "view" }, infoItem && /* @__PURE__ */ React.createElement(
+    DetailModal,
+    {
+      item: infoItem,
+      tmdb,
+      badges: badgesFor(infoItem, people, taste),
+      settings,
+      onClose: () => setInfoItem(null),
+      onAddToWatchlist: (it) => {
+        onAddToWatchlist(it);
+        setAdded((a) => ({ ...a, [it.tmdbId]: true }));
+      },
+      onLogNew
+    }
+  ), logging && /* @__PURE__ */ React.createElement(Modal, { onClose: () => setLogging(null) }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, logging.title), /* @__PURE__ */ React.createElement(LogForm, { mediaType: logging.mediaType, tmdb, item: logging, saveLabel: "Add to collection", onCancel: () => setLogging(null), onSave: (entry) => {
+    onLogNew(logging, entry);
+    setLogging(null);
+  } })), /* @__PURE__ */ React.createElement("div", { className: "view-toggle", style: { marginBottom: 12 } }, /* @__PURE__ */ React.createElement("button", { className: outTab === "theaters" ? "toggle-pill active" : "toggle-pill", onClick: () => setOutTab("theaters") }, "In Theaters"), /* @__PURE__ */ React.createElement("button", { className: outTab === "streaming" ? "toggle-pill active" : "toggle-pill", onClick: () => setOutTab("streaming") }, "Streaming")), outTab === "theaters" && onSaveSettings && /* @__PURE__ */ React.createElement(ZipBanner, { settings, onSaveSettings }), /* @__PURE__ */ React.createElement("div", { className: "filter-row", style: { marginBottom: 12 } }, /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: genreFilter, onChange: (e) => setGenreFilter(e.target.value), "aria-label": "Filter by genre" }, /* @__PURE__ */ React.createElement("option", { value: "all" }, "All genres"), genreOpts.map((g) => /* @__PURE__ */ React.createElement("option", { key: g.id, value: g.id }, g.name)))), outTab === "theaters" && loading && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(RefreshCw, { size: 32, className: "spin" }), title: "Loading theaters", body: "Pulling what's playing right now." }), outTab === "theaters" && !loading && error && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Info, { size: 32 }), title: "Couldn't load", body: `TMDB said: ${error}` }), outTab === "streaming" && streamLoading && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(RefreshCw, { size: 32, className: "spin" }), title: "Loading streaming", body: "Checking what's new on your services." }), outTab === "streaming" && !streamLoading && streamError && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Info, { size: 32 }), title: "Couldn't load", body: `TMDB said: ${streamError}` }), (outTab === "theaters" && !loading && !error || outTab === "streaming" && !streamLoading && !streamError) && processed.length === 0 && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Clapperboard, { size: 32 }), title: "Nothing found", body: outTab === "theaters" ? "No current releases found for your region." : "Nothing recent on streaming right now." }), (outTab === "theaters" && !loading && !error || outTab === "streaming" && !streamLoading && !streamError) && processed.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "outnow-all-heroes" }, processed.map((item, idx) => {
+    const itemNote = enough ? note(item, item._pct) : null;
+    const itemBadges = badgesFor(item, people, taste);
+    const isOwned = ownedSet.has(item.tmdbId + item.mediaType);
+    const inWl = (watchlist || []).some((w) => w.tmdbId === item.tmdbId && w.mediaType === item.mediaType);
+    return /* @__PURE__ */ React.createElement(
+      OutNowHeroCard,
       {
-        item: infoItem,
-        tmdb,
-        badges: badgesFor(infoItem, people, taste),
-        settings,
-        onClose: () => setInfoItem(null),
-        onAddToWatchlist: (it) => {
-          onAddToWatchlist(it);
-          setAdded((a) => ({ ...a, [it.tmdbId]: true }));
+        key: item.tmdbId,
+        item,
+        idx,
+        enough,
+        itemNote,
+        itemBadges,
+        isOwned: isOwned || added[item.tmdbId],
+        inCollection: isOwned,
+        ownedRating: ownedRatingMap[item.tmdbId + item.mediaType],
+        availability: availMap[item.tmdbId + item.mediaType],
+        showtimesZip: outTab === "theaters" ? settings.zip || "" : null,
+        providers: outTab === "streaming" ? provMap[item.tmdbId + item.mediaType] : null,
+        inWatchlist: inWl || added[item.tmdbId],
+        onInfo: () => setInfoItem(item),
+        onSave: () => {
+          onAddToWatchlist(item);
+          setAdded((a) => ({ ...a, [item.tmdbId]: true }));
         },
-        onLogNew
+        onSeen: () => setLogging(item)
       }
-    ),
-    logging && /* @__PURE__ */ jsxs(Modal, { onClose: () => setLogging(null), children: [
-      /* @__PURE__ */ jsx("h3", { className: "modal-title", children: logging.title }),
-      /* @__PURE__ */ jsx(LogForm, { mediaType: logging.mediaType, tmdb, item: logging, saveLabel: "Add to collection", onCancel: () => setLogging(null), onSave: (entry) => {
-        onLogNew(logging, entry);
-        setLogging(null);
-      } })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "view-toggle", style: { marginBottom: 12 }, children: [
-      /* @__PURE__ */ jsx("button", { className: outTab === "theaters" ? "toggle-pill active" : "toggle-pill", onClick: () => setOutTab("theaters"), children: "In Theaters" }),
-      /* @__PURE__ */ jsx("button", { className: outTab === "streaming" ? "toggle-pill active" : "toggle-pill", onClick: () => setOutTab("streaming"), children: "Streaming" })
-    ] }),
-    outTab === "theaters" && onSaveSettings && /* @__PURE__ */ jsx(ZipBanner, { settings, onSaveSettings }),
-    /* @__PURE__ */ jsx("div", { className: "filter-row", style: { marginBottom: 12 }, children: /* @__PURE__ */ jsxs("select", { className: "filter-select", value: genreFilter, onChange: (e) => setGenreFilter(e.target.value), "aria-label": "Filter by genre", children: [
-      /* @__PURE__ */ jsx("option", { value: "all", children: "All genres" }),
-      genreOpts.map((g) => /* @__PURE__ */ jsx("option", { value: g.id, children: g.name }, g.id))
-    ] }) }),
-    outTab === "theaters" && loading && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 32, className: "spin" }), title: "Loading theaters", body: "Pulling what's playing right now." }),
-    outTab === "theaters" && !loading && error && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Info, { size: 32 }), title: "Couldn't load", body: `TMDB said: ${error}` }),
-    outTab === "streaming" && streamLoading && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 32, className: "spin" }), title: "Loading streaming", body: "Checking what's new on your services." }),
-    outTab === "streaming" && !streamLoading && streamError && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Info, { size: 32 }), title: "Couldn't load", body: `TMDB said: ${streamError}` }),
-    (outTab === "theaters" && !loading && !error || outTab === "streaming" && !streamLoading && !streamError) && processed.length === 0 && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Clapperboard, { size: 32 }), title: "Nothing found", body: outTab === "theaters" ? "No current releases found for your region." : "Nothing recent on streaming right now." }),
-    (outTab === "theaters" && !loading && !error || outTab === "streaming" && !streamLoading && !streamError) && processed.length > 0 && /* @__PURE__ */ jsx("div", { className: "outnow-all-heroes", children: processed.map((item, idx) => {
-      const itemNote = enough ? note(item, item._pct) : null;
-      const itemBadges = badgesFor(item, people, taste);
-      const isOwned = ownedSet.has(item.tmdbId + item.mediaType);
-      const inWl = (watchlist || []).some((w) => w.tmdbId === item.tmdbId && w.mediaType === item.mediaType);
-      return /* @__PURE__ */ jsx(
-        OutNowHeroCard,
-        {
-          item,
-          idx,
-          enough,
-          itemNote,
-          itemBadges,
-          isOwned: isOwned || added[item.tmdbId],
-          inCollection: isOwned,
-          ownedRating: ownedRatingMap[item.tmdbId + item.mediaType],
-          availability: availMap[item.tmdbId + item.mediaType],
-          showtimesZip: outTab === "theaters" ? settings.zip || "" : null,
-          providers: outTab === "streaming" ? provMap[item.tmdbId + item.mediaType] : null,
-          inWatchlist: inWl || added[item.tmdbId],
-          onInfo: () => setInfoItem(item),
-          onSave: () => {
-            onAddToWatchlist(item);
-            setAdded((a) => ({ ...a, [item.tmdbId]: true }));
-          },
-          onSeen: () => setLogging(item)
-        },
-        item.tmdbId
-      );
-    }) })
-  ] });
+    );
+  })));
 }
 function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, onLogNew, onUndoQuick }) {
   const ownedKeys = useMemo(() => new Set((collection || []).map((c) => c.tmdbId + c.mediaType)), [collection]);
@@ -3017,7 +2369,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
     setAiMode(false);
     const tmdbSearch = async () => {
       const data = await tmdb.searchMulti(q);
-      return (data.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
+      return (data.results || []).filter((r) => (r.media_type === "movie" || r.media_type === "tv") && !isJunkTvRaw(r)).map(normalize);
     };
     const isAsk = /(\blike\b|\bsimilar\b|recommend|suggest|\bmovies? about\b|\bshows? about\b|something to watch|what should i|\?)/i.test(q);
     try {
@@ -3056,101 +2408,52 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
     }
     setLoading(false);
   }
-  return /* @__PURE__ */ jsxs("div", { className: "view", children: [
-    detail && /* @__PURE__ */ jsx(
-      DetailModal,
-      {
-        item: detail,
-        tmdb,
-        badges: [],
-        settings: {},
-        onClose: () => setDetail(null),
-        onAddToWatchlist,
-        onLogNew
-      }
-    ),
-    /* @__PURE__ */ jsxs("form", { className: "search-bar", onSubmit: runSearch, children: [
-      /* @__PURE__ */ jsx(Search, { size: 16 }),
-      /* @__PURE__ */ jsx(
-        "input",
-        {
-          className: "search-input",
-          ref: searchRef,
-          type: "search",
-          name: "q",
-          enterKeyHint: "search",
-          autoCorrect: "off",
-          autoCapitalize: "off",
-          placeholder: 'Search or ask: "movies like Infinity Pool"',
-          value: query,
-          onChange: (e) => setQuery(e.target.value)
-        }
-      ),
-      /* @__PURE__ */ jsx("button", { type: "submit", style: { display: "none" }, "aria-hidden": "true", tabIndex: -1, children: "Search" })
-    ] }),
-    loading && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 32, className: "spin" }), title: "Searching", body: "One second." }),
-    error && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Info, { size: 32 }), title: "Search failed", body: error }),
-    !loading && !error && results.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
-      aiMode && /* @__PURE__ */ jsxs("div", { className: "hint-banner", style: { marginBottom: 12 }, children: [
-        /* @__PURE__ */ jsx(Sparkles, { size: 14 }),
-        " AI-powered results"
-      ] }),
-      /* @__PURE__ */ jsx("div", { className: "suggest-list", children: results.map((item) => /* @__PURE__ */ jsxs("div", { className: "suggest-row", children: [
-        /* @__PURE__ */ jsx("button", { className: "suggest-thumb-btn", onClick: () => setDetail(item), "aria-label": `Details for ${item.title}`, children: item.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w154"), alt: "", className: "suggest-thumb" }) : /* @__PURE__ */ jsx("div", { className: "suggest-thumb suggest-thumb-fallback", children: item.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 18 }) : /* @__PURE__ */ jsx(Film, { size: 18 }) }) }),
-        quickRateKey === item.tmdbId + item.mediaType && !loggedMarks[item.tmdbId + item.mediaType] ? /* @__PURE__ */ jsxs("div", { className: "quick-rate", children: [
-          /* @__PURE__ */ jsx("div", { className: "quick-rate-label", children: "Rate it" }),
-          /* @__PURE__ */ jsx(Stars, { value: 0, size: 26, onChange: (n) => {
-            onLogNew(item, { id: uid(), date: todayISO(), undated: false, location: "", rating: n, notes: "", loggedAt: Date.now() });
-            setLoggedMarks((m) => ({ ...m, [item.tmdbId + item.mediaType]: n }));
-            setQuickRateKey(null);
-          } }),
-          /* @__PURE__ */ jsx("button", { className: "quick-rate-more", onClick: () => {
-            setQuickRateKey(null);
-            setLogging(item);
-          }, children: "more options" })
-        ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
-          /* @__PURE__ */ jsx("div", { className: "suggest-info", children: /* @__PURE__ */ jsxs("div", { className: "suggest-title-row", children: [
-            /* @__PURE__ */ jsxs("button", { className: "suggest-title-btn", onClick: () => setDetail(item), children: [
-              item.title,
-              " ",
-              item.year ? `\xB7 ${item.year}` : ""
-            ] }),
-            aiMode && (() => {
-              const m = matchMeta(item, taste, people, crowd);
-              return m.pct != null ? /* @__PURE__ */ jsxs("span", { className: "match-pill", style: matchStyle(m.pct), children: [
-                m.pct,
-                "%"
-              ] }) : null;
-            })()
-          ] }) }),
-          /* @__PURE__ */ jsx("div", { className: "suggest-actions", children: loggedMarks[item.tmdbId + item.mediaType] ? /* @__PURE__ */ jsxs("span", { className: "logged-mark", children: [
-            /* @__PURE__ */ jsx(Check, { size: 15 }),
-            " ",
-            loggedMarks[item.tmdbId + item.mediaType],
-            "/10",
-            onUndoQuick && /* @__PURE__ */ jsx("button", { className: "logged-undo", onClick: () => {
-              onUndoQuick(item);
-              setLoggedMarks((m) => {
-                const n = { ...m };
-                delete n[item.tmdbId + item.mediaType];
-                return n;
-              });
-            }, "aria-label": "Undo log", children: /* @__PURE__ */ jsx(Undo2, { size: 13 }) })
-          ] }) : ownedKeys.has(item.tmdbId + item.mediaType) ? /* @__PURE__ */ jsx("button", { className: "icon-btn logged-owned", onClick: () => setLogging(item), "aria-label": "Already logged - add rewatch", children: /* @__PURE__ */ jsx(Check, { size: 16 }) }) : /* @__PURE__ */ jsxs(Fragment, { children: [
-            /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => onAddToWatchlist(item), "aria-label": "Want to see", children: /* @__PURE__ */ jsx(Bookmark, { size: 16 }) }),
-            /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => setQuickRateKey(item.tmdbId + item.mediaType), "aria-label": "Seen it", children: /* @__PURE__ */ jsx(Check, { size: 16 }) })
-          ] }) })
-        ] })
-      ] }, item.tmdbId + item.mediaType)) })
-    ] }),
-    logging && /* @__PURE__ */ jsxs(Modal, { onClose: () => setLogging(null), children: [
-      /* @__PURE__ */ jsx("h3", { className: "modal-title", children: logging.title }),
-      /* @__PURE__ */ jsx(LogForm, { mediaType: logging.mediaType, tmdb, item: logging, saveLabel: "Add to collection", onCancel: () => setLogging(null), onSave: (entry) => {
-        onLogNew(logging, entry);
-        setLogging(null);
-      } })
-    ] })
-  ] });
+  return /* @__PURE__ */ React.createElement("div", { className: "view" }, detail && /* @__PURE__ */ React.createElement(
+    DetailModal,
+    {
+      item: detail,
+      tmdb,
+      badges: [],
+      settings: {},
+      onClose: () => setDetail(null),
+      onAddToWatchlist,
+      onLogNew
+    }
+  ), /* @__PURE__ */ React.createElement("form", { className: "search-bar", onSubmit: runSearch }, /* @__PURE__ */ React.createElement(Search, { size: 16 }), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      className: "search-input",
+      ref: searchRef,
+      type: "search",
+      name: "q",
+      enterKeyHint: "search",
+      autoCorrect: "off",
+      autoCapitalize: "off",
+      placeholder: 'Search or ask: "movies like Infinity Pool"',
+      value: query,
+      onChange: (e) => setQuery(e.target.value)
+    }
+  ), /* @__PURE__ */ React.createElement("button", { type: "submit", style: { display: "none" }, "aria-hidden": "true", tabIndex: -1 }, "Search")), loading && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(RefreshCw, { size: 32, className: "spin" }), title: "Searching", body: "One second." }), error && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Info, { size: 32 }), title: "Search failed", body: error }), !loading && !error && results.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, aiMode && /* @__PURE__ */ React.createElement("div", { className: "hint-banner", style: { marginBottom: 12 } }, /* @__PURE__ */ React.createElement(Sparkles, { size: 14 }), " AI-powered results"), /* @__PURE__ */ React.createElement("div", { className: "suggest-list" }, results.map((item) => /* @__PURE__ */ React.createElement("div", { className: "suggest-row", key: item.tmdbId + item.mediaType }, /* @__PURE__ */ React.createElement("button", { className: "suggest-thumb-btn", onClick: () => setDetail(item), "aria-label": `Details for ${item.title}` }, item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w154"), alt: "", className: "suggest-thumb" }) : /* @__PURE__ */ React.createElement("div", { className: "suggest-thumb suggest-thumb-fallback" }, item.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 18 }) : /* @__PURE__ */ React.createElement(Film, { size: 18 }))), quickRateKey === item.tmdbId + item.mediaType && !loggedMarks[item.tmdbId + item.mediaType] ? /* @__PURE__ */ React.createElement("div", { className: "quick-rate" }, /* @__PURE__ */ React.createElement("div", { className: "quick-rate-label" }, "Rate it"), /* @__PURE__ */ React.createElement(Stars, { value: 0, size: 26, onChange: (n) => {
+    onLogNew(item, { id: uid(), date: todayISO(), undated: false, location: "", rating: n, notes: "", loggedAt: Date.now() });
+    setLoggedMarks((m) => ({ ...m, [item.tmdbId + item.mediaType]: n }));
+    setQuickRateKey(null);
+  } }), /* @__PURE__ */ React.createElement("button", { className: "quick-rate-more", onClick: () => {
+    setQuickRateKey(null);
+    setLogging(item);
+  } }, "more options")) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "suggest-info" }, /* @__PURE__ */ React.createElement("div", { className: "suggest-title-row" }, /* @__PURE__ */ React.createElement("button", { className: "suggest-title-btn", onClick: () => setDetail(item) }, item.title, " ", item.year ? `\xB7 ${item.year}` : ""), aiMode && (() => {
+    const m = matchMeta(item, taste, people, crowd);
+    return m.pct != null ? /* @__PURE__ */ React.createElement("span", { className: "match-pill", style: matchStyle(m.pct) }, m.pct, "%") : null;
+  })())), /* @__PURE__ */ React.createElement("div", { className: "suggest-actions" }, loggedMarks[item.tmdbId + item.mediaType] ? /* @__PURE__ */ React.createElement("span", { className: "logged-mark" }, /* @__PURE__ */ React.createElement(Check, { size: 15 }), " ", loggedMarks[item.tmdbId + item.mediaType], "/10", onUndoQuick && /* @__PURE__ */ React.createElement("button", { className: "logged-undo", onClick: () => {
+    onUndoQuick(item);
+    setLoggedMarks((m) => {
+      const n = { ...m };
+      delete n[item.tmdbId + item.mediaType];
+      return n;
+    });
+  }, "aria-label": "Undo log" }, /* @__PURE__ */ React.createElement(Undo2, { size: 13 }))) : ownedKeys.has(item.tmdbId + item.mediaType) ? /* @__PURE__ */ React.createElement("button", { className: "icon-btn logged-owned", onClick: () => setLogging(item), "aria-label": "Already logged - add rewatch" }, /* @__PURE__ */ React.createElement(Check, { size: 16 })) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => onAddToWatchlist(item), "aria-label": "Want to see" }, /* @__PURE__ */ React.createElement(Bookmark, { size: 16 })), /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setQuickRateKey(item.tmdbId + item.mediaType), "aria-label": "Seen it" }, /* @__PURE__ */ React.createElement(Check, { size: 16 }))))))))), logging && /* @__PURE__ */ React.createElement(Modal, { onClose: () => setLogging(null) }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, logging.title), /* @__PURE__ */ React.createElement(LogForm, { mediaType: logging.mediaType, tmdb, item: logging, saveLabel: "Add to collection", onCancel: () => setLogging(null), onSave: (entry) => {
+    onLogNew(logging, entry);
+    setLogging(null);
+  } })));
 }
 function SettingsPanel({ settings, conn, collection, watchlist, feedback, onSave, onClose, onSaveConnection, onImport, onEnrich, enrichStatus }) {
   const [tmdbKey, setTmdbKey] = useState(settings.tmdbKey);
@@ -3201,125 +2504,40 @@ function SettingsPanel({ settings, conn, collection, watchlist, feedback, onSave
     };
     reader.readAsText(file);
   }
-  return /* @__PURE__ */ jsxs(Modal, { onClose, children: [
-    /* @__PURE__ */ jsx("h3", { className: "modal-title", children: "Settings" }),
-    /* @__PURE__ */ jsx("label", { className: "field-label", children: "TMDB API key" }),
-    /* @__PURE__ */ jsx("input", { className: "field-input", value: tmdbKey, onChange: (e) => setTmdbKey(e.target.value), placeholder: "Required" }),
-    /* @__PURE__ */ jsxs("a", { className: "settings-link", href: "https://www.themoviedb.org/settings/api", target: "_blank", rel: "noreferrer", children: [
-      "Get a free key ",
-      /* @__PURE__ */ jsx(ExternalLink, { size: 12 })
-    ] }),
-    /* @__PURE__ */ jsx("label", { className: "field-label", style: { marginTop: 14 }, children: "OMDb API key (optional, for IMDb ratings)" }),
-    /* @__PURE__ */ jsx("input", { className: "field-input", value: omdbKey, onChange: (e) => setOmdbKey(e.target.value), placeholder: "Optional" }),
-    /* @__PURE__ */ jsxs("a", { className: "settings-link", href: "https://www.omdbapi.com/apikey.aspx", target: "_blank", rel: "noreferrer", children: [
-      "Get a free key ",
-      /* @__PURE__ */ jsx(ExternalLink, { size: 12 })
-    ] }),
-    /* @__PURE__ */ jsx("label", { className: "field-label", style: { marginTop: 14 }, children: "Country, for release dates where you actually are" }),
-    /* @__PURE__ */ jsx(
-      "input",
-      {
-        className: "field-input",
-        value: country,
-        onChange: (e) => setCountry(e.target.value.toUpperCase().slice(0, 2)),
-        placeholder: "US, GB, IE, etc"
+  return /* @__PURE__ */ React.createElement(Modal, { onClose }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, "Settings"), /* @__PURE__ */ React.createElement("label", { className: "field-label" }, "TMDB API key"), /* @__PURE__ */ React.createElement("input", { className: "field-input", value: tmdbKey, onChange: (e) => setTmdbKey(e.target.value), placeholder: "Required" }), /* @__PURE__ */ React.createElement("a", { className: "settings-link", href: "https://www.themoviedb.org/settings/api", target: "_blank", rel: "noreferrer" }, "Get a free key ", /* @__PURE__ */ React.createElement(ExternalLink, { size: 12 })), /* @__PURE__ */ React.createElement("label", { className: "field-label", style: { marginTop: 14 } }, "OMDb API key (optional, for IMDb ratings)"), /* @__PURE__ */ React.createElement("input", { className: "field-input", value: omdbKey, onChange: (e) => setOmdbKey(e.target.value), placeholder: "Optional" }), /* @__PURE__ */ React.createElement("a", { className: "settings-link", href: "https://www.omdbapi.com/apikey.aspx", target: "_blank", rel: "noreferrer" }, "Get a free key ", /* @__PURE__ */ React.createElement(ExternalLink, { size: 12 })), /* @__PURE__ */ React.createElement("label", { className: "field-label", style: { marginTop: 14 } }, "Country, for release dates where you actually are"), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      className: "field-input",
+      value: country,
+      onChange: (e) => setCountry(e.target.value.toUpperCase().slice(0, 2)),
+      placeholder: "US, GB, IE, etc"
+    }
+  ), /* @__PURE__ */ React.createElement("p", { className: "sync-note" }, "Two letter code. Changes which Coming Soon dates and streaming options you see. Doesn't affect AMC/Regal links below, those use zip."), /* @__PURE__ */ React.createElement("label", { className: "field-label", style: { marginTop: 14 } }, "Zip or city, for ticket links"), /* @__PURE__ */ React.createElement("input", { className: "field-input", value: zip, onChange: (e) => setZip(e.target.value), placeholder: "e.g. 37064 or wherever you are" }), /* @__PURE__ */ React.createElement("label", { className: "field-label", style: { marginTop: 18 } }, "Sync across devices"), /* @__PURE__ */ React.createElement("p", { className: "sync-note" }, "Paste your Supabase project URL and key here, once per device, and your collection stays the same on your phone and your computer. Leave this blank and it just stays on this device."), /* @__PURE__ */ React.createElement("input", { className: "field-input", value: supabaseUrl, onChange: (e) => setSupabaseUrl(e.target.value), placeholder: "https://yourproject.supabase.co" }), /* @__PURE__ */ React.createElement("input", { className: "field-input", style: { marginTop: 8 }, value: supabaseKey, onChange: (e) => setSupabaseKey(e.target.value), placeholder: "Supabase publishable or anon key" }), /* @__PURE__ */ React.createElement("label", { className: "field-label", style: { marginTop: 18 } }, "Backup and restore"), /* @__PURE__ */ React.createElement("p", { className: "sync-note" }, "Download a copy of your whole collection to your device. It survives cache clears, updates, and anything else. Restore it any time, or hand the file to the taste engine. Do this before any big change."), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-outline btn-sm", onClick: downloadBackup }, /* @__PURE__ */ React.createElement(Download, { size: 14 }), " Download backup"), /* @__PURE__ */ React.createElement("button", { className: "btn btn-outline btn-sm", onClick: () => importRef.current && importRef.current.click() }, /* @__PURE__ */ React.createElement(Upload, { size: 14 }), " Restore from file"), /* @__PURE__ */ React.createElement("input", { ref: importRef, type: "file", accept: "application/json,.json", style: { display: "none" }, onChange: handleImportFile })), /* @__PURE__ */ React.createElement("label", { className: "field-label", style: { marginTop: 18 } }, "Enrich your collection"), /* @__PURE__ */ React.createElement("p", { className: "sync-note" }, "Fetches cast, directors, and themes for everything you've logged, so the taste engine sees more than genre. Runs once, takes a moment. New logs are enriched automatically from now on."), /* @__PURE__ */ React.createElement("button", { className: "btn btn-outline btn-sm", onClick: onEnrich }, /* @__PURE__ */ React.createElement(Sparkles, { size: 14 }), " Fetch cast, directors and themes"), enrichStatus && /* @__PURE__ */ React.createElement("p", { className: "sync-note", style: { marginTop: 8, color: "var(--brass)" } }, enrichStatus), /* @__PURE__ */ React.createElement("div", { className: "form-actions" }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost", onClick: onClose }, "Cancel"), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      className: "btn btn-primary",
+      onClick: () => {
+        onSave({ tmdbKey, omdbKey, zip, country: country || "US" });
+        onSaveConnection({ supabaseUrl: supabaseUrl.trim(), supabaseKey: supabaseKey.trim() });
       }
-    ),
-    /* @__PURE__ */ jsx("p", { className: "sync-note", children: "Two letter code. Changes which Coming Soon dates and streaming options you see. Doesn't affect AMC/Regal links below, those use zip." }),
-    /* @__PURE__ */ jsx("label", { className: "field-label", style: { marginTop: 14 }, children: "Zip or city, for ticket links" }),
-    /* @__PURE__ */ jsx("input", { className: "field-input", value: zip, onChange: (e) => setZip(e.target.value), placeholder: "e.g. 37064 or wherever you are" }),
-    /* @__PURE__ */ jsx("label", { className: "field-label", style: { marginTop: 18 }, children: "Sync across devices" }),
-    /* @__PURE__ */ jsx("p", { className: "sync-note", children: "Paste your Supabase project URL and key here, once per device, and your collection stays the same on your phone and your computer. Leave this blank and it just stays on this device." }),
-    /* @__PURE__ */ jsx("input", { className: "field-input", value: supabaseUrl, onChange: (e) => setSupabaseUrl(e.target.value), placeholder: "https://yourproject.supabase.co" }),
-    /* @__PURE__ */ jsx("input", { className: "field-input", style: { marginTop: 8 }, value: supabaseKey, onChange: (e) => setSupabaseKey(e.target.value), placeholder: "Supabase publishable or anon key" }),
-    /* @__PURE__ */ jsx("label", { className: "field-label", style: { marginTop: 18 }, children: "Backup and restore" }),
-    /* @__PURE__ */ jsx("p", { className: "sync-note", children: "Download a copy of your whole collection to your device. It survives cache clears, updates, and anything else. Restore it any time, or hand the file to the taste engine. Do this before any big change." }),
-    /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" }, children: [
-      /* @__PURE__ */ jsxs("button", { className: "btn btn-outline btn-sm", onClick: downloadBackup, children: [
-        /* @__PURE__ */ jsx(Download, { size: 14 }),
-        " Download backup"
-      ] }),
-      /* @__PURE__ */ jsxs("button", { className: "btn btn-outline btn-sm", onClick: () => importRef.current && importRef.current.click(), children: [
-        /* @__PURE__ */ jsx(Upload, { size: 14 }),
-        " Restore from file"
-      ] }),
-      /* @__PURE__ */ jsx("input", { ref: importRef, type: "file", accept: "application/json,.json", style: { display: "none" }, onChange: handleImportFile })
-    ] }),
-    /* @__PURE__ */ jsx("label", { className: "field-label", style: { marginTop: 18 }, children: "Enrich your collection" }),
-    /* @__PURE__ */ jsx("p", { className: "sync-note", children: "Fetches cast, directors, and themes for everything you've logged, so the taste engine sees more than genre. Runs once, takes a moment. New logs are enriched automatically from now on." }),
-    /* @__PURE__ */ jsxs("button", { className: "btn btn-outline btn-sm", onClick: onEnrich, children: [
-      /* @__PURE__ */ jsx(Sparkles, { size: 14 }),
-      " Fetch cast, directors and themes"
-    ] }),
-    enrichStatus && /* @__PURE__ */ jsx("p", { className: "sync-note", style: { marginTop: 8, color: "var(--brass)" }, children: enrichStatus }),
-    /* @__PURE__ */ jsxs("div", { className: "form-actions", children: [
-      /* @__PURE__ */ jsx("button", { className: "btn btn-ghost", onClick: onClose, children: "Cancel" }),
-      /* @__PURE__ */ jsx(
-        "button",
-        {
-          className: "btn btn-primary",
-          onClick: () => {
-            onSave({ tmdbKey, omdbKey, zip, country: country || "US" });
-            onSaveConnection({ supabaseUrl: supabaseUrl.trim(), supabaseKey: supabaseKey.trim() });
-          },
-          children: "Save"
-        }
-      )
-    ] })
-  ] });
+    },
+    "Save"
+  )));
 }
 function Onboarding({ onSave }) {
   const [tmdbKey, setTmdbKey] = useState("");
-  return /* @__PURE__ */ jsx("div", { className: "onboarding", children: /* @__PURE__ */ jsxs("div", { className: "onboarding-card", children: [
-    /* @__PURE__ */ jsx(Ticket, { size: 36, className: "onboarding-icon" }),
-    /* @__PURE__ */ jsx("h1", { className: "onboarding-title", children: "Welcome to Watchlist" }),
-    /* @__PURE__ */ jsx("p", { className: "onboarding-body", children: "One free key from TMDB powers everything here: posters, release dates, and where to watch. Takes about a minute to grab." }),
-    /* @__PURE__ */ jsxs("a", { className: "settings-link", href: "https://www.themoviedb.org/settings/api", target: "_blank", rel: "noreferrer", children: [
-      "Get your free TMDB key ",
-      /* @__PURE__ */ jsx(ExternalLink, { size: 12 })
-    ] }),
-    /* @__PURE__ */ jsx(
-      "input",
-      {
-        className: "field-input",
-        style: { marginTop: 16 },
-        placeholder: "Paste your TMDB API key",
-        value: tmdbKey,
-        onChange: (e) => setTmdbKey(e.target.value)
-      }
-    ),
-    /* @__PURE__ */ jsx("button", { className: "btn btn-primary", style: { marginTop: 14, width: "100%" }, disabled: !tmdbKey.trim(), onClick: () => onSave(tmdbKey.trim()), children: "Start collecting" })
-  ] }) });
+  return /* @__PURE__ */ React.createElement("div", { className: "onboarding" }, /* @__PURE__ */ React.createElement("div", { className: "onboarding-card" }, /* @__PURE__ */ React.createElement(Ticket, { size: 36, className: "onboarding-icon" }), /* @__PURE__ */ React.createElement("h1", { className: "onboarding-title" }, "Welcome to Watchlist"), /* @__PURE__ */ React.createElement("p", { className: "onboarding-body" }, "One free key from TMDB powers everything here: posters, release dates, and where to watch. Takes about a minute to grab."), /* @__PURE__ */ React.createElement("a", { className: "settings-link", href: "https://www.themoviedb.org/settings/api", target: "_blank", rel: "noreferrer" }, "Get your free TMDB key ", /* @__PURE__ */ React.createElement(ExternalLink, { size: 12 })), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      className: "field-input",
+      style: { marginTop: 16 },
+      placeholder: "Paste your TMDB API key",
+      value: tmdbKey,
+      onChange: (e) => setTmdbKey(e.target.value)
+    }
+  ), /* @__PURE__ */ React.createElement("button", { className: "btn btn-primary", style: { marginTop: 14, width: "100%" }, disabled: !tmdbKey.trim(), onClick: () => onSave(tmdbKey.trim()) }, "Start collecting")));
 }
-const whyWatchCache = {};
-async function getWhyWatch(cacheKey, title, year, genres, tasteGenres, matchPct, voteAvg) {
-  if (whyWatchCache[cacheKey]) return whyWatchCache[cacheKey];
-  const pct = matchPct ?? 50;
-  const qualityLine = voteAvg != null ? `TMDB community score: ${voteAvg}/10.` : "";
-  const data = await callProxy({
-    model: "claude-haiku-4-5",
-    max_tokens: 90,
-    messages: [{
-      role: "user",
-      content: `You're a trusted movie friend giving a personal opinion. NEVER describe the movie or its plot. ONLY say whether this viewer will like it and why, based on their taste AND the movie's quality.
-
-WRONG (describes film): "Witty humor and quirky charm that appeals to everyone"
-WRONG (plot): "A detective comedy following a quirky investigator"
-RIGHT at 82% match, 7.8/10: "This is right in your lane \u2014 you're gonna love it"
-RIGHT at 65% match, 6.2/10: "Decent but nothing special \u2014 worth it if you're in the mood"
-RIGHT at 51% match, 5.5/10: "Pretty middle of the road, even for a fan of this genre"
-RIGHT at 30% match, 7.5/10: "Probably not your thing but critically solid \u2014 keep an open mind"
-RIGHT at 25% match, 4.8/10: "Skip this one \u2014 weak film and outside your lane"
-
-Movie genres: ${genres}. ${qualityLine} Their top genres: ${tasteGenres}. Match score: ${pct}%.
-Write ONE frank opinion sentence, max 16 words. No quotation marks.`
-    }]
-  });
-  const text = data.content?.[0]?.text?.trim().replace(/^["']|["']$/g, "") || null;
-  if (text) whyWatchCache[cacheKey] = text;
-  return text;
-}
-const WHY_LINES = {
+var WHY_LINES = {
   high: [
     "This is the kind of pick the ring exists for.",
     "High confidence - clear your evening.",
@@ -3377,9 +2595,9 @@ function WhyWatch({ item, matchPct }) {
     [item.tmdbId, item.mediaType, matchPct]
   );
   if (!reason) return null;
-  return /* @__PURE__ */ jsx("div", { className: "why-watch", children: reason });
+  return /* @__PURE__ */ React.createElement("div", { className: "why-watch" }, reason);
 }
-const redditCache = {};
+var redditCache = {};
 async function resolveRedditUrl(title, year) {
   const key = title + year;
   if (redditCache[key]) return redditCache[key];
@@ -3596,37 +2814,19 @@ function YearInReview({ collection, onClose }) {
     }
   ].filter(Boolean);
   if (totalWatched === 0) {
-    return /* @__PURE__ */ jsx("div", { className: "yir-wrap", children: /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Sparkles, { size: 32 }), title: `Nothing logged in ${year} yet`, body: "Log a movie and come back." }) });
+    return /* @__PURE__ */ React.createElement("div", { className: "yir-wrap" }, /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Sparkles, { size: 32 }), title: `Nothing logged in ${year} yet`, body: "Log a movie and come back." }));
   }
   const card = cards[step];
-  return /* @__PURE__ */ jsxs("div", { className: "yir-wrap", children: [
-    /* @__PURE__ */ jsxs("div", { className: "yir-card", style: { borderColor: card.color }, children: [
-      /* @__PURE__ */ jsx("div", { className: "yir-label", style: { color: card.color }, children: card.label }),
-      card.poster && /* @__PURE__ */ jsx("img", { src: tmdbImg(card.poster, "w342"), alt: "", className: "yir-poster" }),
-      /* @__PURE__ */ jsx("div", { className: "yir-big", style: { color: card.color }, children: card.big }),
-      card.sub && /* @__PURE__ */ jsx("div", { className: "yir-sub", children: card.sub })
-    ] }),
-    /* @__PURE__ */ jsx("div", { className: "yir-dots", children: cards.map((c, i) => /* @__PURE__ */ jsx("button", { className: "yir-dot" + (i === step ? " yir-dot-active" : ""), onClick: () => setStep(i) }, c.key)) }),
-    /* @__PURE__ */ jsxs("div", { className: "yir-nav", children: [
-      step > 0 && /* @__PURE__ */ jsxs("button", { className: "btn btn-ghost btn-sm", onClick: () => setStep((s) => s - 1), children: [
-        /* @__PURE__ */ jsx(ChevronLeft, { size: 14 }),
-        " Back"
-      ] }),
-      step < cards.length - 1 ? /* @__PURE__ */ jsxs("button", { className: "btn btn-primary btn-sm", onClick: () => setStep((s) => s + 1), children: [
-        "Next ",
-        /* @__PURE__ */ jsx(ChevronRight, { size: 14 })
-      ] }) : /* @__PURE__ */ jsx("button", { className: "btn btn-primary btn-sm", onClick: onClose, children: "Done" })
-    ] })
-  ] });
+  return /* @__PURE__ */ React.createElement("div", { className: "yir-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "yir-card", style: { borderColor: card.color } }, /* @__PURE__ */ React.createElement("div", { className: "yir-label", style: { color: card.color } }, card.label), card.poster && /* @__PURE__ */ React.createElement("img", { src: tmdbImg(card.poster, "w342"), alt: "", className: "yir-poster" }), /* @__PURE__ */ React.createElement("div", { className: "yir-big", style: { color: card.color } }, card.big), card.sub && /* @__PURE__ */ React.createElement("div", { className: "yir-sub" }, card.sub)), /* @__PURE__ */ React.createElement("div", { className: "yir-dots" }, cards.map((c, i) => /* @__PURE__ */ React.createElement("button", { key: c.key, className: "yir-dot" + (i === step ? " yir-dot-active" : ""), onClick: () => setStep(i) }))), /* @__PURE__ */ React.createElement("div", { className: "yir-nav" }, step > 0 && /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => setStep((s) => s - 1) }, /* @__PURE__ */ React.createElement(ChevronLeft, { size: 14 }), " Back"), step < cards.length - 1 ? /* @__PURE__ */ React.createElement("button", { className: "btn btn-primary btn-sm", onClick: () => setStep((s) => s + 1) }, "Next ", /* @__PURE__ */ React.createElement(ChevronRight, { size: 14 })) : /* @__PURE__ */ React.createElement("button", { className: "btn btn-primary btn-sm", onClick: onClose }, "Done")));
 }
-const TABS = [
+var TABS = [
   { id: "collection", label: "Collection", icon: Ticket },
   { id: "outnow", label: "Out Now", icon: Clapperboard },
   { id: "discover", label: "Discover", icon: Sparkles },
   { id: "soon", label: "Coming Soon", icon: CalendarDays },
   { id: "search", label: "Search", icon: Search }
 ];
-const BUILD_V = (() => {
+var BUILD_V = (() => {
   try {
     const m = (document.querySelector('script[src*="stub.js"]') || {}).src.match(/[?&]v=(\d+)/);
     return m ? m[1] : null;
@@ -3770,6 +2970,69 @@ function App() {
   useMemo(() => setOwnRatings(collection), [collection]);
   const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
   const [burst, setBurst] = useState(null);
+  const provCacheRef = useRef({});
+  const provRegionRef = useRef(null);
+  const [streamMap, setStreamMap] = useState({});
+  useEffect(() => {
+    if (!ready) return;
+    let active = true;
+    const region = (settings.country || "US").toUpperCase();
+    if (provRegionRef.current !== region) {
+      provCacheRef.current = {};
+      provRegionRef.current = region;
+    }
+    const buildMap = () => {
+      const map = {};
+      watchlist.forEach((w) => {
+        const v = provCacheRef.current[w.tmdbId + w.mediaType];
+        if (v && v.length) map[w.tmdbId + w.mediaType] = v;
+      });
+      return map;
+    };
+    if (!watchlist.length) {
+      setStreamMap({});
+      return;
+    }
+    const toCheck = watchlist.slice(0, 40).filter((w) => provCacheRef.current[w.tmdbId + w.mediaType] === void 0);
+    if (!toCheck.length) {
+      setStreamMap(buildMap());
+      return;
+    }
+    Promise.allSettled(
+      toCheck.map(
+        (w) => tmdb.watchProviders(w.mediaType, w.tmdbId).then((d) => {
+          const entry = d.results && d.results[region];
+          const names = cleanProviderNames(entry && entry.flatrate ? entry.flatrate.map((p) => p.provider_name) : []);
+          return { key: w.tmdbId + w.mediaType, names };
+        }).catch(() => null)
+      )
+    ).then((rs) => {
+      rs.forEach((r) => {
+        if (r.status === "fulfilled" && r.value) provCacheRef.current[r.value.key] = r.value.names;
+      });
+      if (active) setStreamMap(buildMap());
+    });
+    return () => {
+      active = false;
+    };
+  }, [ready, watchlist, settings.country, tmdb]);
+  const streamSeededRef = useRef(false);
+  useEffect(() => {
+    if (streamSeededRef.current) return;
+    if (feedback.streamAlertIds !== void 0) {
+      streamSeededRef.current = true;
+      return;
+    }
+    if (!Object.keys(streamMap).length) return;
+    streamSeededRef.current = true;
+    setFeedback((f) => f.streamAlertIds !== void 0 ? f : { ...f, streamAlertIds: Object.keys(streamMap) });
+  }, [streamMap, feedback]);
+  const newStreamKeys = new Set(
+    feedback.streamAlertIds === void 0 ? [] : Object.keys(streamMap).filter((k) => !(feedback.streamAlertIds || []).includes(k))
+  );
+  function dismissStreamAlerts() {
+    setFeedback((f) => ({ ...f, streamAlertIds: [.../* @__PURE__ */ new Set([...f.streamAlertIds || [], ...Object.keys(streamMap)])] }));
+  }
   function fireBurst(kind) {
     setBurst({ kind, key: Date.now() });
     setTimeout(() => setBurst(null), 850);
@@ -3883,177 +3146,117 @@ function App() {
   function removeFromWatchlist(item) {
     setWatchlist((w) => w.filter((x) => !(x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)));
   }
-  if (!ready) return /* @__PURE__ */ jsx("div", { className: "boot-screen", children: /* @__PURE__ */ jsx(Ticket, { size: 28, className: "spin" }) });
+  if (!ready) return /* @__PURE__ */ React.createElement("div", { className: "boot-screen" }, /* @__PURE__ */ React.createElement(Ticket, { size: 28, className: "spin" }));
   if (!settings.tmdbKey) {
-    return /* @__PURE__ */ jsxs("div", { className: "app", children: [
-      /* @__PURE__ */ jsx(GlobalStyle, {}),
-      /* @__PURE__ */ jsx(Onboarding, { onSave: (key) => setSettings((s) => ({ ...s, tmdbKey: key })) })
-    ] });
+    return /* @__PURE__ */ React.createElement("div", { className: "app" }, /* @__PURE__ */ React.createElement(GlobalStyle, null), /* @__PURE__ */ React.createElement(Onboarding, { onSave: (key) => setSettings((s) => ({ ...s, tmdbKey: key })) }));
   }
   setScoringContext({ taste, people, crowd });
-  return /* @__PURE__ */ jsxs("div", { className: "app" + (tab === "discover" ? " wash-on" : ""), children: [
-    /* @__PURE__ */ jsx(GlobalStyle, {}),
-    burst && /* @__PURE__ */ jsx("div", { className: "burst-overlay", children: /* @__PURE__ */ jsx("div", { className: "burst-icon burst-" + burst.kind, children: burst.kind === "collect" ? /* @__PURE__ */ jsx(Ticket, { size: 46 }) : burst.kind === "want" ? /* @__PURE__ */ jsx(Bookmark, { size: 46 }) : /* @__PURE__ */ jsx(Eye, { size: 46 }) }) }, burst.key),
-    /* @__PURE__ */ jsxs("header", { className: "app-header", children: [
-      /* @__PURE__ */ jsx("div", { className: "header-bulbs", children: Array.from({ length: 10 }).map((_, i) => /* @__PURE__ */ jsx("i", {}, i)) }),
-      /* @__PURE__ */ jsxs("div", { className: "header-row", children: [
-        /* @__PURE__ */ jsxs("div", { className: "wordmark", children: [
-          "WATCH",
-          /* @__PURE__ */ jsx("span", { className: "wordmark-dot", children: "LIST" })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "header-right", children: [
-          /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => setScanning(true), "aria-label": "Scan ticket", title: "Scan ticket", children: /* @__PURE__ */ jsx(Camera, { size: 17 }) }),
-          /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => setShowFavorites(true), "aria-label": "Favorites", title: "Favorites", children: /* @__PURE__ */ jsx(Heart, { size: 17 }) }),
-          collection.length > 0 && /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => setShowYIR(true), "aria-label": "Recap", title: "Recap", children: /* @__PURE__ */ jsx(Sparkles, { size: 17 }) }),
-          /* @__PURE__ */ jsx("span", { className: "sync-pill" + (hasCloud(conn) ? " sync-on" : ""), children: (hasCloud(conn) ? "Synced" : "This device only") + " \xB7 v" + APP_VERSION }),
-          /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => setShowSettings(true), "aria-label": "Settings", children: /* @__PURE__ */ jsx(Settings, { size: 18 }) })
-        ] })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxs("main", { className: "app-main", children: [
-      /* @__PURE__ */ jsx("div", { style: { display: tab === "collection" ? "" : "none" }, children: /* @__PURE__ */ jsx(
-        CollectionView,
-        {
-          collection,
-          watchlist,
-          tmdb,
-          taste,
-          people,
-          settings,
-          onUpdateTicket: updateTicket,
-          onDeleteTicket: deleteTicket,
-          onLogFromWatchlist: logFromWatchlist,
-          onAddToWatchlist: addToWatchlist,
-          onLogNew: logNew,
-          onRemoveFromWatchlist: removeFromWatchlist,
-          onShowYIR: () => setShowYIR(true)
-        }
-      ) }),
-      mountedTabs.has("discover") && /* @__PURE__ */ jsx("div", { style: { display: tab === "discover" ? "" : "none" }, children: /* @__PURE__ */ jsx(
-        DiscoverView,
-        {
-          tmdb,
-          feedback,
-          setFeedback,
-          taste,
-          people,
-          settings,
-          collection,
-          watchlist,
-          onAddToWatchlist: addToWatchlist,
-          onLogNew: logNew
-        }
-      ) }),
-      mountedTabs.has("outnow") && /* @__PURE__ */ jsx("div", { style: { display: tab === "outnow" ? "" : "none" }, children: /* @__PURE__ */ jsx(
-        OutNowView,
-        {
-          tmdb,
-          settings,
-          taste,
-          people,
-          collection,
-          watchlist,
-          feedback,
-          onAddToWatchlist: addToWatchlist,
-          onLogNew: logNew,
-          onSaveSettings: (s) => setSettings(s)
-        }
-      ) }),
-      mountedTabs.has("soon") && /* @__PURE__ */ jsx("div", { style: { display: tab === "soon" ? "" : "none" }, children: /* @__PURE__ */ jsx(
-        ComingSoonView,
-        {
-          tmdb,
-          settings,
-          taste,
-          people,
-          collection,
-          watchlist,
-          feedback,
-          onAddToWatchlist: addToWatchlist,
-          onLogNew: logNew
-        }
-      ) }),
-      mountedTabs.has("search") && /* @__PURE__ */ jsx("div", { style: { display: tab === "search" ? "" : "none" }, children: /* @__PURE__ */ jsx(SearchView, { tmdb, taste, people, crowd, collection, onAddToWatchlist: addToWatchlist, onLogNew: logNew, onUndoQuick: undoQuick }) })
-    ] }),
-    showYIR && /* @__PURE__ */ jsx(Modal, { onClose: () => setShowYIR(false), wide: true, children: /* @__PURE__ */ jsx(YearInReview, { collection, onClose: () => setShowYIR(false) }) }),
-    rateNudge && /* @__PURE__ */ jsxs(Modal, { onClose: () => setRateNudge(null), children: [
-      /* @__PURE__ */ jsxs("h3", { className: "modal-title", children: [
-        "How was ",
-        rateNudge.title,
-        "?"
-      ] }),
-      /* @__PURE__ */ jsx("p", { className: "sync-note", style: { margin: "2px 0 14px" }, children: "Logged without a rating - score it while it's fresh. Your ratings are what the match scores learn from." }),
-      /* @__PURE__ */ jsx("div", { style: { display: "flex", justifyContent: "center", marginBottom: 18 }, children: /* @__PURE__ */ jsx(Stars, { value: 0, size: 34, onChange: applyNudgeRating }) }),
-      /* @__PURE__ */ jsx("button", { className: "btn btn-ghost", style: { width: "100%" }, onClick: () => setRateNudge(null), children: "Skip for now" })
-    ] }),
-    rewatchPrompt && /* @__PURE__ */ jsxs(Modal, { onClose: () => setRewatchPrompt(null), children: [
-      /* @__PURE__ */ jsx("h3", { className: "modal-title", children: "Already in your collection" }),
-      /* @__PURE__ */ jsxs("p", { className: "sync-note", style: { margin: "6px 0 14px" }, children: [
-        "You logged ",
-        rewatchPrompt.ticket.title,
-        (() => {
-          const ds = rewatchPrompt.ticket.viewings.map((v) => v.date).filter(Boolean).sort();
-          if (!ds.length) return "";
-          const d = ds[ds.length - 1];
-          return ` on ${rewatchPrompt.ticket.mediaType === "tv" && d.endsWith("-01-01") ? d.slice(0, 4) : d}`;
-        })(),
-        ". Add a rewatch instead?"
-      ] }),
-      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 10 }, children: [
-        /* @__PURE__ */ jsx("button", { className: "btn btn-primary", style: { flex: 1 }, onClick: confirmRewatch, children: "Add rewatch" }),
-        /* @__PURE__ */ jsx("button", { className: "btn btn-outline", style: { flex: 1 }, onClick: () => setRewatchPrompt(null), children: "Cancel" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsx("nav", { className: "tab-bar", children: TABS.map((t) => {
-      const Icon = t.icon;
-      return /* @__PURE__ */ jsxs("button", { className: "tab-btn" + (tab === t.id ? " active" : ""), onClick: () => switchTab(t.id), children: [
-        /* @__PURE__ */ jsx(Icon, { size: 19 }),
-        /* @__PURE__ */ jsx("span", { children: t.label })
-      ] }, t.id);
-    }) }),
-    showSettings && /* @__PURE__ */ jsx(
-      SettingsPanel,
-      {
-        settings,
-        conn,
-        collection,
-        watchlist,
-        feedback,
-        onClose: () => setShowSettings(false),
-        onSave: (s) => setSettings(s),
-        onSaveConnection: (c) => {
-          updateConnection(c);
-          setShowSettings(false);
-        },
-        onImport: (data) => {
-          if (Array.isArray(data.collection)) setCollection(data.collection);
-          if (Array.isArray(data.watchlist)) setWatchlist(data.watchlist);
-          if (data.feedback && typeof data.feedback === "object") setFeedback(data.feedback);
-        },
-        onEnrich: runEnrich,
-        enrichStatus
+  return /* @__PURE__ */ React.createElement("div", { className: "app" + (tab === "discover" ? " wash-on" : "") }, /* @__PURE__ */ React.createElement(GlobalStyle, null), burst && /* @__PURE__ */ React.createElement("div", { className: "burst-overlay", key: burst.key }, /* @__PURE__ */ React.createElement("div", { className: "burst-icon burst-" + burst.kind }, burst.kind === "collect" ? /* @__PURE__ */ React.createElement(Ticket, { size: 46 }) : burst.kind === "want" ? /* @__PURE__ */ React.createElement(Bookmark, { size: 46 }) : /* @__PURE__ */ React.createElement(Eye, { size: 46 }))), /* @__PURE__ */ React.createElement("header", { className: "app-header" }, /* @__PURE__ */ React.createElement("div", { className: "header-bulbs" }, Array.from({ length: 10 }).map((_, i) => /* @__PURE__ */ React.createElement("i", { key: i }))), /* @__PURE__ */ React.createElement("div", { className: "header-row" }, /* @__PURE__ */ React.createElement("div", { className: "wordmark" }, "WATCH", /* @__PURE__ */ React.createElement("span", { className: "wordmark-dot" }, "LIST")), /* @__PURE__ */ React.createElement("div", { className: "header-right" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setScanning(true), "aria-label": "Scan ticket", title: "Scan ticket" }, /* @__PURE__ */ React.createElement(Camera, { size: 17 })), /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setShowFavorites(true), "aria-label": "Favorites", title: "Favorites" }, /* @__PURE__ */ React.createElement(Heart, { size: 17 })), collection.length > 0 && /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setShowYIR(true), "aria-label": "Recap", title: "Recap" }, /* @__PURE__ */ React.createElement(Sparkles, { size: 17 })), /* @__PURE__ */ React.createElement("span", { className: "sync-pill" + (hasCloud(conn) ? " sync-on" : "") }, (hasCloud(conn) ? "Synced" : "This device only") + " \xB7 v" + APP_VERSION), /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setShowSettings(true), "aria-label": "Settings" }, /* @__PURE__ */ React.createElement(Settings, { size: 18 }))))), /* @__PURE__ */ React.createElement("main", { className: "app-main" }, /* @__PURE__ */ React.createElement("div", { style: { display: tab === "collection" ? "" : "none" } }, /* @__PURE__ */ React.createElement(
+    CollectionView,
+    {
+      collection,
+      watchlist,
+      tmdb,
+      taste,
+      people,
+      settings,
+      onUpdateTicket: updateTicket,
+      onDeleteTicket: deleteTicket,
+      onLogFromWatchlist: logFromWatchlist,
+      onAddToWatchlist: addToWatchlist,
+      onLogNew: logNew,
+      onRemoveFromWatchlist: removeFromWatchlist,
+      onShowYIR: () => setShowYIR(true),
+      streamMap,
+      newStreamKeys,
+      onDismissStreamAlerts: dismissStreamAlerts
+    }
+  )), mountedTabs.has("discover") && /* @__PURE__ */ React.createElement("div", { style: { display: tab === "discover" ? "" : "none" } }, /* @__PURE__ */ React.createElement(
+    DiscoverView,
+    {
+      tmdb,
+      feedback,
+      setFeedback,
+      taste,
+      people,
+      settings,
+      collection,
+      watchlist,
+      onAddToWatchlist: addToWatchlist,
+      onLogNew: logNew
+    }
+  )), mountedTabs.has("outnow") && /* @__PURE__ */ React.createElement("div", { style: { display: tab === "outnow" ? "" : "none" } }, /* @__PURE__ */ React.createElement(
+    OutNowView,
+    {
+      tmdb,
+      settings,
+      taste,
+      people,
+      collection,
+      watchlist,
+      feedback,
+      onAddToWatchlist: addToWatchlist,
+      onLogNew: logNew,
+      onSaveSettings: (s) => setSettings(s)
+    }
+  )), mountedTabs.has("soon") && /* @__PURE__ */ React.createElement("div", { style: { display: tab === "soon" ? "" : "none" } }, /* @__PURE__ */ React.createElement(
+    ComingSoonView,
+    {
+      tmdb,
+      settings,
+      taste,
+      people,
+      collection,
+      watchlist,
+      feedback,
+      onAddToWatchlist: addToWatchlist,
+      onLogNew: logNew
+    }
+  )), mountedTabs.has("search") && /* @__PURE__ */ React.createElement("div", { style: { display: tab === "search" ? "" : "none" } }, /* @__PURE__ */ React.createElement(SearchView, { tmdb, taste, people, crowd, collection, onAddToWatchlist: addToWatchlist, onLogNew: logNew, onUndoQuick: undoQuick }))), showYIR && /* @__PURE__ */ React.createElement(Modal, { onClose: () => setShowYIR(false), wide: true }, /* @__PURE__ */ React.createElement(YearInReview, { collection, onClose: () => setShowYIR(false) })), rateNudge && /* @__PURE__ */ React.createElement(Modal, { onClose: () => setRateNudge(null) }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, "How was ", rateNudge.title, "?"), /* @__PURE__ */ React.createElement("p", { className: "sync-note", style: { margin: "2px 0 14px" } }, "Logged without a rating - score it while it's fresh. Your ratings are what the match scores learn from."), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "center", marginBottom: 18 } }, /* @__PURE__ */ React.createElement(Stars, { value: 0, size: 34, onChange: applyNudgeRating })), /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost", style: { width: "100%" }, onClick: () => setRateNudge(null) }, "Skip for now")), rewatchPrompt && /* @__PURE__ */ React.createElement(Modal, { onClose: () => setRewatchPrompt(null) }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, "Already in your collection"), /* @__PURE__ */ React.createElement("p", { className: "sync-note", style: { margin: "6px 0 14px" } }, "You logged ", rewatchPrompt.ticket.title, (() => {
+    const ds = rewatchPrompt.ticket.viewings.map((v) => v.date).filter(Boolean).sort();
+    if (!ds.length) return "";
+    const d = ds[ds.length - 1];
+    return ` on ${rewatchPrompt.ticket.mediaType === "tv" && d.endsWith("-01-01") ? d.slice(0, 4) : d}`;
+  })(), ". Add a rewatch instead?"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10 } }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-primary", style: { flex: 1 }, onClick: confirmRewatch }, "Add rewatch"), /* @__PURE__ */ React.createElement("button", { className: "btn btn-outline", style: { flex: 1 }, onClick: () => setRewatchPrompt(null) }, "Cancel"))), /* @__PURE__ */ React.createElement("nav", { className: "tab-bar" }, TABS.map((t) => {
+    const Icon = t.icon;
+    return /* @__PURE__ */ React.createElement("button", { key: t.id, className: "tab-btn" + (tab === t.id ? " active" : ""), onClick: () => switchTab(t.id) }, /* @__PURE__ */ React.createElement(Icon, { size: 19 }), /* @__PURE__ */ React.createElement("span", null, t.label));
+  })), showSettings && /* @__PURE__ */ React.createElement(
+    SettingsPanel,
+    {
+      settings,
+      conn,
+      collection,
+      watchlist,
+      feedback,
+      onClose: () => setShowSettings(false),
+      onSave: (s) => setSettings(s),
+      onSaveConnection: (c) => {
+        updateConnection(c);
+        setShowSettings(false);
+      },
+      onImport: (data) => {
+        if (Array.isArray(data.collection)) setCollection(data.collection);
+        if (Array.isArray(data.watchlist)) setWatchlist(data.watchlist);
+        if (data.feedback && typeof data.feedback === "object") setFeedback(data.feedback);
+      },
+      onEnrich: runEnrich,
+      enrichStatus
+    }
+  ), scanning && /* @__PURE__ */ React.createElement(
+    TicketScanner,
+    {
+      tmdb,
+      onClose: () => setScanning(false),
+      onLogNew: (it, entry) => {
+        logNew(it, entry);
       }
-    ),
-    scanning && /* @__PURE__ */ jsx(
-      TicketScanner,
-      {
-        tmdb,
-        onClose: () => setScanning(false),
-        onLogNew: (it, entry) => {
-          logNew(it, entry);
-        }
-      }
-    ),
-    showFavorites && /* @__PURE__ */ jsxs(Modal, { onClose: () => setShowFavorites(false), wide: true, children: [
-      /* @__PURE__ */ jsx("h3", { className: "modal-title", children: "Favorites" }),
-      /* @__PURE__ */ jsx(FavoritesView, { collection, people, taste, crowd, tmdb, settings, onUpdateTicket: updateTicket, onAddToWatchlist: addToWatchlist, onLogNew: logNew })
-    ] })
-  ] });
+    }
+  ), showFavorites && /* @__PURE__ */ React.createElement(Modal, { onClose: () => setShowFavorites(false), wide: true }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, "Favorites"), /* @__PURE__ */ React.createElement(FavoritesView, { collection, people, taste, crowd, tmdb, settings, onUpdateTicket: updateTicket, onAddToWatchlist: addToWatchlist, onLogNew: logNew })));
 }
 function GlobalStyle() {
-  return /* @__PURE__ */ jsx("style", { children: CSS });
+  return /* @__PURE__ */ React.createElement("style", null, CSS);
 }
-const CSS = `
+var CSS = `
 :root {
   --curtain: #140a06;
   --velvet: #211309;
@@ -4214,6 +3417,12 @@ input, textarea { font-family: inherit; }
 .outnow-showtimes a { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink); background: var(--brass); border-radius: 999px; padding: 3px 10px; text-decoration: none; }
 .outnow-providers { font-size: 10.5px; color: rgba(255,255,255,0.85); margin-top: 4px; font-weight: 600; text-shadow: 0 1px 4px rgba(0,0,0,0.6); }
 .wl-showtimes { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 4px 0 6px; padding: 5px 7px; background: rgba(122,74,8,0.10); border: 1px solid rgba(122,74,8,0.28); border-radius: 8px; }
+.wl-stream { font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 0.06em; color: var(--muted); padding: 3px 10px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wl-stream-new { color: #4ade80; font-weight: 700; }
+.stream-banner { display: flex; align-items: center; gap: 10px; justify-content: space-between; background: rgba(74, 222, 128, 0.08); border: 1px solid rgba(74, 222, 128, 0.35); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
+.stream-banner-text { font-family: 'Space Mono', monospace; font-size: 11px; line-height: 1.5; color: var(--fg); }
+.stream-banner-btn { flex-shrink: 0; font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: #052e12; background: #4ade80; border: none; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+
 .wl-showtimes-label { font-size: 9.5px; font-weight: 700; color: #7a4a08; text-transform: uppercase; letter-spacing: 0.05em; }
 .wl-showtimes-links { display: flex; gap: 5px; }
 .wl-showtimes-links a { font-size: 10.5px; font-weight: 700; color: #7a4a08; text-decoration: none; padding: 2px 8px; border: 1px solid rgba(122,74,8,0.45); border-radius: 999px; background: rgba(255,255,255,0.55); }
@@ -4709,7 +3918,7 @@ button.suggest-row-btn:active { transform: scale(0.99); }
   .swipe-glow { display: none !important; }
 }
 `;
-createRoot(document.getElementById("root")).render(/* @__PURE__ */ jsx(App, {}));
+createRoot(document.getElementById("root")).render(/* @__PURE__ */ React.createElement(App, null));
 export {
   App as default
 };

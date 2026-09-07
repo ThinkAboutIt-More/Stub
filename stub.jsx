@@ -239,6 +239,32 @@ function normalize(item) {
   };
 }
 
+/* provider-name cleanup: collapse channel/ad-tier variants into one clean
+   name per service (shared by Out Now, wishlist cards, and stream alerts) */
+function cleanProviderNames(raw) {
+  const names = [];
+  (raw || []).forEach((n) => {
+    let clean = String(n).trim();
+    let prev;
+    do {
+      prev = clean;
+      clean = clean.replace(/\s+(with Ads|Amazon Channel|Apple TV Channel|Premium|Essential|Standard|Basic)$/i, "").trim();
+    } while (clean !== prev);
+    if (clean && !names.some((x) => x.toLowerCase() === clean.toLowerCase())) names.push(clean);
+  });
+  return names;
+}
+
+/* junk-TV filter: news, reality, soap, and talk shows are not something you
+   "watch a movie like" - keep them out of every feed and recommendation */
+const TV_JUNK_GENRES = new Set([10763, 10764, 10766, 10767]);
+function isJunkTv(x) {
+  return !!x && x.mediaType === "tv" && (x.genreIds || []).some((g) => TV_JUNK_GENRES.has(g));
+}
+function isJunkTvRaw(r) {
+  return !!r && (r.media_type === "tv" || !!r.first_air_date) && (r.genre_ids || []).some((g) => TV_JUNK_GENRES.has(g));
+}
+
 /* ---------------------------------------------------------
    TASTE ENGINE
    weighted scoring from ratings + swipe feedback.
@@ -509,6 +535,13 @@ function matchMetaFull(item, taste, people, crowd) {
   if (vc < 300) {
     shrink = Math.max(0.15, Math.min(1, vc / 300));
     pct = Math.round(50 + (pct - 50) * shrink);
+  }
+  // THIN-DATA CONFIDENCE CAP: when the crowd verdict is too thin to trust,
+  // the number is already pulled toward 50 - the confidence label must not
+  // oversell it either. No "high confidence" on thin evidence, ever.
+  if (shrink < 1) {
+    if (shrink < 0.5) conf = "low";
+    else if (conf === "high") conf = "medium";
   }
   return {
     meta: { pct, conf },
@@ -1007,7 +1040,7 @@ function TicketStub({ ticket, onOpen }) {
    WISHLIST STUB  — grid card for items saved but not watched
 ---------------------------------------------------------*/
 
-function WatchlistStub({ item, onClick, onLog, onRemove, inTheaters, zip }) {
+function WatchlistStub({ item, onClick, onLog, onRemove, inTheaters, zip, streamNames, streamNew }) {
   const unreleased = item.releaseDate
     ? item.releaseDate > todayISO()
     : (item.year && Number(item.year) > new Date().getFullYear());
@@ -1029,6 +1062,12 @@ function WatchlistStub({ item, onClick, onLog, onRemove, inTheaters, zip }) {
         <div className="stub-tab-top">
           <div className="stub-title">{item.title}</div>
         </div>
+        {streamNew && (
+          <div className="wl-stream wl-stream-new">Just landed on {streamNames.slice(0, 3).join(", ")}</div>
+        )}
+        {!streamNew && streamNames && streamNames.length > 0 && (
+          <div className="wl-stream">On {streamNames.slice(0, 3).join(", ")}</div>
+        )}
         {inTheaters && !unreleased && (
           <div className="wl-showtimes" onClick={(e) => e.stopPropagation()}>
             <span className="wl-showtimes-label">In theaters</span>
@@ -1358,7 +1397,7 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
       if (!title) { setStage("manual"); return; }
       setStatusText("Matching to a movie...");
       const res = await tmdb.searchMulti(title);
-      const hits = (res.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
+      const hits = (res.results || []).filter((r) => (r.media_type === "movie" || r.media_type === "tv") && !isJunkTvRaw(r)).map(normalize);
       setCandidates(hits.slice(0, 5));
       setChosen(hits[0] || null);
       setStage("confirm");
@@ -1373,7 +1412,7 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
     setManualSearching(true);
     try {
       const res = await tmdb.searchMulti(q.trim());
-      const hits = (res.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
+      const hits = (res.results || []).filter((r) => (r.media_type === "movie" || r.media_type === "tv") && !isJunkTvRaw(r)).map(normalize);
       setCandidates(hits.slice(0, 6));
       setChosen(hits[0] || null);
       setStage("confirm");
@@ -1474,7 +1513,7 @@ function TicketScanner({ tmdb, onClose, onLogNew }) {
    COLLECTION TAB
 --------------------------------------------------------- */
 
-function CollectionView({ collection, watchlist, tmdb, taste, settings, people, onUpdateTicket, onDeleteTicket, onLogFromWatchlist, onAddToWatchlist, onLogNew, onRemoveFromWatchlist, onShowYIR }) {
+function CollectionView({ collection, watchlist, tmdb, taste, settings, people, onUpdateTicket, onDeleteTicket, onLogFromWatchlist, onAddToWatchlist, onLogNew, onRemoveFromWatchlist, onShowYIR, streamMap, newStreamKeys, onDismissStreamAlerts }) {
   const [open, setOpen] = useState(null);
   const [showWatchlist, setShowWatchlist] = useState(false);
   const [loggingWl, setLoggingWl] = useState(null);
@@ -1670,6 +1709,14 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
           />
         ) : (
           <>
+            {newStreamKeys && newStreamKeys.size > 0 && (
+              <div className="stream-banner">
+                <span className="stream-banner-text">
+                  New on streaming from your wishlist: {watchlist.filter((w) => newStreamKeys.has(w.tmdbId + w.mediaType)).map((w) => w.title).slice(0, 4).join(", ")}{newStreamKeys.size > 4 ? ` +${newStreamKeys.size - 4} more` : ""}
+                </span>
+                <button className="stream-banner-btn" onClick={onDismissStreamAlerts}>Got it</button>
+              </div>
+            )}
             <div className="collection-controls">
               <div className="search-bar collection-search">
                 <Search size={15} />
@@ -1706,6 +1753,8 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
                     item={w}
                     inTheaters={w.mediaType !== "tv" && nowPlayingIds.has(w.tmdbId)}
                     zip={settings.zip || ""}
+                    streamNames={streamMap ? streamMap[w.tmdbId + w.mediaType] : null}
+                    streamNew={!!(newStreamKeys && newStreamKeys.has(w.tmdbId + w.mediaType))}
                     onClick={() => setDetail(w)}
                     onLog={() => setLoggingWl(w)}
                     onRemove={() => onRemoveFromWatchlist(w)}
@@ -1974,7 +2023,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "102";
+const APP_VERSION = "103";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -2112,13 +2161,18 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
     try {
       const topGenres = Object.entries(getWeights(taste)).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g).join(",");
       const pageNum = pageRef.current;
+      // starvation defense: once the keep-alive loop has retried a few times,
+      // stop being picky - widen the date window 6y -> 40y and dig pages twice
+      // as deep so a heavy user's deck refills instead of running dry.
+      const deep = reloadAttemptsRef.current >= 4;
+      const pageCap = deep ? 39 : 19;
       // Balance the deck across languages so no single country's output dominates:
       // English-forward, plus a rotating pair of international languages each load.
       const intlLangs = ["ko", "ja", "fr", "es", "it", "de", "hi", "zh"];
       const langA = intlLangs[pageNum % intlLangs.length];
       const langB = intlLangs[(pageNum + 3) % intlLangs.length];
       const yr = new Date().getFullYear();
-      const recentFloor = `${yr - 6}-01-01`;   // skew the deck to the last ~6 years
+      const recentFloor = deep ? `${yr - 40}-01-01` : `${yr - 6}-01-01`;   // skew the deck to the last ~6 years (40 when starving)
       const freshFloor = `${yr - 2}-01-01`;     // plus a heavy dose of the last 2
       // All-time lanes: a rotating decade of acclaimed films (any language) so a
       // great movie from 40 years ago can surface, plus TMDB's all-time top-rated.
@@ -2131,10 +2185,10 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
         tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "vote_count.gte": 50, "primary_release_date.gte": freshFloor }),
         tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: langA, "vote_count.gte": 40, "primary_release_date.gte": recentFloor }),
         tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: langB, "vote_count.gte": 40, "primary_release_date.gte": recentFloor }),
-        tmdb.discoverTv({ sort_by: "popularity.desc", page: pageNum, "vote_count.gte": 200, without_genres: "10763,10767" }),
+        tmdb.discoverTv({ sort_by: "popularity.desc", page: pageNum, "vote_count.gte": 200, without_genres: "10763,10764,10766,10767" }),
         tmdb.nowPlaying(pageNum),
         tmdb.topRatedMovies(pageNum),
-        tmdb.discoverTv({ sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 400, without_genres: "10763,10767" }),
+        tmdb.discoverTv({ sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 400, without_genres: "10763,10764,10766,10767" }),
         tmdb.discoverMovie({ sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 300, "primary_release_date.gte": `${dec}-01-01`, "primary_release_date.lte": `${dec + 9}-12-31` }),
         // blockbuster deep cut: the big recent English movies (1000+ votes, last 3
         // years) sit several pages deep once he's logged the front page, so pull two
@@ -2145,12 +2199,12 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
       if (topGenres) {
         calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "primary_release_date.gte": recentFloor }));
         calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 200, "primary_release_date.gte": recentFloor }));
-        calls.push(tmdb.discoverTv({ with_genres: topGenres, sort_by: "popularity.desc", page: pageNum, with_original_language: "en" }));
+        calls.push(tmdb.discoverTv({ with_genres: topGenres, sort_by: "popularity.desc", page: pageNum, with_original_language: "en", without_genres: "10763,10764,10766,10767" }));
       }
       const pages = await Promise.all(calls);
-      const all = pages.flatMap((p) => p.results || []).map(normalize);
+      const all = pages.flatMap((p) => p.results || []).map(normalize).filter((x) => !isJunkTv(x));
       // advance paging for next load; wrap back to the start when we run out so the deck never truly ends
-      pageRef.current = all.length === 0 || pageNum + 2 > 9 ? 1 : pageNum + 2;
+      pageRef.current = all.length === 0 || pageNum + 2 > pageCap ? 1 : pageNum + 2;
       const skipSet = seenIdSet; // cooldown-aware: only cooling-down skips, wanted, and seen are excluded
       const fresh = all.filter((a) => !skipSet.has(a.tmdbId + a.mediaType) && !ownedSet.has(a.tmdbId + a.mediaType));
       const dedup = Array.from(new Map(fresh.map((f) => [f.tmdbId + f.mediaType, f])).values());
@@ -2199,7 +2253,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   useEffect(() => {
     if (loading || error) return;
     if (pool.length > 4) { reloadAttemptsRef.current = 0; return; }
-    if (reloadAttemptsRef.current >= 25) return;
+    if (reloadAttemptsRef.current >= 40) return;
     reloadAttemptsRef.current += 1;
     loadPool(true);
     // eslint-disable-next-line
@@ -2219,6 +2273,17 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
     setPool((prev) => prev.map(rescore));
     setForYouList((prev) => prev.map(rescore).sort((a, b) => (b._pct || 50) - (a._pct || 50)));
   }, [lbReady]);
+  // instant rescore: a fresh rating (or any taste-profile change) re-scores the
+  // cards already on screen immediately - no reload, no waiting for the deck to
+  // turn over. Skips the first run, which is just the initial mount.
+  const tasteInitRef = useRef(true);
+  useEffect(() => {
+    if (tasteInitRef.current) { tasteInitRef.current = false; return; }
+    const rescore = (x) => { const m = matchMeta(x, taste, people, crowdRef.current); return { ...x, _pct: m.pct, _conf: m.conf }; };
+    setPool((prev) => prev.map(rescore));
+    setForYouList((prev) => prev.map(rescore).sort((a, b) => (b._pct || 50) - (a._pct || 50)));
+    // eslint-disable-next-line
+  }, [taste, people]);
   const loadForYouList = useCallback(async () => {
     setForYouLoading(true);
     try {
@@ -2236,7 +2301,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
         const pages = await Promise.all(
           topRated.map((t) => tmdb.recommendations(t.mediaType, t.tmdbId).catch(() => ({ results: [] })))
         );
-        const all = pages.flatMap((p) => (p.results || []).map(normalize));
+        const all = pages.flatMap((p) => (p.results || []).map(normalize)).filter((x) => !isJunkTv(x));
         const dedup = Array.from(new Map(all.map((f) => [f.tmdbId + f.mediaType, f])).values());
         const fresh = dedup.filter((x) => !ownedSet.has(x.tmdbId + x.mediaType) && !seenIdSet.has(x.tmdbId + x.mediaType));
         const scored = fresh.map((x) => { const m = matchMeta(x, taste, people, crowdRef.current); return { ...x, _pct: m.pct, _conf: m.conf }; });
@@ -3377,7 +3442,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
     setAiMode(false);
     const tmdbSearch = async () => {
       const data = await tmdb.searchMulti(q);
-      return (data.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
+      return (data.results || []).filter((r) => (r.media_type === "movie" || r.media_type === "tv") && !isJunkTvRaw(r)).map(normalize);
     };
     // Treat it as an AI "ask" only when it's phrased like one; otherwise it's a title lookup.
     const isAsk = /(\blike\b|\bsimilar\b|recommend|suggest|\bmovies? about\b|\bshows? about\b|something to watch|what should i|\?)/i.test(q);
@@ -4194,6 +4259,66 @@ export default function App() {
   const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
   const [burst, setBurst] = useState(null);
 
+  // wishlist -> streaming: check each wishlist title's subscription providers
+  // (cached in-session) so Collection cards can say where to watch, and any
+  // title that newly lands on streaming gets called out once. The "already
+  // told him" memory lives in the synced feedback blob (streamAlertIds).
+  const provCacheRef = useRef({});
+  const provRegionRef = useRef(null);
+  const [streamMap, setStreamMap] = useState({});
+  useEffect(() => {
+    if (!ready) return;
+    let active = true;
+    const region = (settings.country || "US").toUpperCase();
+    if (provRegionRef.current !== region) { provCacheRef.current = {}; provRegionRef.current = region; }
+    const buildMap = () => {
+      const map = {};
+      watchlist.forEach((w) => {
+        const v = provCacheRef.current[w.tmdbId + w.mediaType];
+        if (v && v.length) map[w.tmdbId + w.mediaType] = v;
+      });
+      return map;
+    };
+    if (!watchlist.length) { setStreamMap({}); return; }
+    const toCheck = watchlist.slice(0, 40).filter((w) => provCacheRef.current[w.tmdbId + w.mediaType] === undefined);
+    if (!toCheck.length) { setStreamMap(buildMap()); return; }
+    Promise.allSettled(
+      toCheck.map((w) =>
+        tmdb.watchProviders(w.mediaType, w.tmdbId).then((d) => {
+          const entry = d.results && d.results[region];
+          const names = cleanProviderNames(entry && entry.flatrate ? entry.flatrate.map((p) => p.provider_name) : []);
+          return { key: w.tmdbId + w.mediaType, names };
+        }).catch(() => null)
+      )
+    ).then((rs) => {
+      rs.forEach((r) => { if (r.status === "fulfilled" && r.value) provCacheRef.current[r.value.key] = r.value.names; });
+      if (active) setStreamMap(buildMap());
+    });
+    return () => { active = false; };
+    // eslint-disable-next-line
+  }, [ready, watchlist, settings.country, tmdb]);
+
+  // first run of the alerts feature: everything already streaming is seeded
+  // silently - "Just landed" is only for titles that arrive AFTER the seed.
+  const streamSeededRef = useRef(false);
+  useEffect(() => {
+    if (streamSeededRef.current) return;
+    if (feedback.streamAlertIds !== undefined) { streamSeededRef.current = true; return; }
+    if (!Object.keys(streamMap).length) return;
+    streamSeededRef.current = true;
+    setFeedback((f) => (f.streamAlertIds !== undefined ? f : { ...f, streamAlertIds: Object.keys(streamMap) }));
+    // eslint-disable-next-line
+  }, [streamMap, feedback]);
+
+  const newStreamKeys = new Set(
+    feedback.streamAlertIds === undefined
+      ? []
+      : Object.keys(streamMap).filter((k) => !(feedback.streamAlertIds || []).includes(k))
+  );
+  function dismissStreamAlerts() {
+    setFeedback((f) => ({ ...f, streamAlertIds: [...new Set([...(f.streamAlertIds || []), ...Object.keys(streamMap)])] }));
+  }
+
   function fireBurst(kind) {
     setBurst({ kind, key: Date.now() });
     setTimeout(() => setBurst(null), 850);
@@ -4375,6 +4500,9 @@ export default function App() {
             onLogNew={logNew}
             onRemoveFromWatchlist={removeFromWatchlist}
             onShowYIR={() => setShowYIR(true)}
+            streamMap={streamMap}
+            newStreamKeys={newStreamKeys}
+            onDismissStreamAlerts={dismissStreamAlerts}
           />
         </div>
         {mountedTabs.has("discover") && (
@@ -4685,6 +4813,12 @@ input, textarea { font-family: inherit; }
 .outnow-showtimes a { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink); background: var(--brass); border-radius: 999px; padding: 3px 10px; text-decoration: none; }
 .outnow-providers { font-size: 10.5px; color: rgba(255,255,255,0.85); margin-top: 4px; font-weight: 600; text-shadow: 0 1px 4px rgba(0,0,0,0.6); }
 .wl-showtimes { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 4px 0 6px; padding: 5px 7px; background: rgba(122,74,8,0.10); border: 1px solid rgba(122,74,8,0.28); border-radius: 8px; }
+.wl-stream { font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 0.06em; color: var(--muted); padding: 3px 10px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wl-stream-new { color: #4ade80; font-weight: 700; }
+.stream-banner { display: flex; align-items: center; gap: 10px; justify-content: space-between; background: rgba(74, 222, 128, 0.08); border: 1px solid rgba(74, 222, 128, 0.35); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
+.stream-banner-text { font-family: 'Space Mono', monospace; font-size: 11px; line-height: 1.5; color: var(--fg); }
+.stream-banner-btn { flex-shrink: 0; font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: #052e12; background: #4ade80; border: none; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+
 .wl-showtimes-label { font-size: 9.5px; font-weight: 700; color: #7a4a08; text-transform: uppercase; letter-spacing: 0.05em; }
 .wl-showtimes-links { display: flex; gap: 5px; }
 .wl-showtimes-links a { font-size: 10.5px; font-weight: 700; color: #7a4a08; text-decoration: none; padding: 2px 8px; border: 1px solid rgba(122,74,8,0.45); border-radius: 999px; background: rgba(255,255,255,0.55); }
