@@ -1734,7 +1734,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
           {
             onSkip: () => fly("left", onSkip),
             onSeen: () => setChoice("rate"),
-            onWant: askChoice
+            onWant: () => fly("right", onWant)
           }
         ) }),
         choice && /* @__PURE__ */ jsx("div", { className: "choice-overlay", onMouseDown: (e) => e.stopPropagation(), onTouchStart: (e) => e.stopPropagation(), children: choice === "choose" ? /* @__PURE__ */ jsxs(Fragment, { children: [
@@ -1761,7 +1761,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
     }
   );
 }
-const APP_VERSION = "101";
+const APP_VERSION = "102";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" };
 function usePosterGradient(item) {
@@ -2631,7 +2631,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
     }) })
   ] });
 }
-function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCollection, ownedRating, availability, inWatchlist, onInfo, onSave, onSeen }) {
+function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCollection, ownedRating, availability, inWatchlist, showtimesZip, providers, onInfo, onSave, onSeen }) {
   return /* @__PURE__ */ jsxs("div", { className: "outnow-hero", onClick: onInfo, style: { cursor: "pointer" }, children: [
     item.backdropPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.backdropPath, "w780"), alt: "", className: "outnow-hero-img" }) : item.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w500"), alt: "", className: "outnow-hero-img" }) : /* @__PURE__ */ jsx("div", { className: "outnow-hero-img outnow-hero-blank", children: /* @__PURE__ */ jsx(Film, { size: 28 }) }),
     /* @__PURE__ */ jsx(
@@ -2681,7 +2681,12 @@ function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCo
         ] })
       ] }),
       /* @__PURE__ */ jsx("div", { className: "outnow-hero-title" + (idx > 0 ? " outnow-hero-title-sm" : ""), children: item.title }),
-      itemBadges.length > 0 && /* @__PURE__ */ jsx("div", { className: "badge-row", children: itemBadges.map((b, i) => /* @__PURE__ */ jsx("span", { className: "badge badge-" + b.kind, children: b.text }, i)) })
+      itemBadges.length > 0 && /* @__PURE__ */ jsx("div", { className: "badge-row", children: itemBadges.map((b, i) => /* @__PURE__ */ jsx("span", { className: "badge badge-" + b.kind, children: b.text }, i)) }),
+      providers && providers.length > 0 && /* @__PURE__ */ jsx("div", { className: "outnow-providers", children: providers.slice(0, 3).join(" \xB7 ") }),
+      showtimesZip !== void 0 && showtimesZip !== null && /* @__PURE__ */ jsxs("div", { className: "outnow-showtimes", onClick: (e) => e.stopPropagation(), children: [
+        /* @__PURE__ */ jsx("a", { href: buildAmcLink(item.title, showtimesZip), target: "_blank", rel: "noreferrer", children: "AMC" }),
+        /* @__PURE__ */ jsx("a", { href: buildRegalLink(item.title, showtimesZip), target: "_blank", rel: "noreferrer", children: "Regal" })
+      ] })
     ] })
   ] });
 }
@@ -2733,6 +2738,13 @@ function ZipBanner({ settings, onSaveSettings }) {
 }
 function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feedback, onAddToWatchlist, onLogNew, onSaveSettings }) {
   const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
+  const [outTab, setOutTab] = useState("theaters");
+  const [streamItems, setStreamItems] = useState([]);
+  const [streamLoading, setStreamLoading] = useState(false);
+  const [streamError, setStreamError] = useState(null);
+  const [provMap, setProvMap] = useState({});
+  const provCacheRef = useRef({});
+  const streamLoadedFor = useRef(null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -2796,22 +2808,78 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
       active = false;
     };
   }, [items, settings.country]);
+  useEffect(() => {
+    if (outTab !== "streaming") return;
+    const region = (settings.country || "US").toUpperCase();
+    if (streamLoadedFor.current === region) return;
+    streamLoadedFor.current = region;
+    let active = true;
+    (async () => {
+      setStreamLoading(true);
+      setStreamError(null);
+      try {
+        const today = todayISO();
+        const floor = new Date(Date.now() - 120 * 24 * 60 * 60 * 1e3).toISOString().slice(0, 10);
+        const params = {
+          sort_by: "popularity.desc",
+          watch_region: region,
+          with_watch_monetization_types: "flatrate",
+          "primary_release_date.gte": floor,
+          "primary_release_date.lte": today,
+          "vote_count.gte": 20
+        };
+        const [p1, p2] = await Promise.all([tmdb.discoverMovie({ ...params, page: 1 }), tmdb.discoverMovie({ ...params, page: 2 })]);
+        const raw = [...p1.results || [], ...p2.results || []];
+        const dedup = Array.from(new Map(raw.map((r) => [r.id, r])).values());
+        const sorted = dedup.map((r) => normalize(r)).sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+        if (active) setStreamItems(sorted);
+        const toFetch = sorted.filter((it) => provCacheRef.current[it.tmdbId + it.mediaType] === void 0);
+        if (toFetch.length) {
+          const results = await Promise.allSettled(
+            toFetch.map(
+              (it) => tmdb.watchProviders(it.mediaType, it.tmdbId).then((d) => {
+                const entry = d.results && d.results[region];
+                const raw2 = entry && entry.flatrate ? entry.flatrate.map((p) => p.provider_name) : [];
+                const names = [];
+                raw2.forEach((n) => {
+                  const clean = n.replace(/\s+(with Ads|Amazon Channel|Apple TV Channel|Premium|Essential|Standard|Basic)$/i, "").trim();
+                  if (clean && !names.some((x) => x.toLowerCase() === clean.toLowerCase())) names.push(clean);
+                });
+                return { key: it.tmdbId + it.mediaType, val: names };
+              })
+            )
+          );
+          results.forEach((r) => {
+            if (r.status === "fulfilled" && r.value) provCacheRef.current[r.value.key] = r.value.val;
+          });
+          if (active) setProvMap({ ...provCacheRef.current });
+        }
+      } catch (e) {
+        if (active) setStreamError(e.message);
+      }
+      if (active) setStreamLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [outTab, settings.country]);
   const enough = hasEnoughTaste(collection, feedback);
+  const activeItems = outTab === "theaters" ? items : streamItems;
   const genreOpts = useMemo(() => {
     const ids = /* @__PURE__ */ new Set();
-    items.forEach((x) => (x.genreIds || []).forEach((g) => ids.add(g)));
+    activeItems.forEach((x) => (x.genreIds || []).forEach((g) => ids.add(g)));
     return Array.from(ids).map((id) => ({ id, name: MOVIE_GENRES[id] || TV_GENRES[id] })).filter((x) => x.name).sort((a, b) => a.name.localeCompare(b.name));
-  }, [items]);
+  }, [activeItems]);
   const ownedKeys = useMemo(() => new Set((collection || []).map((c) => c.tmdbId + c.mediaType)), [collection]);
   const processed = useMemo(() => {
-    let list = items.map((x) => {
+    let list = activeItems.map((x) => {
       const m = matchMeta(x, taste, people, crowd);
       return { ...x, _pct: m.pct, _conf: m.conf };
     }).filter((x) => !ownedKeys.has(x.tmdbId + x.mediaType));
     if (genreFilter !== "all") list = list.filter((x) => (x.genreIds || []).includes(Number(genreFilter)));
     list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
     return list;
-  }, [items, taste, genreFilter, ownedKeys]);
+  }, [activeItems, taste, genreFilter, ownedKeys]);
   const note = (item, pct) => {
     if (pct == null) return null;
     const _w = getWeights(taste);
@@ -2869,15 +2937,21 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
         setLogging(null);
       } })
     ] }),
-    onSaveSettings && /* @__PURE__ */ jsx(ZipBanner, { settings, onSaveSettings }),
+    /* @__PURE__ */ jsxs("div", { className: "view-toggle", style: { marginBottom: 12 }, children: [
+      /* @__PURE__ */ jsx("button", { className: outTab === "theaters" ? "toggle-pill active" : "toggle-pill", onClick: () => setOutTab("theaters"), children: "In Theaters" }),
+      /* @__PURE__ */ jsx("button", { className: outTab === "streaming" ? "toggle-pill active" : "toggle-pill", onClick: () => setOutTab("streaming"), children: "Streaming" })
+    ] }),
+    outTab === "theaters" && onSaveSettings && /* @__PURE__ */ jsx(ZipBanner, { settings, onSaveSettings }),
     /* @__PURE__ */ jsx("div", { className: "filter-row", style: { marginBottom: 12 }, children: /* @__PURE__ */ jsxs("select", { className: "filter-select", value: genreFilter, onChange: (e) => setGenreFilter(e.target.value), "aria-label": "Filter by genre", children: [
       /* @__PURE__ */ jsx("option", { value: "all", children: "All genres" }),
       genreOpts.map((g) => /* @__PURE__ */ jsx("option", { value: g.id, children: g.name }, g.id))
     ] }) }),
-    loading && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 32, className: "spin" }), title: "Loading theaters", body: "Pulling what's playing right now." }),
-    !loading && error && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Info, { size: 32 }), title: "Couldn't load", body: `TMDB said: ${error}` }),
-    !loading && !error && processed.length === 0 && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Clapperboard, { size: 32 }), title: "Nothing found", body: "No current releases found for your region." }),
-    !loading && !error && processed.length > 0 && /* @__PURE__ */ jsx("div", { className: "outnow-all-heroes", children: processed.map((item, idx) => {
+    outTab === "theaters" && loading && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 32, className: "spin" }), title: "Loading theaters", body: "Pulling what's playing right now." }),
+    outTab === "theaters" && !loading && error && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Info, { size: 32 }), title: "Couldn't load", body: `TMDB said: ${error}` }),
+    outTab === "streaming" && streamLoading && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 32, className: "spin" }), title: "Loading streaming", body: "Checking what's new on your services." }),
+    outTab === "streaming" && !streamLoading && streamError && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Info, { size: 32 }), title: "Couldn't load", body: `TMDB said: ${streamError}` }),
+    (outTab === "theaters" && !loading && !error || outTab === "streaming" && !streamLoading && !streamError) && processed.length === 0 && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Clapperboard, { size: 32 }), title: "Nothing found", body: outTab === "theaters" ? "No current releases found for your region." : "Nothing recent on streaming right now." }),
+    (outTab === "theaters" && !loading && !error || outTab === "streaming" && !streamLoading && !streamError) && processed.length > 0 && /* @__PURE__ */ jsx("div", { className: "outnow-all-heroes", children: processed.map((item, idx) => {
       const itemNote = enough ? note(item, item._pct) : null;
       const itemBadges = badgesFor(item, people, taste);
       const isOwned = ownedSet.has(item.tmdbId + item.mediaType);
@@ -2894,6 +2968,8 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
           inCollection: isOwned,
           ownedRating: ownedRatingMap[item.tmdbId + item.mediaType],
           availability: availMap[item.tmdbId + item.mediaType],
+          showtimesZip: outTab === "theaters" ? settings.zip || "" : null,
+          providers: outTab === "streaming" ? provMap[item.tmdbId + item.mediaType] : null,
           inWatchlist: inWl || added[item.tmdbId],
           onInfo: () => setInfoItem(item),
           onSave: () => {
@@ -4134,6 +4210,9 @@ input, textarea { font-family: inherit; }
 .star-slot { margin: 0 1px; }
 
 /* watchlist stub grid */
+.outnow-showtimes { display: flex; gap: 6px; margin-top: 6px; }
+.outnow-showtimes a { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink); background: var(--brass); border-radius: 999px; padding: 3px 10px; text-decoration: none; }
+.outnow-providers { font-size: 10.5px; color: rgba(255,255,255,0.85); margin-top: 4px; font-weight: 600; text-shadow: 0 1px 4px rgba(0,0,0,0.6); }
 .wl-showtimes { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 4px 0 6px; padding: 5px 7px; background: rgba(122,74,8,0.10); border: 1px solid rgba(122,74,8,0.28); border-radius: 8px; }
 .wl-showtimes-label { font-size: 9.5px; font-weight: 700; color: #7a4a08; text-transform: uppercase; letter-spacing: 0.05em; }
 .wl-showtimes-links { display: flex; gap: 5px; }

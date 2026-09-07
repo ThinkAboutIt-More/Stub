@@ -1941,7 +1941,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
         <SwipeButtons
           onSkip={() => fly("left", onSkip)}
           onSeen={() => setChoice("rate")}
-          onWant={askChoice}
+          onWant={() => fly("right", onWant)}
         />
       </div>
       {choice && (
@@ -1974,7 +1974,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "101";
+const APP_VERSION = "102";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -2969,7 +2969,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
    OUT NOW TAB  — movies currently in theaters
 --------------------------------------------------------- */
 
-function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCollection, ownedRating, availability, inWatchlist, onInfo, onSave, onSeen }) {
+function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCollection, ownedRating, availability, inWatchlist, showtimesZip, providers, onInfo, onSave, onSeen }) {
   return (
     <div className="outnow-hero" onClick={onInfo} style={{ cursor: "pointer" }}>
       {item.backdropPath ? (
@@ -3020,6 +3020,15 @@ function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCo
             {itemBadges.map((b, i) => <span key={i} className={"badge badge-" + b.kind}>{b.text}</span>)}
           </div>
         )}
+        {providers && providers.length > 0 && (
+          <div className="outnow-providers">{providers.slice(0, 3).join(" \u00b7 ")}</div>
+        )}
+        {showtimesZip !== undefined && showtimesZip !== null && (
+          <div className="outnow-showtimes" onClick={(e) => e.stopPropagation()}>
+            <a href={buildAmcLink(item.title, showtimesZip)} target="_blank" rel="noreferrer">AMC</a>
+            <a href={buildRegalLink(item.title, showtimesZip)} target="_blank" rel="noreferrer">Regal</a>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3064,6 +3073,15 @@ function ZipBanner({ settings, onSaveSettings }) {
 
 function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feedback, onAddToWatchlist, onLogNew, onSaveSettings }) {
   const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
+  // v102: Out Now splits in two - "theaters" follows his selected zip (editable
+  // any time, he travels), "streaming" is what's out / just out on streaming.
+  const [outTab, setOutTab] = useState("theaters");
+  const [streamItems, setStreamItems] = useState([]);
+  const [streamLoading, setStreamLoading] = useState(false);
+  const [streamError, setStreamError] = useState(null);
+  const [provMap, setProvMap] = useState({});
+  const provCacheRef = useRef({});
+  const streamLoadedFor = useRef(null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -3122,24 +3140,83 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
     return () => { active = false; };
   }, [items, settings.country]);
 
+  // streaming sub-tab: recent releases (last ~4 months) with a flatrate provider
+  // in his region, pulled straight from TMDB's discover watch filter - no paid API.
+  useEffect(() => {
+    if (outTab !== "streaming") return;
+    const region = (settings.country || "US").toUpperCase();
+    if (streamLoadedFor.current === region) return;
+    streamLoadedFor.current = region;
+    let active = true;
+    (async () => {
+      setStreamLoading(true);
+      setStreamError(null);
+      try {
+        const today = todayISO();
+        const floor = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const params = {
+          sort_by: "popularity.desc",
+          watch_region: region,
+          with_watch_monetization_types: "flatrate",
+          "primary_release_date.gte": floor,
+          "primary_release_date.lte": today,
+          "vote_count.gte": 20
+        };
+        const [p1, p2] = await Promise.all([tmdb.discoverMovie({ ...params, page: 1 }), tmdb.discoverMovie({ ...params, page: 2 })]);
+        const raw = [...(p1.results || []), ...(p2.results || [])];
+        const dedup = Array.from(new Map(raw.map((r) => [r.id, r])).values());
+        const sorted = dedup.map((r) => normalize(r)).sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+        if (active) setStreamItems(sorted);
+        // provider names per title (cached for the session)
+        const toFetch = sorted.filter((it) => provCacheRef.current[it.tmdbId + it.mediaType] === undefined);
+        if (toFetch.length) {
+          const results = await Promise.allSettled(
+            toFetch.map((it) =>
+              tmdb.watchProviders(it.mediaType, it.tmdbId).then((d) => {
+                const entry = d.results && d.results[region];
+                // collapse channel/ad-tier variants into one clean name per service
+                const raw = entry && entry.flatrate ? entry.flatrate.map((p) => p.provider_name) : [];
+                const names = [];
+                raw.forEach((n) => {
+                  const clean = n.replace(/\s+(with Ads|Amazon Channel|Apple TV Channel|Premium|Essential|Standard|Basic)$/i, "").trim();
+                  if (clean && !names.some((x) => x.toLowerCase() === clean.toLowerCase())) names.push(clean);
+                });
+                return { key: it.tmdbId + it.mediaType, val: names };
+              })
+            )
+          );
+          results.forEach((r) => { if (r.status === "fulfilled" && r.value) provCacheRef.current[r.value.key] = r.value.val; });
+          if (active) setProvMap({ ...provCacheRef.current });
+        }
+      } catch (e) {
+        if (active) setStreamError(e.message);
+      }
+      if (active) setStreamLoading(false);
+    })();
+    return () => { active = false; };
+    // eslint-disable-next-line
+  }, [outTab, settings.country]);
+
   const enough = hasEnoughTaste(collection, feedback);
+
+  const activeItems = outTab === "theaters" ? items : streamItems;
 
   const genreOpts = useMemo(() => {
     const ids = new Set();
-    items.forEach((x) => (x.genreIds || []).forEach((g) => ids.add(g)));
+    activeItems.forEach((x) => (x.genreIds || []).forEach((g) => ids.add(g)));
     return Array.from(ids).map((id) => ({ id, name: MOVIE_GENRES[id] || TV_GENRES[id] }))
       .filter((x) => x.name).sort((a, b) => a.name.localeCompare(b.name));
-  }, [items]);
+  }, [activeItems]);
 
   const ownedKeys = useMemo(() => new Set((collection || []).map((c) => c.tmdbId + c.mediaType)), [collection]);
   const processed = useMemo(() => {
-    let list = items
+    let list = activeItems
       .map((x) => { const m = matchMeta(x, taste, people, crowd); return { ...x, _pct: m.pct, _conf: m.conf }; })
       .filter((x) => !ownedKeys.has(x.tmdbId + x.mediaType));
     if (genreFilter !== "all") list = list.filter((x) => (x.genreIds || []).includes(Number(genreFilter)));
     list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
     return list;
-  }, [items, taste, genreFilter, ownedKeys]);
+  }, [activeItems, taste, genreFilter, ownedKeys]);
 
   const note = (item, pct) => {
     if (pct == null) return null;
@@ -3199,7 +3276,16 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
         </Modal>
       )}
 
-      {onSaveSettings && (
+      <div className="view-toggle" style={{ marginBottom: 12 }}>
+        <button className={outTab === "theaters" ? "toggle-pill active" : "toggle-pill"} onClick={() => setOutTab("theaters")}>
+          In Theaters
+        </button>
+        <button className={outTab === "streaming" ? "toggle-pill active" : "toggle-pill"} onClick={() => setOutTab("streaming")}>
+          Streaming
+        </button>
+      </div>
+
+      {outTab === "theaters" && onSaveSettings && (
         <ZipBanner settings={settings} onSaveSettings={onSaveSettings} />
       )}
 
@@ -3213,13 +3299,15 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
       </div>
 
 
-      {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Loading theaters" body="Pulling what's playing right now." />}
-      {!loading && error && <EmptyState icon={<Info size={32} />} title="Couldn't load" body={`TMDB said: ${error}`} />}
-      {!loading && !error && processed.length === 0 && (
-        <EmptyState icon={<Clapperboard size={32} />} title="Nothing found" body="No current releases found for your region." />
+      {outTab === "theaters" && loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Loading theaters" body="Pulling what's playing right now." />}
+      {outTab === "theaters" && !loading && error && <EmptyState icon={<Info size={32} />} title="Couldn't load" body={`TMDB said: ${error}`} />}
+      {outTab === "streaming" && streamLoading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Loading streaming" body="Checking what's new on your services." />}
+      {outTab === "streaming" && !streamLoading && streamError && <EmptyState icon={<Info size={32} />} title="Couldn't load" body={`TMDB said: ${streamError}`} />}
+      {((outTab === "theaters" && !loading && !error) || (outTab === "streaming" && !streamLoading && !streamError)) && processed.length === 0 && (
+        <EmptyState icon={<Clapperboard size={32} />} title="Nothing found" body={outTab === "theaters" ? "No current releases found for your region." : "Nothing recent on streaming right now."} />
       )}
 
-      {!loading && !error && processed.length > 0 && (
+      {((outTab === "theaters" && !loading && !error) || (outTab === "streaming" && !streamLoading && !streamError)) && processed.length > 0 && (
         <div className="outnow-all-heroes">
           {processed.map((item, idx) => {
             const itemNote = enough ? note(item, item._pct) : null;
@@ -3238,6 +3326,8 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
                 inCollection={isOwned}
                 ownedRating={ownedRatingMap[item.tmdbId + item.mediaType]}
                 availability={availMap[item.tmdbId + item.mediaType]}
+                showtimesZip={outTab === "theaters" ? (settings.zip || "") : null}
+                providers={outTab === "streaming" ? provMap[item.tmdbId + item.mediaType] : null}
                 inWatchlist={inWl || added[item.tmdbId]}
                 onInfo={() => setInfoItem(item)}
                 onSave={() => { onAddToWatchlist(item); setAdded((a) => ({ ...a, [item.tmdbId]: true })); }}
@@ -4591,6 +4681,9 @@ input, textarea { font-family: inherit; }
 .star-slot { margin: 0 1px; }
 
 /* watchlist stub grid */
+.outnow-showtimes { display: flex; gap: 6px; margin-top: 6px; }
+.outnow-showtimes a { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink); background: var(--brass); border-radius: 999px; padding: 3px 10px; text-decoration: none; }
+.outnow-providers { font-size: 10.5px; color: rgba(255,255,255,0.85); margin-top: 4px; font-weight: 600; text-shadow: 0 1px 4px rgba(0,0,0,0.6); }
 .wl-showtimes { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 4px 0 6px; padding: 5px 7px; background: rgba(122,74,8,0.10); border: 1px solid rgba(122,74,8,0.28); border-radius: 8px; }
 .wl-showtimes-label { font-size: 9.5px; font-weight: 700; color: #7a4a08; text-transform: uppercase; letter-spacing: 0.05em; }
 .wl-showtimes-links { display: flex; gap: 5px; }
