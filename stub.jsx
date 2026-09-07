@@ -4,7 +4,7 @@ import {
   Ticket, Search, Sparkles, CalendarDays, Settings, X, Star, Pencil,
   Undo2, Trash2, Plus, Check, Heart, ChevronLeft, ChevronRight, Eye,
   Clapperboard, MapPin, Tv, Film, RefreshCw, ExternalLink, Info,
-  Bookmark, Camera, Download, Upload
+  Bookmark, Camera, Download, Upload, Popcorn
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -748,7 +748,7 @@ function Modal({ onClose, children, wide }) {
    producer, release date, plus the recommendation badges
 --------------------------------------------------------- */
 
-function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, onLogNew, redditAfter }) {
+function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, onLogNew, onRemoveFromWishlist, redditAfter }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -860,6 +860,11 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
           {onLogNew && (
             <button className="btn btn-primary btn-sm" onClick={() => setLogging(true)}>
               <Check size={14} /> Seen it
+            </button>
+          )}
+          {onRemoveFromWishlist && (
+            <button className="btn btn-outline btn-sm" onClick={onRemoveFromWishlist}>
+              <X size={14} /> Remove
             </button>
           )}
           <a className="btn btn-outline btn-sm" href={buildAmcLink(item.title, settings?.zip || "")} target="_blank" rel="noreferrer">AMC</a>
@@ -1064,7 +1069,7 @@ function TicketStub({ ticket, onOpen }) {
    WISHLIST STUB  — grid card for items saved but not watched
 ---------------------------------------------------------*/
 
-function WatchlistStub({ item, onClick, onLog, onRemove, inTheaters, zip, streamNames, streamNew }) {
+function WatchlistStub({ item, onClick, onLog, inTheaters }) {
   const unreleased = item.releaseDate
     ? item.releaseDate > todayISO()
     : (item.year && Number(item.year) > new Date().getFullYear());
@@ -1080,13 +1085,15 @@ function WatchlistStub({ item, onClick, onLog, onRemove, inTheaters, zip, stream
             </div>
           )}
           <div className="stub-perf" />
-          <button className="stub-corner-btn stub-corner-x" onClick={(e) => { e.stopPropagation(); onRemove(); }} aria-label="Remove">
-            <X size={13} />
-          </button>
           {!unreleased && (
-            <button className="stub-corner-btn stub-corner-check" onClick={(e) => { e.stopPropagation(); onLog(); }} aria-label="Mark watched">
-              <Check size={14} />
+            <button className="stub-corner-btn stub-corner-eye" onClick={(e) => { e.stopPropagation(); onLog(); }} aria-label="Mark watched">
+              <Eye size={14} />
             </button>
+          )}
+          {inTheaters && !unreleased && (
+            <span className="stub-corner-badge stub-corner-popcorn" title="In theaters - showtimes in details">
+              <Popcorn size={13} />
+            </span>
           )}
         </div>
       </button>
@@ -1094,21 +1101,6 @@ function WatchlistStub({ item, onClick, onLog, onRemove, inTheaters, zip, stream
         <div className="stub-tab-top">
           <div className="stub-title">{item.title}</div>
         </div>
-        {streamNew && (
-          <div className="wl-stream wl-stream-new">Just landed on {streamNames.slice(0, 3).join(", ")}</div>
-        )}
-        {!streamNew && streamNames && streamNames.length > 0 && (
-          <div className="wl-stream">On {streamNames.slice(0, 3).join(", ")}</div>
-        )}
-        {inTheaters && !unreleased && (
-          <div className="wl-showtimes" onClick={(e) => e.stopPropagation()}>
-            <span className="wl-showtimes-label">In theaters</span>
-            <span className="wl-showtimes-links">
-              <a href={buildAmcLink(item.title, zip || "")} target="_blank" rel="noreferrer">AMC</a>
-              <a href={buildRegalLink(item.title, zip || "")} target="_blank" rel="noreferrer">Regal</a>
-            </span>
-          </div>
-        )}
         {unreleased && (
           <div className="wl-unreleased" title="Not released yet">
             <CalendarDays size={12} /> {item.releaseDate ? `Out ${formatDate(item.releaseDate)}` : `Out ${item.year}`}
@@ -1648,6 +1640,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
           settings={settings}
           onClose={() => setDetail(null)}
           onAddToWatchlist={null}
+          onRemoveFromWishlist={() => { onRemoveFromWatchlist(detail); setDetail(null); }}
           onLogNew={(it, entry, credits) => { onLogNew(it, entry, credits); onRemoveFromWatchlist(it); }}
         />
       )}
@@ -1775,12 +1768,8 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
                     key={w.tmdbId + w.mediaType}
                     item={w}
                     inTheaters={w.mediaType !== "tv" && nowPlayingIds.has(w.tmdbId)}
-                    zip={settings.zip || ""}
-                    streamNames={streamMap ? streamMap[w.tmdbId + w.mediaType] : null}
-                    streamNew={!!(newStreamKeys && newStreamKeys.has(w.tmdbId + w.mediaType))}
                     onClick={() => setDetail(w)}
                     onLog={() => setLoggingWl(w)}
-                    onRemove={() => onRemoveFromWatchlist(w)}
                   />
                 ))}
               </div>
@@ -2046,7 +2035,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "104";
+const APP_VERSION = "105";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -3151,11 +3140,10 @@ function ZipBanner({ settings, onSaveSettings }) {
     );
   }
   return (
-    <div className="zip-banner zip-banner-set">
+    <button className="zip-banner zip-banner-set zip-banner-btn" onClick={() => { setVal(zip); setEditing(true); }} aria-label="Change showtimes ZIP">
       <MapPin size={13} />
       <span>Showtimes near <b>{zip}</b></span>
-      <button className="zip-change" onClick={() => { setVal(zip); setEditing(true); }}>change</button>
-    </div>
+    </button>
   );
 }
 
@@ -3450,14 +3438,18 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
   useEffect(() => {
     const q = query.trim();
     if (!q) { setResults([]); return; }
-    const t = setTimeout(() => runSearch(), 420);
+    const t = setTimeout(() => runSearch(), 900);
     return () => clearTimeout(t);
   }, [query]);
   useEffect(() => { if (searchRef.current) searchRef.current.focus(); }, []);
 
   async function runSearch(e) {
-    if (e && e.preventDefault) e.preventDefault();
-    if (searchRef.current) searchRef.current.blur(); // dismiss the keyboard
+    if (e && e.preventDefault) {
+      e.preventDefault();
+      // only an explicit submit (keyboard search button) dismisses the keyboard -
+      // the auto-search that fires while he types must never steal focus.
+      if (searchRef.current) searchRef.current.blur();
+    }
     const q = query.trim();
     if (!q) return;
     setLoading(true);
@@ -4841,8 +4833,9 @@ input, textarea { font-family: inherit; }
 .stream-banner { display: flex; align-items: center; gap: 10px; justify-content: space-between; background: rgba(74, 222, 128, 0.08); border: 1px solid rgba(74, 222, 128, 0.35); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
 .stream-banner-text { font-family: 'Space Mono', monospace; font-size: 11px; line-height: 1.5; color: var(--fg); }
 .stub-corner-btn { position: absolute; z-index: 3; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(10, 8, 6, 0.72); color: #fff; border: 1px solid rgba(255, 255, 255, 0.25); cursor: pointer; padding: 0; }
-.stub-corner-x { top: 6px; right: 6px; }
-.stub-corner-check { bottom: 8px; right: 6px; background: rgba(74, 222, 128, 0.88); color: #052e12; border-color: transparent; }
+.stub-corner-eye { top: 6px; right: 6px; background: #3a2200; border: 2px solid rgba(220, 170, 50, 0.6); color: #f0c060; }
+.stub-corner-badge { position: absolute; z-index: 3; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(10, 8, 6, 0.72); border: 1px solid rgba(220, 170, 50, 0.5); color: #f0c060; pointer-events: none; }
+.stub-corner-popcorn { bottom: 8px; right: 6px; }
 .stream-banner-btn { flex-shrink: 0; font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: #052e12; background: #4ade80; border: none; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
 
 .wl-showtimes-label { font-size: 9.5px; font-weight: 700; color: #7a4a08; text-transform: uppercase; letter-spacing: 0.05em; }

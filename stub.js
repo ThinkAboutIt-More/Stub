@@ -28,7 +28,8 @@ import {
   Bookmark,
   Camera,
   Download,
-  Upload
+  Upload,
+  Popcorn
 } from "lucide-react";
 var MOVIE_GENRES = {
   28: "Action",
@@ -630,7 +631,7 @@ function Modal({ onClose, children, wide }) {
   };
   return /* @__PURE__ */ React.createElement("div", { className: "modal-veil", onClick: onClose }, /* @__PURE__ */ React.createElement("div", { className: "modal-card" + (wide ? " modal-wide" : ""), onClick: (e) => e.stopPropagation(), onTouchStart: onTS, onTouchMove: onTM, onTouchEnd: onTE }, /* @__PURE__ */ React.createElement("div", { className: "modal-grip" }), children), /* @__PURE__ */ React.createElement("button", { className: "modal-close", onClick: onClose, "aria-label": "Close" }, /* @__PURE__ */ React.createElement(X, { size: 18 })));
 }
-function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, onLogNew, redditAfter }) {
+function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, onLogNew, onRemoveFromWishlist, redditAfter }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -668,7 +669,7 @@ function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, 
   })())), loading && /* @__PURE__ */ React.createElement("div", { className: "detail-loading" }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 20, className: "spin" }), " Loading details"), err && /* @__PURE__ */ React.createElement("div", { className: "detail-loading" }, "Couldn't load full details (", err, ")."), data && /* @__PURE__ */ React.createElement("div", { className: "detail-body" }, /* @__PURE__ */ React.createElement("div", { className: "detail-facts" }, release && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", null, "Release"), formatDate(release.slice(0, 10)) || release), director && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", null, "Director"), director.name), producer && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", null, "Producer"), producer.name)), slim && slim.cast.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "detail-cast" }, /* @__PURE__ */ React.createElement("div", { className: "detail-cast-label" }, "Cast"), /* @__PURE__ */ React.createElement("div", { className: "detail-cast-list" }, slim.cast.slice(0, 6).map((c) => /* @__PURE__ */ React.createElement("span", { key: c.id, className: "cast-chip" }, c.name)))), providers && /* @__PURE__ */ React.createElement("div", { className: "detail-cast" }, /* @__PURE__ */ React.createElement("div", { className: "detail-cast-label" }, "Where to watch"), /* @__PURE__ */ React.createElement("div", { className: "suggest-links" }, providers.names.map((name) => /* @__PURE__ */ React.createElement("a", { key: name, className: "link-pill link-pill-stream", href: providers.link, target: "_blank", rel: "noreferrer" }, name))))), /* @__PURE__ */ React.createElement("div", { className: "detail-actions" }, onAddToWatchlist && /* @__PURE__ */ React.createElement("button", { className: "btn btn-outline btn-sm", onClick: () => {
     onAddToWatchlist(item);
     onClose();
-  } }, /* @__PURE__ */ React.createElement(Eye, { size: 14 }), " Wishlist"), onLogNew && /* @__PURE__ */ React.createElement("button", { className: "btn btn-primary btn-sm", onClick: () => setLogging(true) }, /* @__PURE__ */ React.createElement(Check, { size: 14 }), " Seen it"), /* @__PURE__ */ React.createElement("a", { className: "btn btn-outline btn-sm", href: buildAmcLink(item.title, settings?.zip || ""), target: "_blank", rel: "noreferrer" }, "AMC"), /* @__PURE__ */ React.createElement("a", { className: "btn btn-outline btn-sm", href: buildRegalLink(item.title, settings?.zip || ""), target: "_blank", rel: "noreferrer" }, "Regal"), /* @__PURE__ */ React.createElement("a", { className: "btn btn-outline btn-sm", href: buildRedditLink(item.title, item.year), target: "_blank", rel: "noreferrer" }, /* @__PURE__ */ React.createElement(ExternalLink, { size: 14 }), " Reddit")), logging && /* @__PURE__ */ React.createElement(Modal, { onClose: () => setLogging(false) }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, item.title), /* @__PURE__ */ React.createElement(
+  } }, /* @__PURE__ */ React.createElement(Eye, { size: 14 }), " Wishlist"), onLogNew && /* @__PURE__ */ React.createElement("button", { className: "btn btn-primary btn-sm", onClick: () => setLogging(true) }, /* @__PURE__ */ React.createElement(Check, { size: 14 }), " Seen it"), onRemoveFromWishlist && /* @__PURE__ */ React.createElement("button", { className: "btn btn-outline btn-sm", onClick: onRemoveFromWishlist }, /* @__PURE__ */ React.createElement(X, { size: 14 }), " Remove"), /* @__PURE__ */ React.createElement("a", { className: "btn btn-outline btn-sm", href: buildAmcLink(item.title, settings?.zip || ""), target: "_blank", rel: "noreferrer" }, "AMC"), /* @__PURE__ */ React.createElement("a", { className: "btn btn-outline btn-sm", href: buildRegalLink(item.title, settings?.zip || ""), target: "_blank", rel: "noreferrer" }, "Regal"), /* @__PURE__ */ React.createElement("a", { className: "btn btn-outline btn-sm", href: buildRedditLink(item.title, item.year), target: "_blank", rel: "noreferrer" }, /* @__PURE__ */ React.createElement(ExternalLink, { size: 14 }), " Reddit")), logging && /* @__PURE__ */ React.createElement(Modal, { onClose: () => setLogging(false) }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, item.title), /* @__PURE__ */ React.createElement(
     LogForm,
     {
       mediaType: item.mediaType,
@@ -764,15 +765,12 @@ function TicketStub({ ticket, onOpen }) {
   const last = ticket.viewings[ticket.viewings.length - 1];
   return /* @__PURE__ */ React.createElement("button", { className: "stub", onClick: () => onOpen(ticket) }, /* @__PURE__ */ React.createElement("div", { className: "stub-poster" }, ticket.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(ticket.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ React.createElement("div", { className: "stub-poster-fallback" }, ticket.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 28 }) : /* @__PURE__ */ React.createElement(Film, { size: 28 })), last.rating != null && last.rating > 0 && /* @__PURE__ */ React.createElement("div", { className: "stub-rate-badge", "aria-label": `Rated ${last.rating} out of 10` }, /* @__PURE__ */ React.createElement(Star, { size: 34, strokeWidth: 1, className: "stub-rate-star" }), /* @__PURE__ */ React.createElement("span", { className: "stub-rate-num" }, last.rating % 1 ? last.rating.toFixed(1) : last.rating)), /* @__PURE__ */ React.createElement("div", { className: "stub-perf" })), /* @__PURE__ */ React.createElement("div", { className: "stub-tab" }, /* @__PURE__ */ React.createElement("div", { className: "stub-tab-top" }, /* @__PURE__ */ React.createElement("div", { className: "stub-title" }, ticket.title), ticket.viewings.length > 1 && /* @__PURE__ */ React.createElement("div", { className: "stub-rewatch-inline" }, ticket.viewings.length, "\xD7"))), /* @__PURE__ */ React.createElement("span", { className: "stub-shine" }));
 }
-function WatchlistStub({ item, onClick, onLog, onRemove, inTheaters, zip, streamNames, streamNew }) {
+function WatchlistStub({ item, onClick, onLog, inTheaters }) {
   const unreleased = item.releaseDate ? item.releaseDate > todayISO() : item.year && Number(item.year) > (/* @__PURE__ */ new Date()).getFullYear();
-  return /* @__PURE__ */ React.createElement("div", { className: "stub" }, /* @__PURE__ */ React.createElement("button", { className: "stub-poster-link", onClick, "aria-label": item.title }, /* @__PURE__ */ React.createElement("div", { className: "stub-poster" }, item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ React.createElement("div", { className: "stub-poster-fallback" }, item.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 28 }) : /* @__PURE__ */ React.createElement(Film, { size: 28 })), /* @__PURE__ */ React.createElement("div", { className: "stub-perf" }), /* @__PURE__ */ React.createElement("button", { className: "stub-corner-btn stub-corner-x", onClick: (e) => {
-    e.stopPropagation();
-    onRemove();
-  }, "aria-label": "Remove" }, /* @__PURE__ */ React.createElement(X, { size: 13 })), !unreleased && /* @__PURE__ */ React.createElement("button", { className: "stub-corner-btn stub-corner-check", onClick: (e) => {
+  return /* @__PURE__ */ React.createElement("div", { className: "stub" }, /* @__PURE__ */ React.createElement("button", { className: "stub-poster-link", onClick, "aria-label": item.title }, /* @__PURE__ */ React.createElement("div", { className: "stub-poster" }, item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ React.createElement("div", { className: "stub-poster-fallback" }, item.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 28 }) : /* @__PURE__ */ React.createElement(Film, { size: 28 })), /* @__PURE__ */ React.createElement("div", { className: "stub-perf" }), !unreleased && /* @__PURE__ */ React.createElement("button", { className: "stub-corner-btn stub-corner-eye", onClick: (e) => {
     e.stopPropagation();
     onLog();
-  }, "aria-label": "Mark watched" }, /* @__PURE__ */ React.createElement(Check, { size: 14 })))), /* @__PURE__ */ React.createElement("div", { className: "stub-tab" }, /* @__PURE__ */ React.createElement("div", { className: "stub-tab-top" }, /* @__PURE__ */ React.createElement("div", { className: "stub-title" }, item.title)), streamNew && /* @__PURE__ */ React.createElement("div", { className: "wl-stream wl-stream-new" }, "Just landed on ", streamNames.slice(0, 3).join(", ")), !streamNew && streamNames && streamNames.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "wl-stream" }, "On ", streamNames.slice(0, 3).join(", ")), inTheaters && !unreleased && /* @__PURE__ */ React.createElement("div", { className: "wl-showtimes", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("span", { className: "wl-showtimes-label" }, "In theaters"), /* @__PURE__ */ React.createElement("span", { className: "wl-showtimes-links" }, /* @__PURE__ */ React.createElement("a", { href: buildAmcLink(item.title, zip || ""), target: "_blank", rel: "noreferrer" }, "AMC"), /* @__PURE__ */ React.createElement("a", { href: buildRegalLink(item.title, zip || ""), target: "_blank", rel: "noreferrer" }, "Regal"))), unreleased && /* @__PURE__ */ React.createElement("div", { className: "wl-unreleased", title: "Not released yet" }, /* @__PURE__ */ React.createElement(CalendarDays, { size: 12 }), " ", item.releaseDate ? `Out ${formatDate(item.releaseDate)}` : `Out ${item.year}`)), /* @__PURE__ */ React.createElement("span", { className: "stub-shine" }));
+  }, "aria-label": "Mark watched" }, /* @__PURE__ */ React.createElement(Eye, { size: 14 })), inTheaters && !unreleased && /* @__PURE__ */ React.createElement("span", { className: "stub-corner-badge stub-corner-popcorn", title: "In theaters - showtimes in details" }, /* @__PURE__ */ React.createElement(Popcorn, { size: 13 })))), /* @__PURE__ */ React.createElement("div", { className: "stub-tab" }, /* @__PURE__ */ React.createElement("div", { className: "stub-tab-top" }, /* @__PURE__ */ React.createElement("div", { className: "stub-title" }, item.title)), unreleased && /* @__PURE__ */ React.createElement("div", { className: "wl-unreleased", title: "Not released yet" }, /* @__PURE__ */ React.createElement(CalendarDays, { size: 12 }), " ", item.releaseDate ? `Out ${formatDate(item.releaseDate)}` : `Out ${item.year}`)), /* @__PURE__ */ React.createElement("span", { className: "stub-shine" }));
 }
 function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
   const [showPoster, setShowPoster] = useState(false);
@@ -1084,6 +1082,10 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
       settings,
       onClose: () => setDetail(null),
       onAddToWatchlist: null,
+      onRemoveFromWishlist: () => {
+        onRemoveFromWatchlist(detail);
+        setDetail(null);
+      },
       onLogNew: (it, entry, credits) => {
         onLogNew(it, entry, credits);
         onRemoveFromWatchlist(it);
@@ -1128,12 +1130,8 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
       key: w.tmdbId + w.mediaType,
       item: w,
       inTheaters: w.mediaType !== "tv" && nowPlayingIds.has(w.tmdbId),
-      zip: settings.zip || "",
-      streamNames: streamMap ? streamMap[w.tmdbId + w.mediaType] : null,
-      streamNew: !!(newStreamKeys && newStreamKeys.has(w.tmdbId + w.mediaType)),
       onClick: () => setDetail(w),
-      onLog: () => setLoggingWl(w),
-      onRemove: () => onRemoveFromWatchlist(w)
+      onLog: () => setLoggingWl(w)
     }
   ))))), /* @__PURE__ */ React.createElement("div", { style: { height: "24px" } }));
 }
@@ -1341,7 +1339,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
     ), /* @__PURE__ */ React.createElement("button", { className: "choice-dismiss", onClick: () => setChoice("choose") }, "back")))
   );
 }
-var APP_VERSION = "104";
+var APP_VERSION = "105";
 var posterGradCache = {};
 var DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" };
 function usePosterGradient(item) {
@@ -2120,10 +2118,10 @@ function ZipBanner({ settings, onSaveSettings }) {
       setEditing(false);
     } }, "Cancel"));
   }
-  return /* @__PURE__ */ React.createElement("div", { className: "zip-banner zip-banner-set" }, /* @__PURE__ */ React.createElement(MapPin, { size: 13 }), /* @__PURE__ */ React.createElement("span", null, "Showtimes near ", /* @__PURE__ */ React.createElement("b", null, zip)), /* @__PURE__ */ React.createElement("button", { className: "zip-change", onClick: () => {
+  return /* @__PURE__ */ React.createElement("button", { className: "zip-banner zip-banner-set zip-banner-btn", onClick: () => {
     setVal(zip);
     setEditing(true);
-  } }, "change"));
+  }, "aria-label": "Change showtimes ZIP" }, /* @__PURE__ */ React.createElement(MapPin, { size: 13 }), /* @__PURE__ */ React.createElement("span", null, "Showtimes near ", /* @__PURE__ */ React.createElement("b", null, zip)));
 }
 function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feedback, onAddToWatchlist, onLogNew, onSaveSettings }) {
   const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
@@ -2369,15 +2367,17 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
       setResults([]);
       return;
     }
-    const t = setTimeout(() => runSearch(), 420);
+    const t = setTimeout(() => runSearch(), 900);
     return () => clearTimeout(t);
   }, [query]);
   useEffect(() => {
     if (searchRef.current) searchRef.current.focus();
   }, []);
   async function runSearch(e) {
-    if (e && e.preventDefault) e.preventDefault();
-    if (searchRef.current) searchRef.current.blur();
+    if (e && e.preventDefault) {
+      e.preventDefault();
+      if (searchRef.current) searchRef.current.blur();
+    }
     const q = query.trim();
     if (!q) return;
     setLoading(true);
@@ -3438,8 +3438,9 @@ input, textarea { font-family: inherit; }
 .stream-banner { display: flex; align-items: center; gap: 10px; justify-content: space-between; background: rgba(74, 222, 128, 0.08); border: 1px solid rgba(74, 222, 128, 0.35); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
 .stream-banner-text { font-family: 'Space Mono', monospace; font-size: 11px; line-height: 1.5; color: var(--fg); }
 .stub-corner-btn { position: absolute; z-index: 3; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(10, 8, 6, 0.72); color: #fff; border: 1px solid rgba(255, 255, 255, 0.25); cursor: pointer; padding: 0; }
-.stub-corner-x { top: 6px; right: 6px; }
-.stub-corner-check { bottom: 8px; right: 6px; background: rgba(74, 222, 128, 0.88); color: #052e12; border-color: transparent; }
+.stub-corner-eye { top: 6px; right: 6px; background: #3a2200; border: 2px solid rgba(220, 170, 50, 0.6); color: #f0c060; }
+.stub-corner-badge { position: absolute; z-index: 3; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(10, 8, 6, 0.72); border: 1px solid rgba(220, 170, 50, 0.5); color: #f0c060; pointer-events: none; }
+.stub-corner-popcorn { bottom: 8px; right: 6px; }
 .stream-banner-btn { flex-shrink: 0; font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: #052e12; background: #4ade80; border: none; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
 
 .wl-showtimes-label { font-size: 9.5px; font-weight: 700; color: #7a4a08; text-transform: uppercase; letter-spacing: 0.05em; }
