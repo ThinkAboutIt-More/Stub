@@ -1007,7 +1007,7 @@ function TicketStub({ ticket, onOpen }) {
    WISHLIST STUB  — grid card for items saved but not watched
 ---------------------------------------------------------*/
 
-function WatchlistStub({ item, onClick, onLog, onRemove }) {
+function WatchlistStub({ item, onClick, onLog, onRemove, inTheaters, zip }) {
   const unreleased = item.releaseDate
     ? item.releaseDate > todayISO()
     : (item.year && Number(item.year) > new Date().getFullYear());
@@ -1029,6 +1029,15 @@ function WatchlistStub({ item, onClick, onLog, onRemove }) {
         <div className="stub-tab-top">
           <div className="stub-title">{item.title}</div>
         </div>
+        {inTheaters && !unreleased && (
+          <div className="wl-showtimes" onClick={(e) => e.stopPropagation()}>
+            <span className="wl-showtimes-label">In theaters</span>
+            <span className="wl-showtimes-links">
+              <a href={buildAmcLink(item.title, zip || "")} target="_blank" rel="noreferrer">AMC</a>
+              <a href={buildRegalLink(item.title, zip || "")} target="_blank" rel="noreferrer">Regal</a>
+            </span>
+          </div>
+        )}
         <div className="wl-actions">
           {unreleased ? (
             <div className="wl-unreleased" title="Not released yet">
@@ -1478,6 +1487,22 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
   const [wlGenre, setWlGenre] = useState("all");
   const [wlSort, setWlSort] = useState("added");
 
+  // opening-night mode: a wishlist title that's playing in theaters gets
+  // showtimes links (near the saved zip) right on its card.
+  const [nowPlayingIds, setNowPlayingIds] = useState(() => new Set());
+  useEffect(() => {
+    let active = true;
+    const region = (settings.country || "US").toUpperCase();
+    Promise.all([tmdb.nowPlaying(1, region), tmdb.nowPlaying(2, region)])
+      .then(([p1, p2]) => {
+        if (!active) return;
+        setNowPlayingIds(new Set([...(p1.results || []), ...(p2.results || [])].map((r) => r.id)));
+      })
+      .catch(() => {});
+    return () => { active = false; };
+    // eslint-disable-next-line
+  }, [settings.country]);
+
   const genreOptions = useMemo(() => {
     const ids = new Set();
     collection.forEach((c) => (c.genreIds || []).forEach((g) => ids.add(g)));
@@ -1679,6 +1704,8 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
                   <WatchlistStub
                     key={w.tmdbId + w.mediaType}
                     item={w}
+                    inTheaters={w.mediaType !== "tv" && nowPlayingIds.has(w.tmdbId)}
+                    zip={settings.zip || ""}
                     onClick={() => setDetail(w)}
                     onLog={() => setLoggingWl(w)}
                     onRemove={() => onRemoveFromWatchlist(w)}
@@ -1947,7 +1974,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "100";
+const APP_VERSION = "101";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -2067,8 +2094,10 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
       const now = Date.now();
       // skips cool down: hidden for SKIP_COOLDOWN_MS, then free to resurface.
       // legacy entries with no timestamp count as long cooled-off.
-      const cooling = feedback.skippedIds.filter((x) => x.at && now - x.at < SKIP_COOLDOWN_MS);
-      return new Set([...cooling, ...feedback.wantedIds, ...feedback.seenIds].map((x) => x.tmdbId + x.mediaType));
+      // a title skipped 3 times is buried: it never resurfaces.
+      const buried = feedback.skippedIds.filter((x) => (x.count || 1) >= 3);
+      const cooling = feedback.skippedIds.filter((x) => (x.count || 1) < 3 && x.at && now - x.at < SKIP_COOLDOWN_MS);
+      return new Set([...cooling, ...buried, ...feedback.wantedIds, ...feedback.seenIds].map((x) => x.tmdbId + x.mediaType));
     },
     [feedback]
   );
@@ -2228,11 +2257,14 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   }, [mode, loadForYouList]);
 
   function recordFeedback(bucket, item) {
-    setFeedback((f) => ({
-      ...f,
-      [bucket]: [...f[bucket].filter((x) => !(x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)),
-        { tmdbId: item.tmdbId, mediaType: item.mediaType, genreIds: item.genreIds, at: Date.now() }]
-    }));
+    setFeedback((f) => {
+      const prev = f[bucket].find((x) => x.tmdbId === item.tmdbId && x.mediaType === item.mediaType);
+      const entry = { tmdbId: item.tmdbId, mediaType: item.mediaType, genreIds: item.genreIds, at: Date.now() };
+      // three strikes: count every skip of the same title - the third one
+      // buries it for good (see seenIdSet), so it never resurfaces in the deck.
+      if (bucket === "skippedIds") entry.count = ((prev && prev.count) || (prev ? 1 : 0)) + 1;
+      return { ...f, [bucket]: [...f[bucket].filter((x) => !(x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)), entry] };
+    });
   }
 
   function advance() { setPool((p) => p.slice(1)); }
@@ -2253,8 +2285,15 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   }
   function replaySkipped() {
     if (!skippedPool.length) return;
-    setPool((p) => [...skippedPool, ...p]);
-    setFeedback((f) => ({ ...f, skippedIds: [] }));
+    // buried titles (3 skips) stay buried even through a replay
+    const replayable = skippedPool.filter((it) => {
+      const rec = feedback.skippedIds.find((s) => s.tmdbId === it.tmdbId && s.mediaType === it.mediaType);
+      return !rec || (rec.count || 1) < 3;
+    });
+    setPool((p) => [...replayable, ...p]);
+    // clear only the cooldown clock, never the strike count: a replayed title
+    // that gets skipped again keeps accumulating toward the 3-strike bury.
+    setFeedback((f) => ({ ...f, skippedIds: f.skippedIds.map((s) => (s.count || 1) >= 3 ? s : { ...s, at: 0 }) }));
     setSkippedPool([]);
   }
   function want(item) {
@@ -3240,6 +3279,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
 
   async function runSearch(e) {
     if (e && e.preventDefault) e.preventDefault();
+    if (searchRef.current) searchRef.current.blur(); // dismiss the keyboard
     const q = query.trim();
     if (!q) return;
     setLoading(true);
@@ -3301,10 +3341,16 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
         <input
           className="search-input"
           ref={searchRef}
+          type="search"
+          name="q"
+          enterKeyHint="search"
+          autoCorrect="off"
+          autoCapitalize="off"
           placeholder={'Search or ask: "movies like Infinity Pool"'}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        <button type="submit" style={{ display: "none" }} aria-hidden="true" tabIndex={-1}>Search</button>
       </form>
 
       {loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Searching" body="One second." />}
@@ -3762,6 +3808,27 @@ function YearInReview({ collection, onClose }) {
     return mins > 0 ? (mins / 60).toFixed(1) : null;
   }, [thisYear]);
 
+  const ratedThisYear = useMemo(() => {
+    const rs = [];
+    thisYear.forEach((t) => t.viewings.forEach((v) => {
+      if (v.date && v.date.startsWith(String(year)) && (v.rating || 0) > 0) rs.push(v.rating);
+    }));
+    return rs;
+  }, [thisYear, year]);
+  const avgRating = ratedThisYear.length ? ratedThisYear.reduce((a, b) => a + b, 0) / ratedThisYear.length : null;
+  const highCount = ratedThisYear.filter((r) => r >= 9).length;
+
+  const topSpots = useMemo(() => {
+    const counts = {};
+    thisYear.forEach((t) => t.viewings.forEach((v) => {
+      if (!v.date || !v.date.startsWith(String(year))) return;
+      const loc = (v.location || "").trim();
+      if (!loc) return;
+      counts[loc] = (counts[loc] || 0) + 1;
+    }));
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count }));
+  }, [thisYear, year]);
+
   const topDirectors = useMemo(() => {
     const counts = {};
     thisYear.forEach((t) => {
@@ -3781,10 +3848,24 @@ function YearInReview({ collection, onClose }) {
   const cards = [
     {
       key: "total",
-      label: `${year} in Film`,
+      label: `${year} at the movies`,
       big: String(totalWatched),
-      sub: totalWatched === 1 ? "film watched" : "films watched",
+      sub: totalWatched === 1 ? "movie watched" : "movies watched",
       color: "var(--brass-bright)"
+    },
+    avgRating != null && {
+      key: "avg",
+      label: "Your average score",
+      big: avgRating.toFixed(1),
+      sub: `${ratedThisYear.length} rating${ratedThisYear.length !== 1 ? "s" : ""}` + (highCount ? ` · ${highCount} scored 9+` : ""),
+      color: "#5fd99a"
+    },
+    topSpots.length > 0 && {
+      key: "spots",
+      label: "Where you watched",
+      big: topSpots[0].name,
+      sub: `${topSpots[0].count}×` + (topSpots.length > 1 ? " · " + topSpots.slice(1).map((s) => `${s.name} ${s.count}×`).join(" · ") : ""),
+      color: "var(--brass)"
     },
     genreCounts.length > 0 && {
       key: "genres",
@@ -3813,14 +3894,14 @@ function YearInReview({ collection, onClose }) {
       key: "month",
       label: "Busiest month",
       big: busiestMonth.name,
-      sub: `${busiestMonth.count} film${busiestMonth.count !== 1 ? "s" : ""}`,
+      sub: `${busiestMonth.count} movie${busiestMonth.count !== 1 ? "s" : ""}`,
       color: "#ff8080"
     },
     totalHours && {
       key: "hours",
       label: "Time well spent",
       big: `${totalHours}h`,
-      sub: "of film this year",
+      sub: "of movies this year",
       color: "var(--brass-bright)"
     },
     topDirectors.length > 1 && {
@@ -3842,7 +3923,7 @@ function YearInReview({ collection, onClose }) {
   if (totalWatched === 0) {
     return (
       <div className="yir-wrap">
-        <EmptyState icon={<Sparkles size={32} />} title={`Nothing logged in ${year} yet`} body="Log a film and come back." />
+        <EmptyState icon={<Sparkles size={32} />} title={`Nothing logged in ${year} yet`} body="Log a movie and come back." />
       </div>
     );
   }
@@ -3940,6 +4021,7 @@ export default function App() {
   const [mountedTabs, setMountedTabs] = useState(() => new Set(["discover"]));
   const [showSettings, setShowSettings] = useState(false);
   const [showYIR, setShowYIR] = useState(false);
+  const [rateNudge, setRateNudge] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [showFavorites, setShowFavorites] = useState(false);
   const [enrichStatus, setEnrichStatus] = useState("");
@@ -3947,6 +4029,18 @@ export default function App() {
   function switchTab(id) {
     setTab(id);
     setMountedTabs((m) => { const n = new Set(m); n.add(id); return n; });
+    // coming back from a long scrolled view (Out Now) to a short one left the
+    // document scrolled past its new end, which can strand the fixed tab bar
+    // off screen - always land at the top of the tab you're switching to.
+    window.scrollTo(0, 0);
+  }
+
+  function applyNudgeRating(n) {
+    if (!rateNudge) return;
+    setCollection((c) => c.map((x) => x.id === rateNudge.ticketId
+      ? { ...x, viewings: x.viewings.map((v) => v.id === rateNudge.viewingId ? { ...v, rating: n } : v), log: [...(x.log || []), { at: Date.now(), text: `Rated it ${n}/10` }] }
+      : x));
+    setRateNudge(null);
   }
 
   useEffect(() => {
@@ -4035,6 +4129,7 @@ export default function App() {
     setWatchlist((w) => w.filter((x) => !(x.tmdbId === ticket.tmdbId && x.mediaType === ticket.mediaType)));
     setRewatchPrompt(null);
     fireBurst("collect");
+    if (!viewing.rating) setRateNudge({ ticketId: ticket.id, viewingId: viewing.id, title: ticket.title });
   }
 
   // undo a just-made quick-rate log: remove the ticket only if it is the fresh single-viewing entry
@@ -4077,6 +4172,9 @@ export default function App() {
     setWatchlist((w) => w.filter((x) => !(x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)));
     fireBurst("collect");
     if (!ticket.credits || !ticket.tmdbKeywords) enrichTicket(ticket);
+    // logged without a rating? nudge him to score it while it's fresh
+    if (!viewing.rating) setRateNudge({ ticketId: ticket.id, viewingId: viewing.id, title: ticket.title });
+    return ticket;
   }
 
   // pull cast/director + themes for one ticket in the background and cache them,
@@ -4124,7 +4222,7 @@ export default function App() {
   }
 
   function logFromWatchlist(w) {
-    logNew(w, { id: uid(), date: todayISO(), location: "", rating: 8, notes: "", loggedAt: Date.now() });
+    logNew(w, { id: uid(), date: todayISO(), location: "", rating: null, notes: "", loggedAt: Date.now() });
   }
 
   function removeFromWatchlist(item) {
@@ -4246,6 +4344,17 @@ export default function App() {
       {showYIR && (
         <Modal onClose={() => setShowYIR(false)} wide>
           <YearInReview collection={collection} onClose={() => setShowYIR(false)} />
+        </Modal>
+      )}
+
+      {rateNudge && (
+        <Modal onClose={() => setRateNudge(null)}>
+          <h3 className="modal-title">How was {rateNudge.title}?</h3>
+          <p className="sync-note" style={{ margin: "2px 0 14px" }}>Logged without a rating - score it while it's fresh. Your ratings are what the match scores learn from.</p>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
+            <Stars value={0} size={34} onChange={applyNudgeRating} />
+          </div>
+          <button className="btn btn-ghost" style={{ width: "100%" }} onClick={() => setRateNudge(null)}>Skip for now</button>
         </Modal>
       )}
 
@@ -4389,7 +4498,7 @@ input, textarea { font-family: inherit; }
 .app-main { flex: 1; padding: 2px 14px 86px; }
 
 .tab-bar {
-  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%) translateZ(0);
   width: 100%; max-width: 480px;
   display: flex; background: rgba(10,8,16,0.38); backdrop-filter: blur(18px) saturate(1.25); -webkit-backdrop-filter: blur(18px) saturate(1.25);
   border-top: 1px solid rgba(255,255,255,0.08);
@@ -4482,6 +4591,10 @@ input, textarea { font-family: inherit; }
 .star-slot { margin: 0 1px; }
 
 /* watchlist stub grid */
+.wl-showtimes { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 4px 0 6px; padding: 5px 7px; background: rgba(122,74,8,0.10); border: 1px solid rgba(122,74,8,0.28); border-radius: 8px; }
+.wl-showtimes-label { font-size: 9.5px; font-weight: 700; color: #7a4a08; text-transform: uppercase; letter-spacing: 0.05em; }
+.wl-showtimes-links { display: flex; gap: 5px; }
+.wl-showtimes-links a { font-size: 10.5px; font-weight: 700; color: #7a4a08; text-decoration: none; padding: 2px 8px; border: 1px solid rgba(122,74,8,0.45); border-radius: 999px; background: rgba(255,255,255,0.55); }
 .wl-stub { background: var(--stub-cream); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; position: relative; box-shadow: 0 4px 14px rgba(0,0,0,0.3); }
 .wl-poster-btn { display: block; padding: 0; border: none; background: none; cursor: pointer; width: 100%; }
 .wl-poster { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; }
