@@ -1,0 +1,4636 @@
+import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { createRoot } from "react-dom/client";
+import {
+  Ticket,
+  Search,
+  Sparkles,
+  CalendarDays,
+  Settings,
+  X,
+  Star,
+  Pencil,
+  Undo2,
+  Trash2,
+  Plus,
+  Check,
+  Heart,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  Clapperboard,
+  MapPin,
+  Tv,
+  Film,
+  RefreshCw,
+  ExternalLink,
+  Info,
+  Bookmark,
+  Camera,
+  Download,
+  Upload
+} from "lucide-react";
+const MOVIE_GENRES = {
+  28: "Action",
+  12: "Adventure",
+  16: "Animation",
+  35: "Comedy",
+  80: "Crime",
+  99: "Documentary",
+  18: "Drama",
+  10751: "Family",
+  14: "Fantasy",
+  36: "History",
+  27: "Horror",
+  10402: "Music",
+  9648: "Mystery",
+  10749: "Romance",
+  878: "Sci-Fi",
+  10770: "TV Movie",
+  53: "Thriller",
+  10752: "War",
+  37: "Western"
+};
+const TV_GENRES = {
+  10759: "Action & Adventure",
+  16: "Animation",
+  35: "Comedy",
+  80: "Crime",
+  99: "Documentary",
+  18: "Drama",
+  10751: "Family",
+  10762: "Kids",
+  9648: "Mystery",
+  10763: "News",
+  10764: "Reality",
+  10765: "Sci-Fi & Fantasy",
+  10766: "Soap",
+  10767: "Talk",
+  10768: "War & Politics",
+  37: "Western"
+};
+const STORAGE_KEYS = {
+  settings: "stub-settings",
+  collection: "stub-collection",
+  watchlist: "stub-watchlist",
+  feedback: "stub-discover-feedback"
+};
+const SKIP_COOLDOWN_MS = 14 * 24 * 60 * 60 * 1e3;
+const DEFAULT_SETTINGS = { tmdbKey: "", omdbKey: "5f3a67c7", zip: "", country: "US" };
+const PROXY_URL = "https://watchlist-proxy.xphazemusic.workers.dev";
+async function callProxy(body) {
+  const res = await fetch(PROXY_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `Proxy ${res.status}`);
+  return data;
+}
+const CONNECTION_KEY = "stub-connection";
+function getConnection() {
+  try {
+    const raw = localStorage.getItem(CONNECTION_KEY);
+    return raw ? JSON.parse(raw) : { supabaseUrl: "https://pmgmtjmilcjrxsalnuxr.supabase.co", supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBtZ210am1pbGNqcnhzYWxudXhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxNTM1OTEsImV4cCI6MjA5NzcyOTU5MX0.TB-T0_LMG50z_jOfq1LwFWbwiYIvkAkgfPW7WwP5LmA" };
+  } catch (e) {
+    return { supabaseUrl: "https://pmgmtjmilcjrxsalnuxr.supabase.co", supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBtZ210am1pbGNqcnhzYWxudXhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxNTM1OTEsImV4cCI6MjA5NzcyOTU5MX0.TB-T0_LMG50z_jOfq1LwFWbwiYIvkAkgfPW7WwP5LmA" };
+  }
+}
+function saveConnection(conn) {
+  try {
+    localStorage.setItem(CONNECTION_KEY, JSON.stringify(conn));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+function hasCloud(conn) {
+  return !!(conn && conn.supabaseUrl && conn.supabaseKey);
+}
+async function loadKey(key, fallback, conn) {
+  if (hasCloud(conn)) {
+    try {
+      const url = `${conn.supabaseUrl}/rest/v1/app_state?id=eq.${encodeURIComponent(key)}&select=value`;
+      const res = await fetch(url, {
+        headers: { apikey: conn.supabaseKey, Authorization: `Bearer ${conn.supabaseKey}` }
+      });
+      if (!res.ok) throw new Error(`Supabase ${res.status}`);
+      const rows = await res.json();
+      if (rows.length) return rows[0].value;
+      return fallback;
+    } catch (e) {
+    }
+  }
+  try {
+    const raw = localStorage.getItem(key);
+    return raw !== null ? JSON.parse(raw) : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+async function saveKey(key, value, conn) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+  }
+  if (!hasCloud(conn)) return true;
+  try {
+    const url = `${conn.supabaseUrl}/rest/v1/app_state?on_conflict=id`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        apikey: conn.supabaseKey,
+        Authorization: `Bearer ${conn.supabaseKey}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=minimal"
+      },
+      body: JSON.stringify({ id: key, value, updated_at: (/* @__PURE__ */ new Date()).toISOString() })
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+}
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+function todayISO() {
+  return (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+}
+function formatDate(iso) {
+  if (!iso) return "";
+  const d = /* @__PURE__ */ new Date(iso + "T00:00:00");
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" });
+}
+function tmdbImg(path, size = "w500") {
+  if (!path) return null;
+  return `https://image.tmdb.org/t/p/${size}${path}`;
+}
+function genreNames(ids, mediaType) {
+  const map = mediaType === "tv" ? TV_GENRES : MOVIE_GENRES;
+  return (ids || []).map((id) => map[id]).filter(Boolean);
+}
+function buildAmcLink(title, zip) {
+  const q = `${title} AMC showtimes ${zip ? zip : "near me"}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+}
+function buildRegalLink(title, zip) {
+  const q = `${title} Regal showtimes ${zip ? zip : "near me"}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+}
+function buildBelcourtLink(title) {
+  return `https://www.belcourt.org/?s=${encodeURIComponent(title)}`;
+}
+function buildRedditLink(title, year) {
+  const q = `${title}${year ? " " + year : ""} official discussion`;
+  return `https://www.reddit.com/r/movies/search/?q=${encodeURIComponent(q)}&restrict_sr=1&sort=relevance`;
+}
+function makeTmdb(apiKey) {
+  async function call(path, params = {}) {
+    if (!apiKey) throw new Error("No TMDB key set");
+    const url = new URL(`https://api.themoviedb.org/3${path}`);
+    url.searchParams.set("api_key", apiKey);
+    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    const res = await fetch(url.toString());
+    if (!res.ok) throw new Error(`TMDB ${res.status}`);
+    return res.json();
+  }
+  return {
+    trendingWeek: () => call("/trending/all/week"),
+    popularMovies: (page = 1) => call("/movie/popular", { page }),
+    popularTv: (page = 1) => call("/tv/popular", { page }),
+    topRatedMovies: (page = 1) => call("/movie/top_rated", { page }),
+    topRatedTv: (page = 1) => call("/tv/top_rated", { page }),
+    nowPlaying: (page = 1, region = "US") => call("/movie/now_playing", { page, region }),
+    upcoming: (page = 1, region = "US") => call("/movie/upcoming", { page, region }),
+    onTheAir: (page = 1) => call("/tv/on_the_air", { page }),
+    discoverMovie: (params) => call("/discover/movie", params),
+    discoverTv: (params) => call("/discover/tv", params),
+    searchMulti: (query) => call("/search/multi", { query }),
+    watchProviders: (mediaType, id) => call(`/${mediaType}/${id}/watch/providers`),
+    details: (mediaType, id) => call(`/${mediaType}/${id}`),
+    detailsFull: (mediaType, id) => call(`/${mediaType}/${id}`, { append_to_response: "credits,keywords" }),
+    recommendations: (mediaType, id) => call(`/${mediaType}/${id}/recommendations`),
+    keywords: (mediaType, id) => call(`/${mediaType}/${id}/keywords`),
+    personCredits: (personId) => call(`/person/${personId}/combined_credits`)
+  };
+}
+function normalize(item) {
+  const mediaType = item.media_type === "tv" || item.first_air_date ? "tv" : "movie";
+  return {
+    tmdbId: item.id,
+    mediaType,
+    title: item.title || item.name || "Untitled",
+    year: (item.release_date || item.first_air_date || "").slice(0, 4),
+    releaseDate: item.release_date || item.first_air_date || null,
+    posterPath: item.poster_path || null,
+    backdropPath: item.backdrop_path || null,
+    genreIds: item.genre_ids || [],
+    originalLanguage: item.original_language || null,
+    voteAverage: item.vote_average ?? null,
+    voteCount: item.vote_count ?? 0
+  };
+}
+function buildTasteProfile(collection, feedback) {
+  const weights = {};
+  const ratingDeltas = {};
+  const now = Date.now();
+  const TWO_YEARS_MS = 2 * 365 * 24 * 60 * 60 * 1e3;
+  const bump = (genreIds, amount) => {
+    (genreIds || []).forEach((g) => {
+      weights[g] = (weights[g] || 0) + amount;
+    });
+  };
+  collection.forEach((t) => {
+    t.viewings.forEach((v) => {
+      if (!v.rating) return;
+      const age = now - (v.loggedAt || now);
+      const decay = Math.max(0.35, 1 - age / TWO_YEARS_MS);
+      bump(t.genreIds, (v.rating - 5) * decay);
+      if (t.voteAverage != null && (t.voteCount ?? 0) > 50) {
+        const yourScore = v.rating;
+        const delta = yourScore - t.voteAverage;
+        (t.genreIds || []).forEach((g) => {
+          if (!ratingDeltas[g]) ratingDeltas[g] = { sum: 0, n: 0 };
+          ratingDeltas[g].sum += delta * decay;
+          ratingDeltas[g].n += decay;
+        });
+      }
+    });
+  });
+  (feedback.wantedIds || []).forEach((w) => bump(w.genreIds, 1.5));
+  (feedback.skippedIds || []).forEach((s) => bump(s.genreIds, -1.5));
+  const genreCalibration = {};
+  Object.entries(ratingDeltas).forEach(([g, d]) => {
+    if (d.n > 0) genreCalibration[g] = d.sum / d.n;
+  });
+  return { weights, genreCalibration };
+}
+function getWeights(taste) {
+  return taste && taste.weights ? taste.weights : taste || {};
+}
+function buildPeopleProfile(collection) {
+  const directors = {};
+  const writers = {};
+  const actors = {};
+  const add = (map, person, amount) => {
+    if (!person || !person.id) return;
+    if (!map[person.id]) map[person.id] = { id: person.id, name: person.name, score: 0 };
+    map[person.id].score += amount;
+  };
+  collection.forEach((t) => {
+    if (!t.credits) return;
+    const lastRating = t.viewings.length ? t.viewings[t.viewings.length - 1].rating : 5;
+    const amount = lastRating / 2 - 2;
+    (t.credits.directors || []).forEach((p) => add(directors, p, amount));
+    (t.credits.writers || []).forEach((p) => add(writers, p, amount * 0.8));
+    (t.credits.cast || []).slice(0, 5).forEach((p) => add(actors, p, amount * 0.5));
+  });
+  const top = (map) => Object.values(map).sort((a, b) => b.score - a.score);
+  return { directors: top(directors), writers: top(writers), actors: top(actors) };
+}
+function slimCredits(credits) {
+  if (!credits) return null;
+  const crew = credits.crew || [];
+  const directors = crew.filter((c) => c.job === "Director").map((c) => ({ id: c.id, name: c.name }));
+  const writers = crew.filter((c) => c.department === "Writing" || c.job === "Writer" || c.job === "Screenplay").map((c) => ({ id: c.id, name: c.name }));
+  const producers = crew.filter((c) => c.job === "Producer").map((c) => ({ id: c.id, name: c.name }));
+  const cast = (credits.cast || []).slice(0, 8).map((c) => ({ id: c.id, name: c.name, character: c.character }));
+  return { directors, writers, producers, cast };
+}
+function scoreItem(item, tasteWeights) {
+  if (!item.genreIds || !item.genreIds.length) return 0;
+  const total = item.genreIds.reduce((sum, g) => sum + (tasteWeights[g] || 0), 0);
+  return total / item.genreIds.length;
+}
+function matchStyle(pct) {
+  const p = Math.max(30, Math.min(80, pct));
+  let hue;
+  if (p <= 55) hue = (p - 30) / 25 * 45;
+  else hue = 45 + (p - 55) / 25 * 95;
+  hue = Math.round(hue);
+  return {
+    background: `hsl(${hue}, 62%, 42%)`,
+    border: `1px solid hsl(${hue}, 70%, 60%)`,
+    color: `hsl(${hue}, 88%, 92%)`
+  };
+}
+function learnCrowdWeight(collection) {
+  const pairs = [];
+  collection.forEach((t) => {
+    if (t.voteAverage == null || (t.voteCount ?? 0) < 50) return;
+    t.viewings.forEach((v) => {
+      if (v.rating) pairs.push([t.voteAverage, v.rating]);
+    });
+  });
+  if (pairs.length < 8) return { weight: 0.2, n: pairs.length };
+  const mx = pairs.reduce((s, p) => s + p[0], 0) / pairs.length;
+  const my = pairs.reduce((s, p) => s + p[1], 0) / pairs.length;
+  let cov = 0, vx = 0;
+  pairs.forEach(([x, y]) => {
+    cov += (x - mx) * (y - my);
+    vx += (x - mx) * (x - mx);
+  });
+  const slope = vx > 0 ? cov / vx : 0;
+  const weight = Math.max(0.12, Math.min(0.45, 0.12 + slope / 2.5 * 0.33));
+  return { weight, n: pairs.length };
+}
+function peopleAffinity(item, people) {
+  if (!people || !item.credits) return null;
+  const find = (list, id) => (list || []).find((p) => p.id === id);
+  let best = null;
+  (item.credits.directors || []).forEach((d) => {
+    const p = find(people.directors, d.id);
+    if (p && (best === null || p.score > best)) best = p.score;
+  });
+  (item.credits.writers || []).forEach((w) => {
+    const p = find(people.writers, w.id);
+    if (p && (best === null || p.score > best)) best = p.score;
+  });
+  (item.credits.cast || []).slice(0, 5).forEach((c) => {
+    const p = find(people.actors, c.id);
+    if (p && (best === null || p.score > best)) best = p.score;
+  });
+  return best;
+}
+let SCORING_CTX = null;
+function setScoringContext(ctx) {
+  SCORING_CTX = ctx;
+}
+let LB_RATINGS = null;
+let LB_LOADING = null;
+function loadLetterboxd() {
+  if (LB_RATINGS) return Promise.resolve(LB_RATINGS);
+  if (LB_LOADING) return LB_LOADING;
+  LB_LOADING = (async () => {
+    try {
+      const res = await fetch("letterboxd.json?v=1");
+      if (res.ok) LB_RATINGS = await res.json();
+    } catch (e) {
+    }
+    LB_RATINGS = LB_RATINGS || {};
+    return LB_RATINGS;
+  })();
+  return LB_LOADING;
+}
+function letterboxdRating(item) {
+  if (!LB_RATINGS || item.mediaType !== "movie") return null;
+  const r = LB_RATINGS[item.tmdbId];
+  return typeof r === "number" ? r : null;
+}
+let OWN_RATINGS = {};
+function setOwnRatings(collection) {
+  const map = {};
+  (collection || []).forEach((t) => {
+    const rated = (t.viewings || []).filter((v) => v.rating);
+    if (rated.length) map[t.tmdbId + t.mediaType] = rated[rated.length - 1].rating;
+  });
+  OWN_RATINGS = map;
+}
+function matchMeta(item, taste, people, crowd) {
+  return matchMetaFull(item, taste, people, crowd).meta;
+}
+function matchMetaFull(item, taste, people, crowd) {
+  const own = OWN_RATINGS[item.tmdbId + item.mediaType];
+  if (own != null) return { meta: { pct: own >= 10 ? 99 : Math.max(1, Math.min(99, Math.round(own * 10))), conf: "high", own: true }, detail: { ownRating: own } };
+  const weights = getWeights(taste);
+  const gc = taste?.genreCalibration || {};
+  const keys = Object.keys(weights);
+  if (!keys.length) return { pct: null, conf: "low" };
+  const crowdW = crowd && crowd.weight || 0.2;
+  let genreScore = 50;
+  if (item.genreIds && item.genreIds.length) {
+    const maxAbs = Math.max(...keys.map((k) => Math.abs(weights[k])), 1);
+    const raw = scoreItem(item, weights);
+    const norm = Math.max(-1, Math.min(1, raw / maxAbs));
+    genreScore = Math.round(50 + norm * 49);
+  }
+  const aff = peopleAffinity(item, people);
+  let peopleScore = null;
+  if (aff != null) {
+    const allScores = [...people.directors || [], ...people.writers || [], ...people.actors || []].map((p) => p.score);
+    const maxP = Math.max(...allScores.map(Math.abs), 1);
+    const norm = Math.max(-1, Math.min(1, aff / maxP));
+    peopleScore = Math.round(50 + norm * 49);
+  }
+  let qualityScore = 60;
+  if (item.voteAverage != null && (item.voteCount ?? 0) > 50) {
+    const clamped = Math.max(4, Math.min(9, item.voteAverage));
+    qualityScore = Math.round((clamped - 4) / 5 * 100);
+  }
+  let calibBonus = 0;
+  if (item.genreIds && item.genreIds.length) {
+    const deltas = item.genreIds.map((g) => gc[g]).filter((d) => d != null);
+    if (deltas.length) {
+      const avg = deltas.reduce((sum, d) => sum + d, 0) / deltas.length;
+      calibBonus = Math.max(-12, Math.min(12, avg * 2));
+    }
+  }
+  let blended, conf;
+  if (peopleScore != null) {
+    const wPeople = 0.5, wGenre = 0.5 - crowdW;
+    blended = peopleScore * wPeople + genreScore * wGenre + qualityScore * crowdW + calibBonus;
+    conf = "high";
+  } else {
+    const wGenre = 1 - crowdW;
+    blended = genreScore * wGenre + qualityScore * crowdW + calibBonus;
+    conf = crowd && crowd.n >= 20 ? "medium" : "low";
+  }
+  let pct = Math.max(1, Math.min(99, Math.round(blended)));
+  let cappedBy = null, effReception = null, lbRating = null;
+  if (item.voteAverage != null && (item.voteCount ?? 0) >= 300) {
+    let eff = (item.voteAverage * item.voteCount + 6.8 * 300) / (item.voteCount + 300);
+    const lb = letterboxdRating(item);
+    lbRating = lb;
+    if (lb != null) eff = Math.min(eff, lb);
+    effReception = eff;
+    const cap = eff >= 7 ? 99 : eff >= 6.6 ? 72 : eff >= 6.2 ? 63 : eff >= 5.6 ? 52 : eff >= 5 ? 43 : 34;
+    if (pct > cap) {
+      pct = cap;
+      cappedBy = cap;
+    }
+  }
+  const vc = item.voteCount ?? 0;
+  let shrink = 1;
+  if (vc < 300) {
+    shrink = Math.max(0.15, Math.min(1, vc / 300));
+    pct = Math.round(50 + (pct - 50) * shrink);
+  }
+  return {
+    meta: { pct, conf },
+    detail: { peopleScore, genreScore, qualityScore, calibBonus, crowdW, cappedBy, effReception, lbRating, shrink }
+  };
+}
+function explainMatch(item, taste, people, crowd, collection) {
+  const { meta, detail } = matchMetaFull(item, taste, people, crowd);
+  const lines = [];
+  if (meta.own) {
+    lines.push(`You rated it ${detail.ownRating}/10 - your own rating always outranks any prediction.`);
+    return { ...meta, lines };
+  }
+  if (meta.pct == null) {
+    lines.push("Rate a few titles and this score starts meaning something.");
+    return { ...meta, lines };
+  }
+  if (item.credits && people) {
+    const cand = [];
+    const look = (list, pool, role) => (list || []).forEach((p) => {
+      const hit = (pool || []).find((x) => x.id === p.id);
+      if (hit) cand.push({ id: p.id, name: p.name, role, score: hit.score });
+    });
+    look(item.credits.directors, people.directors, "Directed by");
+    look(item.credits.writers, people.writers, "Written by");
+    look((item.credits.cast || []).slice(0, 5), people.actors, "Stars");
+    cand.sort((a, b) => b.score - a.score);
+    const best = cand[0];
+    if (best) {
+      const rs = [];
+      (collection || []).forEach((t) => {
+        const c = t.credits;
+        if (!c) return;
+        const inT = [...c.directors || [], ...c.writers || [], ...c.cast || []].some((p) => p.id === best.id);
+        if (inT) t.viewings.forEach((v) => {
+          if (v.rating) rs.push(v.rating);
+        });
+      });
+      const avg = rs.length ? (rs.reduce((s, r) => s + r, 0) / rs.length).toFixed(1) : null;
+      lines.push(avg ? `${best.role} ${best.name} - you average ${avg}/10 on their work.` : `${best.role} ${best.name}, who you've watched before.`);
+    }
+  }
+  const w = getWeights(taste);
+  const lanes = (item.genreIds || []).map((g) => ({ name: MOVIE_GENRES[g] || TV_GENRES[g], wt: w[g] || 0 })).filter((x) => x.name);
+  const strong = lanes.filter((x) => x.wt > 0.5).sort((a, b) => b.wt - a.wt)[0];
+  const weak = lanes.filter((x) => x.wt < -0.5).sort((a, b) => a.wt - b.wt)[0];
+  if (meta.pct >= 50 && strong) lines.push(`${strong.name} is one of your stronger lanes - your ratings say so.`);
+  else if (meta.pct < 50 && weak) lines.push(`${weak.name} hasn't landed well with you - your ratings say so.`);
+  const vc = item.voteCount ?? 0;
+  const bits = [];
+  if (item.voteAverage != null && vc > 0) bits.push(`TMDB ${item.voteAverage.toFixed(1)}/10 across ${vc >= 1e3 ? (vc / 1e3).toFixed(vc >= 1e4 ? 0 : 1) + "k" : vc} ratings`);
+  if (detail.lbRating != null) bits.push(`Letterboxd ${detail.lbRating.toFixed(1)}/10`);
+  if (bits.length) {
+    const wNote = crowd && crowd.weight >= 0.3 ? "and the crowd usually lines up with you, so it counts" : crowd && crowd.weight <= 0.15 ? "but you often disagree with the crowd, so it barely counts" : "and it counts for a modest share";
+    lines.push(`Crowd reads ${bits.join(" \xB7 ")} - ${wNote}.`);
+  }
+  if (detail.cappedBy != null) {
+    lines.push(`Held at ${detail.cappedBy}% - audience reception (${detail.effReception.toFixed(1)}/10) isn't strong enough for a higher score, whatever the pattern fit.`);
+  } else if (detail.shrink < 1) {
+    lines.push(vc === 0 ? "No crowd ratings exist yet, so this plays it safe near the middle until more data lands." : "Thin crowd data, so the score deliberately plays it safe.");
+  }
+  if (!lines.length) lines.push("A blend of your genre history and the crowd consensus.");
+  return { ...meta, lines };
+}
+function matchPercent(item, taste, people, crowd) {
+  return matchMeta(item, taste, people, crowd).pct;
+}
+function hasEnoughTaste(collection, feedback) {
+  const rated = collection.filter((c) => c.viewings.some((v) => v.rating)).length;
+  const swipes = (feedback.wantedIds || []).length + (feedback.skippedIds || []).length;
+  return rated + Math.floor(swipes / 3) >= 5;
+}
+function badgesFor(item, people, tasteWeights) {
+  const out = [];
+  const dirNames = new Set((people.directors || []).slice(0, 8).map((d) => d.id));
+  const actNames = new Set((people.actors || []).slice(0, 12).map((a) => a.id));
+  if (item.credits) {
+    if ((item.credits.directors || []).some((d) => dirNames.has(d.id))) {
+      const d = item.credits.directors.find((x) => dirNames.has(x.id));
+      out.push({ kind: "director", text: `From ${d.name}` });
+    }
+    const sharedActor = (item.credits.cast || []).find((c) => actNames.has(c.id));
+    if (sharedActor) out.push({ kind: "actor", text: `Stars ${sharedActor.name}` });
+  }
+  return out.slice(0, 2);
+}
+function Stars({ value = 0, onChange, size = 18 }) {
+  const lpRef = useRef(null);
+  const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  return /* @__PURE__ */ jsx("div", { className: "stars", style: { height: size }, children: slots.map((n) => {
+    const clip = value >= n ? "inset(0 0 0 0)" : value >= n - 0.5 ? "inset(0 50% 0 0)" : "inset(0 100% 0 0)";
+    return /* @__PURE__ */ jsxs("div", { className: "star-slot", style: { width: size, height: size }, children: [
+      /* @__PURE__ */ jsx(Star, { className: "star-bg", size, strokeWidth: 1.5 }),
+      /* @__PURE__ */ jsx("div", { className: "star-fill", style: { clipPath: clip }, children: /* @__PURE__ */ jsx(Star, { className: "star-fg", size, fill: "currentColor", strokeWidth: 1.5 }) }),
+      onChange && /* @__PURE__ */ jsx(
+        "button",
+        {
+          type: "button",
+          className: "star-hit star-hit-full",
+          "aria-label": `Rate ${n} of 10 (hold for ${n - 0.5})`,
+          onTouchStart: () => {
+            lpRef.current = { fired: false, t: setTimeout(() => {
+              lpRef.current.fired = true;
+              onChange(n - 0.5);
+            }, 420) };
+          },
+          onTouchEnd: () => {
+            if (lpRef.current) clearTimeout(lpRef.current.t);
+          },
+          onMouseDown: () => {
+            lpRef.current = { fired: false, t: setTimeout(() => {
+              lpRef.current.fired = true;
+              onChange(n - 0.5);
+            }, 420) };
+          },
+          onMouseUp: () => {
+            if (lpRef.current) clearTimeout(lpRef.current.t);
+          },
+          onClick: () => {
+            if (lpRef.current && lpRef.current.fired) {
+              lpRef.current.fired = false;
+              return;
+            }
+            onChange(n);
+          }
+        }
+      )
+    ] }, n);
+  }) });
+}
+function Modal({ onClose, children, wide }) {
+  const dragStartY = useRef(null);
+  const onTS = (e) => {
+    if (e.currentTarget.scrollTop <= 0) dragStartY.current = e.touches[0].clientY;
+  };
+  const onTM = (e) => {
+    if (dragStartY.current == null) return;
+    if (e.touches[0].clientY - dragStartY.current > 90) {
+      dragStartY.current = null;
+      onClose();
+    }
+  };
+  const onTE = () => {
+    dragStartY.current = null;
+  };
+  return /* @__PURE__ */ jsxs("div", { className: "modal-veil", onClick: onClose, children: [
+    /* @__PURE__ */ jsxs("div", { className: "modal-card" + (wide ? " modal-wide" : ""), onClick: (e) => e.stopPropagation(), onTouchStart: onTS, onTouchMove: onTM, onTouchEnd: onTE, children: [
+      /* @__PURE__ */ jsx("div", { className: "modal-grip" }),
+      children
+    ] }),
+    /* @__PURE__ */ jsx("button", { className: "modal-close", onClick: onClose, "aria-label": "Close", children: /* @__PURE__ */ jsx(X, { size: 18 }) })
+  ] });
+}
+function DetailModal({ item, tmdb, badges, settings, onClose, onAddToWatchlist, onLogNew, redditAfter }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [logging, setLogging] = useState(false);
+  const { imdb, providers } = useExtraInfo(item, settings || {}, tmdb);
+  useEffect(() => {
+    let active = true;
+    async function run() {
+      try {
+        const full = await tmdb.detailsFull(item.mediaType, item.tmdbId);
+        if (active) setData(full);
+      } catch (e) {
+        if (active) setErr(e.message);
+      }
+      if (active) setLoading(false);
+    }
+    run();
+    return () => {
+      active = false;
+    };
+  }, [item.tmdbId, item.mediaType]);
+  const slim = data ? slimCredits(data.credits) : null;
+  const director = slim && slim.directors[0];
+  const producer = slim && slim.producers[0];
+  const release = data ? data.release_date || data.first_air_date || "" : item.year;
+  const runtime = data ? data.runtime || data.episode_run_time && data.episode_run_time[0] : null;
+  const keywords = data ? data.keywords?.keywords || data.keywords?.results || [] : [];
+  return /* @__PURE__ */ jsx(Modal, { onClose, wide: true, children: /* @__PURE__ */ jsxs("div", { className: "detail-modal", children: [
+    /* @__PURE__ */ jsxs("div", { className: "detail-head", children: [
+      item.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w342"), alt: "", className: "detail-head-poster" }) : /* @__PURE__ */ jsx("div", { className: "detail-head-poster detail-poster-fallback", children: item.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 36 }) : /* @__PURE__ */ jsx(Film, { size: 36 }) }),
+      /* @__PURE__ */ jsxs("div", { className: "detail-head-info", children: [
+        /* @__PURE__ */ jsx("h2", { className: "detail-title", children: item.title }),
+        /* @__PURE__ */ jsx("div", { className: "detail-genres", children: item.mediaType === "tv" ? "TV SHOW" : "MOVIE" }),
+        badges && badges.length > 0 && /* @__PURE__ */ jsx("div", { className: "badge-row", children: badges.map((b, i) => /* @__PURE__ */ jsx("span", { className: "badge badge-" + b.kind, children: b.text }, i)) }),
+        (() => {
+          if (!SCORING_CTX || !SCORING_CTX.taste) return null;
+          const m = matchMeta(item, SCORING_CTX.taste, SCORING_CTX.people, SCORING_CTX.crowd);
+          if (m.pct == null) return null;
+          const lb = letterboxdRating(item);
+          const aud5 = lb != null ? lb / 2 : item.voteAverage != null && (item.voteCount ?? 0) >= 50 ? item.voteAverage / 2 : null;
+          return /* @__PURE__ */ jsxs("div", { className: "detail-score", children: [
+            /* @__PURE__ */ jsxs("span", { className: "match-pill", style: matchStyle(m.pct), children: [
+              m.pct,
+              "% match"
+            ] }),
+            /* @__PURE__ */ jsxs("span", { className: "detail-score-conf", children: [
+              m.conf,
+              " confidence"
+            ] }),
+            aud5 != null && /* @__PURE__ */ jsxs("span", { className: "detail-score-aud", children: [
+              "audience ",
+              aud5.toFixed(1),
+              "/5"
+            ] })
+          ] });
+        })()
+      ] })
+    ] }),
+    loading && /* @__PURE__ */ jsxs("div", { className: "detail-loading", children: [
+      /* @__PURE__ */ jsx(RefreshCw, { size: 20, className: "spin" }),
+      " Loading details"
+    ] }),
+    err && /* @__PURE__ */ jsxs("div", { className: "detail-loading", children: [
+      "Couldn't load full details (",
+      err,
+      ")."
+    ] }),
+    data && /* @__PURE__ */ jsxs("div", { className: "detail-body", children: [
+      /* @__PURE__ */ jsxs("div", { className: "detail-facts", children: [
+        release && /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("span", { children: "Release" }),
+          formatDate(release.slice(0, 10)) || release
+        ] }),
+        director && /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("span", { children: "Director" }),
+          director.name
+        ] }),
+        producer && /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("span", { children: "Producer" }),
+          producer.name
+        ] })
+      ] }),
+      slim && slim.cast.length > 0 && /* @__PURE__ */ jsxs("div", { className: "detail-cast", children: [
+        /* @__PURE__ */ jsx("div", { className: "detail-cast-label", children: "Cast" }),
+        /* @__PURE__ */ jsx("div", { className: "detail-cast-list", children: slim.cast.slice(0, 6).map((c) => /* @__PURE__ */ jsx("span", { className: "cast-chip", children: c.name }, c.id)) })
+      ] }),
+      providers && /* @__PURE__ */ jsxs("div", { className: "detail-cast", children: [
+        /* @__PURE__ */ jsx("div", { className: "detail-cast-label", children: "Where to watch" }),
+        /* @__PURE__ */ jsx("div", { className: "suggest-links", children: providers.names.map((name) => /* @__PURE__ */ jsx("a", { className: "link-pill link-pill-stream", href: providers.link, target: "_blank", rel: "noreferrer", children: name }, name)) })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "detail-actions", children: [
+      onAddToWatchlist && /* @__PURE__ */ jsxs("button", { className: "btn btn-outline btn-sm", onClick: () => {
+        onAddToWatchlist(item);
+        onClose();
+      }, children: [
+        /* @__PURE__ */ jsx(Eye, { size: 14 }),
+        " Wishlist"
+      ] }),
+      onLogNew && /* @__PURE__ */ jsxs("button", { className: "btn btn-primary btn-sm", onClick: () => setLogging(true), children: [
+        /* @__PURE__ */ jsx(Check, { size: 14 }),
+        " Seen it"
+      ] }),
+      /* @__PURE__ */ jsx("a", { className: "btn btn-outline btn-sm", href: buildAmcLink(item.title, settings?.zip || ""), target: "_blank", rel: "noreferrer", children: "AMC" }),
+      /* @__PURE__ */ jsx("a", { className: "btn btn-outline btn-sm", href: buildRegalLink(item.title, settings?.zip || ""), target: "_blank", rel: "noreferrer", children: "Regal" }),
+      /* @__PURE__ */ jsxs("a", { className: "btn btn-outline btn-sm", href: buildRedditLink(item.title, item.year), target: "_blank", rel: "noreferrer", children: [
+        /* @__PURE__ */ jsx(ExternalLink, { size: 14 }),
+        " Reddit"
+      ] })
+    ] }),
+    logging && /* @__PURE__ */ jsxs(Modal, { onClose: () => setLogging(false), children: [
+      /* @__PURE__ */ jsx("h3", { className: "modal-title", children: item.title }),
+      /* @__PURE__ */ jsx(
+        LogForm,
+        {
+          mediaType: item.mediaType,
+          tmdb,
+          item,
+          saveLabel: "Add to collection",
+          onCancel: () => setLogging(false),
+          onSave: (entry) => {
+            onLogNew(item, entry, slim, { runtime, keywords });
+            setLogging(false);
+            onClose();
+          }
+        }
+      )
+    ] })
+  ] }) });
+}
+const WHERE_PRESETS = ["AMC", "Regal", "Belcourt", "Home", "Plane", "Other"];
+function LogForm({ initial, onSave, onCancel, saveLabel, mediaType, tmdb, item }) {
+  const isTv = mediaType === "tv";
+  const [seasons, setSeasons] = useState(null);
+  const [season, setSeason] = useState(initial?.season ?? null);
+  useEffect(() => {
+    if (!isTv || !tmdb || !item || !item.tmdbId) return;
+    let active = true;
+    tmdb.details("tv", item.tmdbId).then((d) => {
+      if (active) setSeasons((d.seasons || []).filter((s) => s.episode_count > 0));
+    }).catch(() => {
+    });
+    return () => {
+      active = false;
+    };
+  }, [isTv, item && item.tmdbId]);
+  const [date, setDate] = useState(initial?.date || todayISO());
+  const [dateMode, setDateMode] = useState(initial?.undated ? "anytime" : isTv ? "year" : "exact");
+  const [approxYear, setApproxYear] = useState(initial?.date ? initial.date.slice(0, 4) : String((/* @__PURE__ */ new Date()).getFullYear()));
+  const initLoc = initial?.location || "";
+  const isPreset = WHERE_PRESETS.includes(initLoc);
+  const [location2, setLocation] = useState(initLoc);
+  const [selectedPreset, setSelectedPreset] = useState(isPreset ? initLoc : initLoc ? "Other" : "");
+  const [customLoc, setCustomLoc] = useState(!isPreset ? initLoc : "");
+  const [rating, setRating] = useState(initial?.rating ?? 0);
+  const [notes, setNotes] = useState(initial?.notes || "");
+  const effectiveDate = dateMode === "anytime" ? null : dateMode === "year" ? `${approxYear}-01-01` : date;
+  function pickPreset(p) {
+    setSelectedPreset(p);
+    if (p !== "Other") setLocation(p);
+    else setLocation(customLoc);
+  }
+  const yearOptions = [];
+  for (let y = (/* @__PURE__ */ new Date()).getFullYear(); y >= 1970; y--) yearOptions.push(y);
+  return /* @__PURE__ */ jsxs("div", { className: "log-form", children: [
+    /* @__PURE__ */ jsx("label", { className: "field-label", children: isTv ? "Year watched" : "Date watched" }),
+    isTv ? /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, alignItems: "center" }, children: [
+      /* @__PURE__ */ jsx("select", { className: "field-input", value: approxYear, disabled: dateMode === "anytime", onChange: (e) => {
+        setApproxYear(e.target.value);
+        setDateMode("year");
+      }, style: { flex: 1 }, children: yearOptions.map((y) => /* @__PURE__ */ jsx("option", { value: y, children: y }, y)) }),
+      /* @__PURE__ */ jsx("button", { type: "button", className: "approx-chip" + (dateMode === "anytime" ? " approx-chip-active" : ""), onClick: () => setDateMode(dateMode === "anytime" ? "year" : "anytime"), children: "Don't know" })
+    ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsxs("div", { className: "approx-toggle", children: [
+        /* @__PURE__ */ jsx("button", { type: "button", className: "approx-chip" + (dateMode === "exact" ? " approx-chip-active" : ""), onClick: () => setDateMode("exact"), children: "Exact date" }),
+        /* @__PURE__ */ jsx("button", { type: "button", className: "approx-chip" + (dateMode === "year" ? " approx-chip-active" : ""), onClick: () => setDateMode("year"), children: "Just the year" }),
+        /* @__PURE__ */ jsx("button", { type: "button", className: "approx-chip" + (dateMode === "anytime" ? " approx-chip-active" : ""), onClick: () => setDateMode("anytime"), children: "Anytime" })
+      ] }),
+      dateMode === "exact" ? /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, alignItems: "center" }, children: [
+        /* @__PURE__ */ jsx("input", { className: "field-input", type: "date", value: date, onChange: (e) => setDate(e.target.value), style: { flex: 1 } }),
+        /* @__PURE__ */ jsx("button", { type: "button", className: "approx-chip approx-chip-active", onClick: () => setDate(todayISO()), style: { whiteSpace: "nowrap", flexShrink: 0 }, children: "Today" })
+      ] }) : dateMode === "year" ? /* @__PURE__ */ jsx("select", { className: "field-input", value: approxYear, onChange: (e) => setApproxYear(e.target.value), children: yearOptions.map((y) => /* @__PURE__ */ jsx("option", { value: y, children: y }, y)) }) : /* @__PURE__ */ jsx("div", { className: "anytime-hint", children: "No specific date. Good for shows you've watched on and off, like a long-running series." })
+    ] }),
+    isTv && seasons && seasons.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsx("label", { className: "field-label", children: "Season" }),
+      /* @__PURE__ */ jsxs("select", { className: "field-input", value: season == null ? "" : String(season), onChange: (e) => setSeason(e.target.value === "" ? null : Number(e.target.value)), children: [
+        /* @__PURE__ */ jsx("option", { value: "", children: "Whole show" }),
+        seasons.map((s) => /* @__PURE__ */ jsx("option", { value: s.season_number, children: s.season_number === 0 ? "Specials" : `Season ${s.season_number}` }, s.season_number))
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx("label", { className: "field-label", children: "Where" }),
+    /* @__PURE__ */ jsx("div", { className: "where-presets", children: WHERE_PRESETS.map((p) => /* @__PURE__ */ jsx(
+      "button",
+      {
+        type: "button",
+        className: "where-chip" + (selectedPreset === p ? " where-chip-active" : ""),
+        onClick: () => pickPreset(p),
+        children: p
+      },
+      p
+    )) }),
+    selectedPreset === "Other" && /* @__PURE__ */ jsx(
+      "input",
+      {
+        className: "field-input",
+        style: { marginTop: 8 },
+        type: "text",
+        placeholder: "Where did you watch it?",
+        value: customLoc,
+        onChange: (e) => {
+          setCustomLoc(e.target.value);
+          setLocation(e.target.value);
+        }
+      }
+    ),
+    /* @__PURE__ */ jsx("label", { className: "field-label", children: "Your rating" }),
+    /* @__PURE__ */ jsx(Stars, { value: rating, onChange: setRating, size: 28 }),
+    /* @__PURE__ */ jsx("label", { className: "field-label", children: "Notes" }),
+    /* @__PURE__ */ jsx(
+      "textarea",
+      {
+        className: "field-input field-textarea",
+        placeholder: "First reaction, what stuck with you, anything you want future-you to remember...",
+        value: notes,
+        onChange: (e) => setNotes(e.target.value)
+      }
+    ),
+    /* @__PURE__ */ jsxs("div", { className: "form-actions", children: [
+      /* @__PURE__ */ jsx("button", { className: "btn btn-ghost", onClick: onCancel, children: "Cancel" }),
+      /* @__PURE__ */ jsx(
+        "button",
+        {
+          className: "btn btn-primary",
+          onClick: () => onSave({ id: initial?.id || uid(), date: effectiveDate, undated: dateMode === "anytime", location: location2, rating, notes, season: isTv ? season : null, loggedAt: Date.now() }),
+          children: saveLabel || "Save"
+        }
+      )
+    ] })
+  ] });
+}
+function TicketStub({ ticket, onOpen }) {
+  const last = ticket.viewings[ticket.viewings.length - 1];
+  return /* @__PURE__ */ jsxs("button", { className: "stub", onClick: () => onOpen(ticket), children: [
+    /* @__PURE__ */ jsxs("div", { className: "stub-poster", children: [
+      ticket.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(ticket.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ jsx("div", { className: "stub-poster-fallback", children: ticket.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 28 }) : /* @__PURE__ */ jsx(Film, { size: 28 }) }),
+      last.rating != null && last.rating > 0 && /* @__PURE__ */ jsxs("div", { className: "stub-rate-badge", "aria-label": `Rated ${last.rating} out of 10`, children: [
+        /* @__PURE__ */ jsx(Star, { size: 34, strokeWidth: 1, className: "stub-rate-star" }),
+        /* @__PURE__ */ jsx("span", { className: "stub-rate-num", children: last.rating % 1 ? last.rating.toFixed(1) : last.rating })
+      ] }),
+      /* @__PURE__ */ jsx("div", { className: "stub-perf" })
+    ] }),
+    /* @__PURE__ */ jsx("div", { className: "stub-tab", children: /* @__PURE__ */ jsxs("div", { className: "stub-tab-top", children: [
+      /* @__PURE__ */ jsx("div", { className: "stub-title", children: ticket.title }),
+      ticket.viewings.length > 1 && /* @__PURE__ */ jsxs("div", { className: "stub-rewatch-inline", children: [
+        ticket.viewings.length,
+        "\xD7"
+      ] })
+    ] }) }),
+    /* @__PURE__ */ jsx("span", { className: "stub-shine" })
+  ] });
+}
+function WatchlistStub({ item, onClick, onLog, onRemove, inTheaters, zip }) {
+  const unreleased = item.releaseDate ? item.releaseDate > todayISO() : item.year && Number(item.year) > (/* @__PURE__ */ new Date()).getFullYear();
+  return /* @__PURE__ */ jsxs("div", { className: "stub", children: [
+    /* @__PURE__ */ jsx("button", { className: "stub-poster-link", onClick, "aria-label": item.title, children: /* @__PURE__ */ jsxs("div", { className: "stub-poster", children: [
+      item.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ jsx("div", { className: "stub-poster-fallback", children: item.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 28 }) : /* @__PURE__ */ jsx(Film, { size: 28 }) }),
+      /* @__PURE__ */ jsx("div", { className: "stub-perf" })
+    ] }) }),
+    /* @__PURE__ */ jsxs("div", { className: "stub-tab", children: [
+      /* @__PURE__ */ jsx("div", { className: "stub-tab-top", children: /* @__PURE__ */ jsx("div", { className: "stub-title", children: item.title }) }),
+      inTheaters && !unreleased && /* @__PURE__ */ jsxs("div", { className: "wl-showtimes", onClick: (e) => e.stopPropagation(), children: [
+        /* @__PURE__ */ jsx("span", { className: "wl-showtimes-label", children: "In theaters" }),
+        /* @__PURE__ */ jsxs("span", { className: "wl-showtimes-links", children: [
+          /* @__PURE__ */ jsx("a", { href: buildAmcLink(item.title, zip || ""), target: "_blank", rel: "noreferrer", children: "AMC" }),
+          /* @__PURE__ */ jsx("a", { href: buildRegalLink(item.title, zip || ""), target: "_blank", rel: "noreferrer", children: "Regal" })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "wl-actions", children: [
+        unreleased ? /* @__PURE__ */ jsxs("div", { className: "wl-unreleased", title: "Not released yet", children: [
+          /* @__PURE__ */ jsx(CalendarDays, { size: 12 }),
+          " ",
+          item.releaseDate ? `Out ${formatDate(item.releaseDate)}` : `Out ${item.year}`
+        ] }) : /* @__PURE__ */ jsxs("button", { className: "wl-watched-btn", onClick: (e) => {
+          e.stopPropagation();
+          onLog();
+        }, children: [
+          /* @__PURE__ */ jsx(Check, { size: 12 }),
+          " Mark watched"
+        ] }),
+        /* @__PURE__ */ jsx("button", { className: "wl-remove-btn", onClick: (e) => {
+          e.stopPropagation();
+          onRemove();
+        }, "aria-label": "Remove", children: /* @__PURE__ */ jsx(X, { size: 13 }) })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx("span", { className: "stub-shine" })
+  ] });
+}
+function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
+  const [showPoster, setShowPoster] = useState(false);
+  const [editingViewingId, setEditingViewingId] = useState(null);
+  const [logging, setLogging] = useState(false);
+  const [tmdbData, setTmdbData] = useState(null);
+  const [omdbData, setOmdbData] = useState(null);
+  useEffect(() => {
+    if (!tmdb || !ticket.tmdbId) return;
+    let active = true;
+    tmdb.detailsFull(ticket.mediaType, ticket.tmdbId).then((d) => {
+      if (active) setTmdbData(d);
+    }).catch(() => {
+    });
+    return () => {
+      active = false;
+    };
+  }, [ticket.tmdbId]);
+  useEffect(() => {
+    if (!settings?.omdbKey || !ticket.title) return;
+    let active = true;
+    const url = `https://www.omdbapi.com/?apikey=${encodeURIComponent(settings.omdbKey)}&t=${encodeURIComponent(ticket.title)}${ticket.year ? `&y=${ticket.year}` : ""}`;
+    fetch(url).then((r) => r.json()).then((d) => {
+      if (active && d && d.Response === "True") setOmdbData(d);
+    }).catch(() => {
+    });
+    return () => {
+      active = false;
+    };
+  }, [ticket.tmdbId, settings?.omdbKey]);
+  const overview = tmdbData?.overview || null;
+  const backdrop = ticket.backdropPath || (tmdbData?.backdrop_path ? tmdbData.backdrop_path : null);
+  const tdCast = tmdbData?.credits?.cast?.slice(0, 8) || [];
+  const tdDirector = tmdbData?.credits?.crew?.find((c) => c.job === "Director");
+  const tdRelease = tmdbData ? tmdbData.release_date || tmdbData.first_air_date || "" : "";
+  const tdRuntime = tmdbData?.runtime || tmdbData?.episode_run_time && tmdbData.episode_run_time[0];
+  const tdBoxOffice = omdbData?.BoxOffice;
+  const tdImdb = omdbData?.imdbRating;
+  function pushHistory(t) {
+    const snap = JSON.parse(JSON.stringify({ viewings: t.viewings, log: t.log }));
+    return [...t.history || [], snap].slice(-8);
+  }
+  function withLog(t, text) {
+    return { ...t, log: [...t.log || [], { at: Date.now(), text }] };
+  }
+  function handleSaveViewing(entry) {
+    let t = { ...ticket, history: pushHistory(ticket) };
+    const exists = t.viewings.find((v) => v.id === entry.id);
+    if (exists) {
+      t.viewings = t.viewings.map((v) => v.id === entry.id ? entry : v);
+      t = withLog(t, entry.date ? `Edited the ${formatDate(entry.date)} entry` : "Edited an undated entry");
+    } else {
+      t.viewings = [...t.viewings, entry];
+      t = withLog(t, entry.date ? `Logged a rewatch on ${formatDate(entry.date)}` : "Logged an undated rewatch");
+    }
+    onUpdate(t);
+    setEditingViewingId(null);
+    setLogging(false);
+  }
+  function handleRemoveViewing(id) {
+    if (ticket.viewings.length <= 1) return;
+    let t = { ...ticket, history: pushHistory(ticket) };
+    t.viewings = t.viewings.filter((v) => v.id !== id);
+    t = withLog(t, "Removed a viewing entry");
+    onUpdate(t);
+  }
+  function handleUndo() {
+    if (!ticket.history || !ticket.history.length) return;
+    const prev = ticket.history[ticket.history.length - 1];
+    const t = {
+      ...ticket,
+      viewings: prev.viewings,
+      log: [...prev.log, { at: Date.now(), text: "Undid the last change" }],
+      history: ticket.history.slice(0, -1)
+    };
+    onUpdate(t);
+  }
+  return /* @__PURE__ */ jsx(Modal, { onClose, wide: true, children: /* @__PURE__ */ jsx("div", { className: "ticket-detail", children: showPoster ? /* @__PURE__ */ jsxs("div", { className: "td-poster-view", children: [
+    ticket.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(ticket.posterPath, "w500"), alt: "", className: "detail-poster" }) : /* @__PURE__ */ jsx("div", { className: "detail-poster detail-poster-fallback", children: ticket.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 48 }) : /* @__PURE__ */ jsx(Film, { size: 48 }) }),
+    /* @__PURE__ */ jsxs("button", { className: "btn btn-ghost flip-hint", onClick: () => setShowPoster(false), children: [
+      /* @__PURE__ */ jsx(ChevronLeft, { size: 14 }),
+      " Back to details"
+    ] })
+  ] }) : /* @__PURE__ */ jsxs("div", { className: "td-back", children: [
+    backdrop ? /* @__PURE__ */ jsxs("div", { className: "td-hero", onClick: () => setShowPoster(true), children: [
+      /* @__PURE__ */ jsx("img", { src: tmdbImg(backdrop, "w780"), alt: "", className: "td-hero-img" }),
+      /* @__PURE__ */ jsxs("div", { className: "td-hero-overlay", children: [
+        /* @__PURE__ */ jsx("div", { className: "td-hero-title", children: ticket.title }),
+        /* @__PURE__ */ jsx("div", { className: "td-hero-genres", children: ticket.mediaType === "tv" ? "TV SHOW" : "MOVIE" })
+      ] })
+    ] }) : null,
+    /* @__PURE__ */ jsxs("div", { className: "td-back-header", style: backdrop ? { marginTop: 12 } : {}, children: [
+      !backdrop && /* @__PURE__ */ jsx("button", { className: "td-thumb-btn", onClick: () => setShowPoster(true), "aria-label": "View poster", children: ticket.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(ticket.posterPath, "w185"), alt: "", className: "td-back-thumb" }) : /* @__PURE__ */ jsx("div", { className: "td-back-thumb td-thumb-fallback", children: ticket.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 22 }) : /* @__PURE__ */ jsx(Film, { size: 22 }) }) }),
+      /* @__PURE__ */ jsxs("div", { className: "td-back-meta", children: [
+        !backdrop && /* @__PURE__ */ jsx("h2", { className: "td-back-title", children: ticket.title }),
+        !backdrop && /* @__PURE__ */ jsx("div", { className: "td-back-genres", children: ticket.mediaType === "tv" ? "TV SHOW" : "MOVIE" }),
+        ticket.viewings.length > 1 && /* @__PURE__ */ jsxs("div", { className: "td-rewatch-count", children: [
+          /* @__PURE__ */ jsx(RefreshCw, { size: 12 }),
+          " Watched ",
+          ticket.viewings.length,
+          "\xD7"
+        ] })
+      ] })
+    ] }),
+    overview && /* @__PURE__ */ jsx("p", { className: "td-overview", children: overview }),
+    (tdRelease || tdRuntime || tdDirector || tdImdb || tdBoxOffice || ticket.voteAverage > 0) && /* @__PURE__ */ jsxs("div", { className: "td-stats", children: [
+      tdRelease && /* @__PURE__ */ jsxs("div", { className: "td-stat", children: [
+        /* @__PURE__ */ jsx("span", { children: "Released" }),
+        formatDate(tdRelease.slice(0, 10)) || tdRelease
+      ] }),
+      tdRuntime && /* @__PURE__ */ jsxs("div", { className: "td-stat", children: [
+        /* @__PURE__ */ jsx("span", { children: "Runtime" }),
+        tdRuntime,
+        " min"
+      ] }),
+      tdDirector && /* @__PURE__ */ jsxs("div", { className: "td-stat", children: [
+        /* @__PURE__ */ jsx("span", { children: "Director" }),
+        tdDirector.name
+      ] }),
+      tdImdb && tdImdb !== "N/A" && /* @__PURE__ */ jsxs("div", { className: "td-stat", children: [
+        /* @__PURE__ */ jsx("span", { children: "IMDb" }),
+        tdImdb,
+        "/10"
+      ] }),
+      ticket.voteAverage > 0 && /* @__PURE__ */ jsxs("div", { className: "td-stat", children: [
+        /* @__PURE__ */ jsx("span", { children: "TMDB" }),
+        ticket.voteAverage.toFixed(1),
+        "/10"
+      ] }),
+      tdBoxOffice && tdBoxOffice !== "N/A" && /* @__PURE__ */ jsxs("div", { className: "td-stat", children: [
+        /* @__PURE__ */ jsx("span", { children: "Box Office" }),
+        tdBoxOffice
+      ] })
+    ] }),
+    tdCast.length > 0 && /* @__PURE__ */ jsxs("div", { className: "td-cast-section", children: [
+      /* @__PURE__ */ jsx("div", { className: "td-cast-label", children: "Cast" }),
+      /* @__PURE__ */ jsx("div", { className: "td-cast-list", children: tdCast.map((c) => /* @__PURE__ */ jsx("span", { className: "cast-chip", children: c.name }, c.id)) })
+    ] }),
+    /* @__PURE__ */ jsxs("a", { className: "btn btn-outline btn-sm td-reddit-btn", href: buildRedditLink(ticket.title, ticket.year), target: "_blank", rel: "noreferrer", children: [
+      /* @__PURE__ */ jsx(ExternalLink, { size: 13 }),
+      " Reddit discussion"
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "td-toolbar", children: [
+      /* @__PURE__ */ jsxs("button", { className: "td-tool-btn", disabled: !ticket.history || !ticket.history.length, onClick: handleUndo, children: [
+        /* @__PURE__ */ jsx(Undo2, { size: 14 }),
+        /* @__PURE__ */ jsx("span", { children: "Undo" })
+      ] }),
+      /* @__PURE__ */ jsxs("button", { className: "td-tool-btn", onClick: () => setLogging(true), children: [
+        /* @__PURE__ */ jsx(Plus, { size: 14 }),
+        /* @__PURE__ */ jsx("span", { children: "Rewatch" })
+      ] }),
+      /* @__PURE__ */ jsxs("button", { className: "td-tool-btn td-tool-danger", onClick: () => onDelete(ticket.id), children: [
+        /* @__PURE__ */ jsx(Trash2, { size: 14 }),
+        /* @__PURE__ */ jsx("span", { children: "Remove" })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "viewing-list", children: [
+      (() => {
+        const sortedViewings = ticket.viewings.slice().sort((a, b) => (a.date || "") < (b.date || "") ? 1 : -1);
+        const renderViewing = (v) => /* @__PURE__ */ jsx("div", { className: "viewing-row", children: editingViewingId === v.id ? /* @__PURE__ */ jsx(
+          LogForm,
+          {
+            initial: v,
+            mediaType: ticket.mediaType,
+            tmdb,
+            item: ticket,
+            saveLabel: "Save changes",
+            onSave: handleSaveViewing,
+            onCancel: () => setEditingViewingId(null)
+          }
+        ) : /* @__PURE__ */ jsxs(Fragment, { children: [
+          /* @__PURE__ */ jsxs("div", { className: "viewing-top", children: [
+            /* @__PURE__ */ jsxs("div", { className: "viewing-date", children: [
+              /* @__PURE__ */ jsx(CalendarDays, { size: 12 }),
+              " ",
+              v.undated || !v.date ? "Anytime" : formatDate(v.date)
+            ] }),
+            /* @__PURE__ */ jsx(Stars, { value: v.rating, size: 14 })
+          ] }),
+          v.location && /* @__PURE__ */ jsxs("div", { className: "viewing-loc", children: [
+            /* @__PURE__ */ jsx(MapPin, { size: 12 }),
+            " ",
+            v.location
+          ] }),
+          v.notes && /* @__PURE__ */ jsx("div", { className: "viewing-notes", children: v.notes }),
+          /* @__PURE__ */ jsxs("div", { className: "viewing-actions", children: [
+            /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => setEditingViewingId(v.id), "aria-label": "Edit", children: /* @__PURE__ */ jsx(Pencil, { size: 13 }) }),
+            ticket.viewings.length > 1 && /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => handleRemoveViewing(v.id), "aria-label": "Remove this entry", children: /* @__PURE__ */ jsx(Trash2, { size: 13 }) })
+          ] })
+        ] }) }, v.id);
+        const hasSeasons = ticket.mediaType === "tv" && ticket.viewings.some((v) => v.season != null);
+        if (!hasSeasons) return sortedViewings.map(renderViewing);
+        const groups = /* @__PURE__ */ new Map();
+        sortedViewings.forEach((v) => {
+          const k = v.season == null ? "whole" : v.season;
+          if (!groups.has(k)) groups.set(k, []);
+          groups.get(k).push(v);
+        });
+        const keys = [...groups.keys()].sort(
+          (a, b) => a === "whole" ? 1 : b === "whole" ? -1 : a - b
+        );
+        return keys.map((k) => /* @__PURE__ */ jsxs("div", { className: "season-group", children: [
+          /* @__PURE__ */ jsx("div", { className: "season-group-label", children: k === "whole" ? "Whole show" : `Season ${k}` }),
+          groups.get(k).map(renderViewing)
+        ] }, String(k)));
+      })(),
+      logging && /* @__PURE__ */ jsxs("div", { className: "viewing-row viewing-row-new", children: [
+        /* @__PURE__ */ jsx("div", { className: "field-label", style: { marginTop: 0 }, children: "New viewing" }),
+        /* @__PURE__ */ jsx(LogForm, { mediaType: ticket.mediaType, tmdb, item: ticket, saveLabel: "Add to ticket", onSave: handleSaveViewing, onCancel: () => setLogging(false) })
+      ] })
+    ] })
+  ] }) }) });
+}
+function TicketScanner({ tmdb, onClose, onLogNew }) {
+  const [stage, setStage] = useState("upload");
+  const [statusText, setStatusText] = useState("");
+  const [candidates, setCandidates] = useState([]);
+  const [chosen, setChosen] = useState(null);
+  const [guessedDate, setGuessedDate] = useState(todayISO());
+  const [scanRating, setScanRating] = useState(0);
+  const [manualQuery, setManualQuery] = useState("");
+  const [manualSearching, setManualSearching] = useState(false);
+  const fileRef = useRef(null);
+  async function handleFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setStage("reading");
+    setStatusText("Reading ticket with AI...");
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const mimeType = file.type || "image/jpeg";
+      const data = await callProxy({
+        model: "claude-haiku-4-5",
+        max_tokens: 150,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: mimeType, data: base64 } },
+            { type: "text", text: 'Look at this theater ticket or purchase confirmation. Find ONLY the movie or show title being purchased. Ignore seat numbers, food orders, prices, theater names, confirmation numbers, and showtimes. The movie title is usually the largest or most prominent text, or appears next to words like "Ticket", "Movie", or a seat row label. Reply with ONLY valid JSON: {"title": "exact movie title", "date": "YYYY-MM-DD or null"}. If you cannot confidently identify the movie title, set title to null.' }
+          ]
+        }]
+      });
+      const text = data.content?.[0]?.text?.trim() || "";
+      let parsed = {};
+      try {
+        const match = text.match(/\{[\s\S]*\}/);
+        if (match) parsed = JSON.parse(match[0]);
+      } catch {
+      }
+      const date = parsed.date || todayISO();
+      setGuessedDate(date);
+      const title = parsed.title;
+      if (!title) {
+        setStage("manual");
+        return;
+      }
+      setStatusText("Matching to a movie...");
+      const res = await tmdb.searchMulti(title);
+      const hits = (res.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
+      setCandidates(hits.slice(0, 5));
+      setChosen(hits[0] || null);
+      setStage("confirm");
+    } catch (err) {
+      setStatusText(err.message || "Scan failed");
+      setStage("manual");
+    }
+  }
+  async function runManualSearch(q) {
+    if (!q.trim()) return;
+    setManualSearching(true);
+    try {
+      const res = await tmdb.searchMulti(q.trim());
+      const hits = (res.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
+      setCandidates(hits.slice(0, 6));
+      setChosen(hits[0] || null);
+      setStage("confirm");
+    } catch {
+    }
+    setManualSearching(false);
+  }
+  return /* @__PURE__ */ jsxs(Modal, { onClose, children: [
+    /* @__PURE__ */ jsx("h3", { className: "modal-title", children: "Add from ticket" }),
+    stage === "upload" && /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx("p", { className: "sync-note", children: "Choose a photo from your Photo Library \u2014 a ticket stub, AMC/Regal confirmation, or any image with the movie title. AI reads it automatically." }),
+      /* @__PURE__ */ jsxs("button", { className: "btn btn-primary", style: { width: "100%", marginTop: 12 }, onClick: () => fileRef.current && fileRef.current.click(), children: [
+        /* @__PURE__ */ jsx(Camera, { size: 16 }),
+        " Choose from Photos"
+      ] }),
+      /* @__PURE__ */ jsx("input", { ref: fileRef, type: "file", accept: "image/*", style: { display: "none" }, onChange: handleFile }),
+      /* @__PURE__ */ jsx("button", { className: "btn btn-ghost", style: { width: "100%", marginTop: 10 }, onClick: () => setStage("manual"), children: "Type the title instead" })
+    ] }),
+    stage === "reading" && /* @__PURE__ */ jsxs("div", { className: "detail-loading", children: [
+      /* @__PURE__ */ jsx(RefreshCw, { size: 20, className: "spin" }),
+      " ",
+      statusText
+    ] }),
+    stage === "manual" && /* @__PURE__ */ jsxs("div", { children: [
+      statusText && /* @__PURE__ */ jsx("p", { className: "sync-note", style: { marginBottom: 10 }, children: "Couldn't read the screenshot automatically. Search for the title below." }),
+      /* @__PURE__ */ jsxs("div", { className: "search-bar", style: { marginBottom: 10 }, children: [
+        /* @__PURE__ */ jsx(Search, { size: 15 }),
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            className: "search-input",
+            placeholder: "Type movie title...",
+            value: manualQuery,
+            onChange: (e) => setManualQuery(e.target.value),
+            onKeyDown: (e) => e.key === "Enter" && runManualSearch(manualQuery),
+            autoFocus: true
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxs("button", { className: "btn btn-primary", style: { width: "100%" }, disabled: manualSearching || !manualQuery.trim(), onClick: () => runManualSearch(manualQuery), children: [
+        manualSearching ? /* @__PURE__ */ jsx(RefreshCw, { size: 14, className: "spin" }) : /* @__PURE__ */ jsx(Search, { size: 14 }),
+        " Search"
+      ] })
+    ] }),
+    stage === "confirm" && /* @__PURE__ */ jsxs("div", { children: [
+      candidates.length > 0 ? /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsx("label", { className: "field-label", children: "Which movie?" }),
+        /* @__PURE__ */ jsx("div", { className: "scan-candidates", children: candidates.map((c) => /* @__PURE__ */ jsxs(
+          "button",
+          {
+            className: "scan-cand" + (chosen && chosen.tmdbId === c.tmdbId ? " scan-cand-active" : ""),
+            onClick: () => setChosen(c),
+            children: [
+              c.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(c.posterPath, "w92"), alt: "" }) : /* @__PURE__ */ jsx("div", { className: "scan-cand-fallback", children: /* @__PURE__ */ jsx(Film, { size: 16 }) }),
+              /* @__PURE__ */ jsxs("span", { children: [
+                c.title,
+                " ",
+                c.year ? `(${c.year})` : ""
+              ] })
+            ]
+          },
+          c.tmdbId + c.mediaType
+        )) })
+      ] }) : /* @__PURE__ */ jsx("p", { className: "sync-note", children: "No results. Try a different title." }),
+      /* @__PURE__ */ jsx("label", { className: "field-label", children: "Date watched" }),
+      /* @__PURE__ */ jsx("input", { className: "field-input", type: "date", value: guessedDate, onChange: (e) => setGuessedDate(e.target.value) }),
+      /* @__PURE__ */ jsxs("label", { className: "field-label", style: { marginTop: 12 }, children: [
+        "Your rating ",
+        scanRating ? `(${scanRating}/10)` : "(optional)"
+      ] }),
+      /* @__PURE__ */ jsx(Stars, { value: scanRating, onChange: setScanRating, size: 28 }),
+      /* @__PURE__ */ jsxs("div", { className: "form-actions", children: [
+        /* @__PURE__ */ jsx("button", { className: "btn btn-ghost", onClick: () => setStage("upload"), children: "Back" }),
+        /* @__PURE__ */ jsxs(
+          "button",
+          {
+            className: "btn btn-primary",
+            disabled: !chosen,
+            onClick: () => {
+              if (!chosen) return;
+              onLogNew(chosen, { id: uid(), date: guessedDate, location: "", rating: scanRating || null, notes: "", loggedAt: Date.now() });
+              onClose();
+            },
+            children: [
+              /* @__PURE__ */ jsx(Check, { size: 14 }),
+              " Add to collection"
+            ]
+          }
+        )
+      ] })
+    ] })
+  ] });
+}
+function CollectionView({ collection, watchlist, tmdb, taste, settings, people, onUpdateTicket, onDeleteTicket, onLogFromWatchlist, onAddToWatchlist, onLogNew, onRemoveFromWatchlist, onShowYIR }) {
+  const [open, setOpen] = useState(null);
+  const [showWatchlist, setShowWatchlist] = useState(false);
+  const [loggingWl, setLoggingWl] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [sort, setSort] = useState("recent");
+  const [genreFilter, setGenreFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [yearFilter, setYearFilter] = useState("all");
+  const [wlQuery, setWlQuery] = useState("");
+  const [wlGenre, setWlGenre] = useState("all");
+  const [wlSort, setWlSort] = useState("added");
+  const [nowPlayingIds, setNowPlayingIds] = useState(() => /* @__PURE__ */ new Set());
+  useEffect(() => {
+    let active = true;
+    const region = (settings.country || "US").toUpperCase();
+    Promise.all([tmdb.nowPlaying(1, region), tmdb.nowPlaying(2, region)]).then(([p1, p2]) => {
+      if (!active) return;
+      setNowPlayingIds(new Set([...p1.results || [], ...p2.results || []].map((r) => r.id)));
+    }).catch(() => {
+    });
+    return () => {
+      active = false;
+    };
+  }, [settings.country]);
+  const genreOptions = useMemo(() => {
+    const ids = /* @__PURE__ */ new Set();
+    collection.forEach((c) => (c.genreIds || []).forEach((g) => ids.add(g)));
+    return Array.from(ids).map((id) => ({ id, name: MOVIE_GENRES[id] || TV_GENRES[id] })).filter((x) => x.name).sort((a, b) => a.name.localeCompare(b.name));
+  }, [collection]);
+  const wlGenreOptions = useMemo(() => {
+    const ids = /* @__PURE__ */ new Set();
+    (watchlist || []).forEach((w) => (w.genreIds || []).forEach((g) => ids.add(g)));
+    return Array.from(ids).map((id) => ({ id, name: MOVIE_GENRES[id] || TV_GENRES[id] })).filter((x) => x.name).sort((a, b) => a.name.localeCompare(b.name));
+  }, [watchlist]);
+  const visibleWatchlist = useMemo(() => {
+    let list = (watchlist || []).slice();
+    const q = wlQuery.trim().toLowerCase();
+    if (q) list = list.filter((w) => (w.title || "").toLowerCase().includes(q));
+    if (wlGenre !== "all") list = list.filter((w) => (w.genreIds || []).includes(Number(wlGenre)));
+    if (wlSort === "title") list.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+    else if (wlSort === "year") list.sort((a, b) => String(b.releaseDate || "").localeCompare(String(a.releaseDate || "")));
+    return list;
+  }, [watchlist, wlQuery, wlGenre, wlSort]);
+  const yearOptions = useMemo(() => {
+    const years = new Set(collection.map((c) => c.year).filter(Boolean));
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [collection]);
+  const visibleCollection = useMemo(() => {
+    let list = collection.slice();
+    if (query.trim()) {
+      const q = query.trim().toLowerCase();
+      list = list.filter((c) => c.title.toLowerCase().includes(q));
+    }
+    if (genreFilter !== "all") {
+      list = list.filter((c) => (c.genreIds || []).includes(Number(genreFilter)));
+    }
+    if (yearFilter !== "all") {
+      list = list.filter((c) => c.year === yearFilter);
+    }
+    const lastDate = (t) => t.viewings[t.viewings.length - 1].date || "";
+    const lastRating = (t) => t.viewings[t.viewings.length - 1].rating || 0;
+    list.sort((a, b) => {
+      if (sort === "recent") return lastDate(a) < lastDate(b) ? 1 : -1;
+      if (sort === "oldest") return lastDate(a) > lastDate(b) ? 1 : -1;
+      if (sort === "highest") return lastRating(b) - lastRating(a);
+      if (sort === "lowest") return lastRating(a) - lastRating(b);
+      return 0;
+    });
+    return list;
+  }, [collection, query, genreFilter, sort, yearFilter]);
+  if (open) {
+    return /* @__PURE__ */ jsx(
+      TicketDetail,
+      {
+        ticket: open,
+        tmdb,
+        settings,
+        onClose: () => setOpen(null),
+        onUpdate: (t) => {
+          onUpdateTicket(t);
+          setOpen(t);
+        },
+        onDelete: (id) => {
+          onDeleteTicket(id);
+          setOpen(null);
+        }
+      }
+    );
+  }
+  const showControls = collection.length > 0;
+  return /* @__PURE__ */ jsxs("div", { className: "view", children: [
+    detail && /* @__PURE__ */ jsx(
+      DetailModal,
+      {
+        item: detail,
+        tmdb,
+        badges: [],
+        settings,
+        onClose: () => setDetail(null),
+        onAddToWatchlist: null,
+        onLogNew: (it, entry, credits) => {
+          onLogNew(it, entry, credits);
+          onRemoveFromWatchlist(it);
+        }
+      }
+    ),
+    /* @__PURE__ */ jsxs("div", { className: "view-toggle", children: [
+      /* @__PURE__ */ jsxs("button", { className: !showWatchlist ? "toggle-pill active" : "toggle-pill", onClick: () => setShowWatchlist(false), children: [
+        "Collected (",
+        collection.length,
+        ")"
+      ] }),
+      /* @__PURE__ */ jsxs("button", { className: showWatchlist ? "toggle-pill active" : "toggle-pill", onClick: () => setShowWatchlist(true), children: [
+        "Wishlist (",
+        watchlist.length,
+        ")"
+      ] })
+    ] }),
+    !showWatchlist && (collection.length === 0 ? /* @__PURE__ */ jsx(
+      EmptyState,
+      {
+        icon: /* @__PURE__ */ jsx(Ticket, { size: 32 }),
+        title: "Your binder is empty",
+        body: "Log the next thing you watch and it'll show up here as a ticket stub you can flip open any time."
+      }
+    ) : /* @__PURE__ */ jsxs(Fragment, { children: [
+      showControls && /* @__PURE__ */ jsxs("div", { className: "collection-controls", children: [
+        /* @__PURE__ */ jsxs("div", { className: "search-bar collection-search", children: [
+          /* @__PURE__ */ jsx(Search, { size: 15 }),
+          /* @__PURE__ */ jsx(
+            "input",
+            {
+              className: "search-input",
+              placeholder: "Search your collection",
+              value: query,
+              onChange: (e) => setQuery(e.target.value)
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "filter-row", children: [
+          /* @__PURE__ */ jsxs("select", { className: "filter-select", value: sort, onChange: (e) => setSort(e.target.value), children: [
+            /* @__PURE__ */ jsx("option", { value: "recent", children: "Recently collected" }),
+            /* @__PURE__ */ jsx("option", { value: "oldest", children: "Oldest first" }),
+            /* @__PURE__ */ jsx("option", { value: "highest", children: "Highest rated" }),
+            /* @__PURE__ */ jsx("option", { value: "lowest", children: "Lowest rated" })
+          ] }),
+          /* @__PURE__ */ jsxs("select", { className: "filter-select", value: genreFilter, onChange: (e) => setGenreFilter(e.target.value), children: [
+            /* @__PURE__ */ jsx("option", { value: "all", children: "All genres" }),
+            genreOptions.map((g) => /* @__PURE__ */ jsx("option", { value: g.id, children: g.name }, g.id))
+          ] }),
+          /* @__PURE__ */ jsxs("select", { className: "filter-select", value: yearFilter, onChange: (e) => setYearFilter(e.target.value), children: [
+            /* @__PURE__ */ jsx("option", { value: "all", children: "All years" }),
+            yearOptions.map((y) => /* @__PURE__ */ jsx("option", { value: y, children: y }, y))
+          ] })
+        ] })
+      ] }),
+      visibleCollection.length === 0 ? /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Search, { size: 28 }), title: "No matches", body: "Nothing in your collection fits that filter." }) : /* @__PURE__ */ jsx("div", { className: "stub-grid stub-grid-compact", children: visibleCollection.map((t) => /* @__PURE__ */ jsx(TicketStub, { ticket: t, onOpen: setOpen }, t.id)) })
+    ] })),
+    loggingWl && /* @__PURE__ */ jsxs(Modal, { onClose: () => setLoggingWl(null), children: [
+      /* @__PURE__ */ jsx("h3", { className: "modal-title", children: loggingWl.title }),
+      /* @__PURE__ */ jsx(LogForm, { mediaType: loggingWl.mediaType, tmdb, item: loggingWl, saveLabel: "Add to collection", onCancel: () => setLoggingWl(null), onSave: (entry) => {
+        onLogNew(loggingWl, entry);
+        setLoggingWl(null);
+      } })
+    ] }),
+    showWatchlist && (watchlist.length === 0 ? /* @__PURE__ */ jsx(
+      EmptyState,
+      {
+        icon: /* @__PURE__ */ jsx(Heart, { size: 32 }),
+        title: "Wishlist is empty",
+        body: "Swipe right on something in Discover, or save it from Search, and it'll wait here until you've watched it."
+      }
+    ) : /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsxs("div", { className: "collection-controls", children: [
+        /* @__PURE__ */ jsxs("div", { className: "search-bar collection-search", children: [
+          /* @__PURE__ */ jsx(Search, { size: 15 }),
+          /* @__PURE__ */ jsx(
+            "input",
+            {
+              className: "search-input",
+              placeholder: "Search your wishlist",
+              value: wlQuery,
+              onChange: (e) => setWlQuery(e.target.value)
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "filter-row", children: [
+          /* @__PURE__ */ jsxs("select", { className: "filter-select", value: wlSort, onChange: (e) => setWlSort(e.target.value), children: [
+            /* @__PURE__ */ jsx("option", { value: "added", children: "Recently added" }),
+            /* @__PURE__ */ jsx("option", { value: "title", children: "Title A\u2013Z" }),
+            /* @__PURE__ */ jsx("option", { value: "year", children: "Newest release" })
+          ] }),
+          wlGenreOptions.length > 0 && /* @__PURE__ */ jsxs("select", { className: "filter-select", value: wlGenre, onChange: (e) => setWlGenre(e.target.value), children: [
+            /* @__PURE__ */ jsx("option", { value: "all", children: "All genres" }),
+            wlGenreOptions.map((g) => /* @__PURE__ */ jsx("option", { value: g.id, children: g.name }, g.id))
+          ] })
+        ] })
+      ] }),
+      visibleWatchlist.length === 0 ? /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Search, { size: 28 }), title: "No matches", body: "Nothing in your wishlist fits that filter." }) : /* @__PURE__ */ jsx("div", { className: "stub-grid stub-grid-compact", children: visibleWatchlist.map((w) => /* @__PURE__ */ jsx(
+        WatchlistStub,
+        {
+          item: w,
+          inTheaters: w.mediaType !== "tv" && nowPlayingIds.has(w.tmdbId),
+          zip: settings.zip || "",
+          onClick: () => setDetail(w),
+          onLog: () => setLoggingWl(w),
+          onRemove: () => onRemoveFromWatchlist(w)
+        },
+        w.tmdbId + w.mediaType
+      )) })
+    ] })),
+    /* @__PURE__ */ jsx("div", { style: { height: "24px" } })
+  ] });
+}
+function EmptyState({ icon, title, body }) {
+  return /* @__PURE__ */ jsxs("div", { className: "empty-state", children: [
+    /* @__PURE__ */ jsx("div", { className: "empty-icon", children: icon }),
+    /* @__PURE__ */ jsx("div", { className: "empty-title", children: title }),
+    /* @__PURE__ */ jsx("div", { className: "empty-body", children: body })
+  ] });
+}
+function SwipeButtons({ onSkip, onSeen, onWant }) {
+  return /* @__PURE__ */ jsxs("div", { className: "swipe-buttons", children: [
+    /* @__PURE__ */ jsx("button", { className: "round-btn round-btn-skip", onClick: onSkip, "aria-label": "Skip", children: /* @__PURE__ */ jsx(X, { size: 22 }) }),
+    /* @__PURE__ */ jsx("button", { className: "round-btn round-btn-seen", onClick: onSeen, "aria-label": "Already seen it", children: /* @__PURE__ */ jsx(Eye, { size: 26 }) }),
+    /* @__PURE__ */ jsx("button", { className: "round-btn round-btn-want", onClick: onWant, "aria-label": "Save to want-to-see", children: /* @__PURE__ */ jsx(Bookmark, { size: 20 }) })
+  ] });
+}
+function matchColor(pct) {
+  const t = Math.max(0, Math.min(100, pct)) / 100;
+  const lerp = (a, b, u) => a + (b - a) * u;
+  let h, s, l;
+  if (t <= 0.5) {
+    const u = t / 0.5;
+    h = lerp(4, 42, u);
+    s = lerp(85, 96, u);
+    l = lerp(56, 55, u);
+  } else {
+    const u = (t - 0.5) / 0.5;
+    h = lerp(42, 145, u);
+    s = lerp(96, 70, u);
+    l = lerp(55, 48, u);
+  }
+  return { stroke: `hsl(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(l)}%)`, glow: `hsla(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(l)}%, 0.75)` };
+}
+function MatchRing({ pct, conf }) {
+  const r = 30;
+  const c = 2 * Math.PI * r;
+  const off = c * (1 - Math.max(1, Math.min(99, pct)) / 100);
+  const mc = matchColor(pct);
+  return /* @__PURE__ */ jsxs("div", { className: "match-ring", children: [
+    /* @__PURE__ */ jsxs("svg", { width: "72", height: "72", viewBox: "0 0 72 72", children: [
+      /* @__PURE__ */ jsx("circle", { cx: "36", cy: "36", r, fill: "rgba(15,1,0,0.6)", stroke: "rgba(255,245,245,0.16)", strokeWidth: "4.5" }),
+      /* @__PURE__ */ jsx(
+        "circle",
+        {
+          cx: "36",
+          cy: "36",
+          r,
+          fill: "none",
+          stroke: mc.stroke,
+          strokeWidth: "4.5",
+          strokeLinecap: "round",
+          strokeDasharray: c,
+          strokeDashoffset: off,
+          transform: "rotate(-90 36 36)",
+          className: "match-ring-arc",
+          style: { filter: `drop-shadow(0 0 5px ${mc.glow})` }
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "match-ring-label", children: [
+      /* @__PURE__ */ jsxs("b", { children: [
+        pct,
+        "%"
+      ] }),
+      /* @__PURE__ */ jsx("span", { style: { color: mc.stroke }, children: "match" })
+    ] })
+  ] });
+}
+function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection, tmdb, onSkip, onWant, onRate, onTapInfo }) {
+  const [drag, setDrag] = useState({ x: 0, active: false });
+  const [flying, setFlying] = useState(null);
+  const [flyFrom, setFlyFrom] = useState(0);
+  const [choice, setChoice] = useState(null);
+  const [showRingInfo, setShowRingInfo] = useState(false);
+  const [rateVal, setRateVal] = useState(0);
+  const startX = useRef(0);
+  const moved = useRef(false);
+  const pendingAction = useRef(null);
+  const cardRef = useRef(null);
+  React.useLayoutEffect(() => {
+    function measure() {
+      const card = cardRef.current;
+      if (!card) return;
+      const meta = card.querySelector(".swipe-meta");
+      const perf = card.querySelector(".swipe-perf");
+      if (!meta || !perf) return;
+      const y = meta.offsetTop + perf.offsetTop + 1;
+      card.style.setProperty("--notch-y", `${y}px`);
+      const W = Math.round(card.offsetWidth), H = Math.round(card.offsetHeight);
+      if (W > 0 && H > 0) {
+        const hole = (cx) => `M${cx - 17} ${y}a17 17 0 1 0 34 0a17 17 0 1 0 -34 0Z`;
+        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${W}' height='${H}' viewBox='0 0 ${W} ${H}'><path d='M0 0H${W}V${H}H0Z ${hole(0)} ${hole(W)}' fill='#fff' fill-rule='evenodd'/></svg>`;
+        const uri = `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`;
+        card.style.maskImage = uri;
+        card.style.webkitMaskImage = uri;
+      }
+    }
+    measure();
+    const t = setTimeout(measure, 400);
+    return () => clearTimeout(t);
+  }, [item]);
+  function fly(dir, action) {
+    setFlyFrom(drag.x);
+    pendingAction.current = action;
+    setFlying(dir);
+    setDrag({ x: 0, active: false });
+    setChoice(null);
+    setRateVal(0);
+    setTimeout(() => {
+      const a = pendingAction.current;
+      if (a) {
+        pendingAction.current = null;
+        setFlying(null);
+        a();
+      }
+    }, 420);
+  }
+  function askChoice() {
+    setDrag({ x: 0, active: false });
+    setChoice("choose");
+  }
+  function handleAnimEnd(e) {
+    if (e.target !== e.currentTarget) return;
+    const action = pendingAction.current;
+    pendingAction.current = null;
+    setFlying(null);
+    if (action) action();
+  }
+  function down(e) {
+    if (flying || choice) return;
+    startX.current = e.touches ? e.touches[0].clientX : e.clientX;
+    moved.current = false;
+    setDrag({ x: 0, active: true });
+  }
+  function move(e) {
+    if (!drag.active || flying || choice) return;
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - startX.current;
+    if (Math.abs(x) > 6) moved.current = true;
+    setDrag({ x, active: true });
+  }
+  function up() {
+    if (choice) return;
+    if (drag.x > 100) {
+      askChoice();
+      return;
+    } else if (drag.x < -100) {
+      fly("left", onSkip);
+      return;
+    }
+    setDrag({ x: 0, active: false });
+  }
+  const rotate = drag.x / 18;
+  const dragPct = Math.min(1, Math.abs(drag.x) / 120);
+  const dragScale = drag.active && Math.abs(drag.x) > 4 ? 1.015 : 1;
+  const flyClass = flying ? ` swipe-fly-${flying}` : "";
+  return /* @__PURE__ */ jsxs(
+    "div",
+    {
+      ref: cardRef,
+      className: "swipe-card" + (drag.active && !flying ? " dragging" : "") + flyClass,
+      style: flying ? { "--fly-from": flyFrom + "px" } : { transform: `translateX(${drag.x}px) rotate(${rotate}deg) scale(${dragScale})` },
+      onAnimationEnd: flying ? handleAnimEnd : void 0,
+      onMouseDown: down,
+      onMouseMove: move,
+      onMouseUp: up,
+      onMouseLeave: () => drag.active && up(),
+      onTouchStart: down,
+      onTouchMove: move,
+      onTouchEnd: up,
+      onTouchCancel: () => setDrag({ x: 0, active: false }),
+      children: [
+        drag.x !== 0 && !flying && /* @__PURE__ */ jsx("div", { className: "swipe-glow " + (drag.x > 0 ? "swipe-glow-want" : "swipe-glow-skip"), style: { opacity: dragPct * 0.95 } }),
+        drag.x > 0 && /* @__PURE__ */ jsx("div", { className: "swipe-flag swipe-flag-want", style: { opacity: dragPct, transform: `rotate(-8deg) scale(${0.55 + dragPct * 0.55})` }, children: "SAVE IT" }),
+        drag.x < 0 && /* @__PURE__ */ jsx("div", { className: "swipe-flag swipe-flag-skip", style: { opacity: dragPct, transform: `rotate(8deg) scale(${0.55 + dragPct * 0.55})` }, children: "SKIP" }),
+        matchPct != null && /* @__PURE__ */ jsx(
+          "button",
+          {
+            className: "match-ring-btn",
+            "aria-label": "What does the match score mean",
+            onTouchStart: (e) => e.stopPropagation(),
+            onClick: (e) => {
+              e.stopPropagation();
+              setShowRingInfo(true);
+            },
+            children: /* @__PURE__ */ jsx(MatchRing, { pct: matchPct, conf: matchConf })
+          }
+        ),
+        showRingInfo && /* @__PURE__ */ jsx("div", { className: "ring-info-overlay", onTouchStart: (e) => e.stopPropagation(), onClick: (e) => {
+          e.stopPropagation();
+          setShowRingInfo(false);
+        }, children: /* @__PURE__ */ jsxs("div", { className: "ring-info-card", onClick: (e) => e.stopPropagation(), children: [
+          /* @__PURE__ */ jsxs("div", { className: "ring-info-title", children: [
+            matchPct,
+            "% match"
+          ] }),
+          /* @__PURE__ */ jsx("div", { className: "ring-info-lines", children: explainMatch(item, taste, people, crowd, collection).lines.map((l, i) => /* @__PURE__ */ jsx("div", { className: "ring-info-line", children: l }, i)) }),
+          /* @__PURE__ */ jsxs("p", { className: "ring-info-legend", children: [
+            /* @__PURE__ */ jsx("span", { style: { color: "hsl(4,85%,56%)" }, children: "red" }),
+            " under 50 \xB7 ",
+            /* @__PURE__ */ jsx("span", { style: { color: "hsl(42,96%,55%)" }, children: "amber" }),
+            " 50-69 \xB7 ",
+            /* @__PURE__ */ jsx("span", { style: { color: "hsl(145,70%,48%)" }, children: "green" }),
+            " 70+"
+          ] }),
+          matchConf && /* @__PURE__ */ jsxs("p", { className: "ring-info-conf", children: [
+            "Confidence: ",
+            matchConf,
+            " - it sharpens as you rate more."
+          ] }),
+          /* @__PURE__ */ jsx("button", { className: "btn btn-primary", onClick: (e) => {
+            e.stopPropagation();
+            setShowRingInfo(false);
+          }, children: "Got it" })
+        ] }) }),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            className: "swipe-poster-btn",
+            onClick: () => {
+              if (!moved.current) onTapInfo();
+            },
+            "aria-label": "More info",
+            children: item.posterPath ? /* @__PURE__ */ jsxs(Fragment, { children: [
+              /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w500"), alt: "", className: "swipe-poster-blur", draggable: false }),
+              /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w500"), alt: "", className: "swipe-poster", draggable: false })
+            ] }) : /* @__PURE__ */ jsx("div", { className: "swipe-poster swipe-poster-fallback", children: item.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 40 }) : /* @__PURE__ */ jsx(Film, { size: 40 }) })
+          }
+        ),
+        /* @__PURE__ */ jsxs("div", { className: "swipe-meta", children: [
+          /* @__PURE__ */ jsx("div", { className: "swipe-title", children: item.title }),
+          /* @__PURE__ */ jsxs("div", { className: "swipe-sub", children: [
+            item.year ? `${item.year} \xB7 ` : "",
+            item.mediaType === "tv" ? "TV SHOW" : "MOVIE"
+          ] }),
+          /* @__PURE__ */ jsx("div", { className: "swipe-perf" }),
+          /* @__PURE__ */ jsx(WhyWatch, { item, matchPct })
+        ] }),
+        /* @__PURE__ */ jsx("div", { className: "swipe-buttons-wrap", children: /* @__PURE__ */ jsx(
+          SwipeButtons,
+          {
+            onSkip: () => fly("left", onSkip),
+            onSeen: () => setChoice("rate"),
+            onWant: askChoice
+          }
+        ) }),
+        choice && /* @__PURE__ */ jsx("div", { className: "choice-overlay", onMouseDown: (e) => e.stopPropagation(), onTouchStart: (e) => e.stopPropagation(), children: choice === "choose" ? /* @__PURE__ */ jsxs(Fragment, { children: [
+          /* @__PURE__ */ jsx("div", { className: "choice-title", children: item.title }),
+          /* @__PURE__ */ jsx("button", { className: "choice-btn choice-btn-want", onClick: () => fly("right", onWant), children: "WANT TO WATCH" }),
+          /* @__PURE__ */ jsx("button", { className: "choice-btn choice-btn-seen", onClick: () => setChoice("rate"), children: "I'VE SEEN IT" }),
+          /* @__PURE__ */ jsx("button", { className: "choice-dismiss", onClick: () => setChoice(null), children: "not now" })
+        ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+          /* @__PURE__ */ jsx("div", { className: "choice-title", children: "Rate it" }),
+          /* @__PURE__ */ jsx("div", { className: "choice-stars", children: /* @__PURE__ */ jsx(Stars, { value: rateVal, onChange: setRateVal, size: 30 }) }),
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              className: "choice-btn choice-btn-want",
+              disabled: !rateVal,
+              style: !rateVal ? { opacity: 0.45 } : void 0,
+              onClick: () => rateVal && fly("up", () => onRate(item, { id: uid(), date: todayISO(), undated: false, location: "", rating: rateVal, notes: "", loggedAt: Date.now() })),
+              children: "LOG IT"
+            }
+          ),
+          /* @__PURE__ */ jsx("button", { className: "choice-dismiss", onClick: () => setChoice("choose"), children: "back" })
+        ] }) })
+      ]
+    }
+  );
+}
+const APP_VERSION = "101";
+const posterGradCache = {};
+const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" };
+function usePosterGradient(item) {
+  const [grad, setGrad] = useState(DEFAULT_GRAD);
+  useEffect(() => {
+    let dead = false;
+    if (!item || !item.posterPath) {
+      setGrad(DEFAULT_GRAD);
+      return;
+    }
+    const key = item.tmdbId + item.mediaType;
+    if (key in posterGradCache) {
+      setGrad(posterGradCache[key] || DEFAULT_GRAD);
+      return;
+    }
+    setGrad(DEFAULT_GRAD);
+    const finish = (g) => {
+      posterGradCache[key] = g;
+      if (!dead) setGrad(g || DEFAULT_GRAD);
+    };
+    (async () => {
+      try {
+        const res = await fetch(tmdbImg(item.posterPath, "w342"), { mode: "cors", credentials: "omit" });
+        if (!res.ok) throw new Error("poster fetch " + res.status);
+        const blob = await res.blob();
+        const objUrl = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+          URL.revokeObjectURL(objUrl);
+          try {
+            const cv = document.createElement("canvas");
+            cv.width = 8;
+            cv.height = 12;
+            const cx = cv.getContext("2d", { willReadFrequently: true });
+            cx.drawImage(img, 0, 0, 8, 12);
+            const d = cx.getImageData(0, 0, 8, 12).data;
+            const avg = (y0, y1) => {
+              let r = 0, g = 0, b = 0, n = 0;
+              for (let y = y0; y < y1; y++) for (let x = 0; x < 8; x++) {
+                const i = (y * 8 + x) * 4;
+                r += d[i];
+                g += d[i + 1];
+                b += d[i + 2];
+                n++;
+              }
+              return [r / n, g / n, b / n];
+            };
+            const vivid = (c) => {
+              let [r, g, b] = c.map((v) => v / 255);
+              const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+              let h = 0, s = 0;
+              const l = (mx + mn) / 2;
+              if (mx !== mn) {
+                const dd = mx - mn;
+                s = l > 0.5 ? dd / (2 - mx - mn) : dd / (mx + mn);
+                if (mx === r) h = ((g - b) / dd + (g < b ? 6 : 0)) / 6;
+                else if (mx === g) h = ((b - r) / dd + 2) / 6;
+                else h = ((r - g) / dd + 4) / 6;
+              }
+              s = Math.max(s, 0.55);
+              const ll = Math.min(0.58, Math.max(0.42, l));
+              const q = ll < 0.5 ? ll * (1 + s) : ll + s - ll * s;
+              const p = 2 * ll - q;
+              const hue = (t) => {
+                if (t < 0) t += 1;
+                if (t > 1) t -= 1;
+                if (t < 1 / 6) return p + (q - p) * 6 * t;
+                if (t < 1 / 2) return q;
+                if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+                return p;
+              };
+              const toHex = (v) => Math.round(v * 255).toString(16).padStart(2, "0");
+              return "#" + toHex(hue(h + 1 / 3)) + toHex(hue(h)) + toHex(hue(h - 1 / 3));
+            };
+            finish({ a: vivid(avg(0, 6)), b: vivid(avg(6, 12)) });
+          } catch {
+            finish(null);
+          }
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(objUrl);
+          finish(null);
+        };
+        img.src = objUrl;
+      } catch {
+        finish(null);
+      }
+    })();
+    return () => {
+      dead = true;
+    };
+  }, [item && item.tmdbId, item && item.mediaType]);
+  return grad;
+}
+function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, collection, watchlist, onAddToWatchlist, onLogNew }) {
+  const [pool, setPool] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [infoItem, setInfoItem] = useState(null);
+  const [mode, setMode] = useState("swipe");
+  const [lastAction, setLastAction] = useState(null);
+  const [skippedPool, setSkippedPool] = useState([]);
+  const [justLogged, setJustLogged] = useState(null);
+  const [forYouList, setForYouList] = useState([]);
+  const [forYouLoading, setForYouLoading] = useState(false);
+  const forYouLoadedRef = useRef(false);
+  const pageRef = useRef(1);
+  const reloadAttemptsRef = useRef(0);
+  const servedRef = useRef(/* @__PURE__ */ new Set());
+  const grad = usePosterGradient(pool[0]);
+  const washTimer = useRef(null);
+  useEffect(() => {
+    const app = document.querySelector(".app");
+    if (!app) return;
+    let fade = app.querySelector(".wash-fade");
+    if (!fade) {
+      fade = document.createElement("div");
+      fade.className = "wash-fade";
+      app.insertBefore(fade, app.firstChild);
+    }
+    fade.style.background = `linear-gradient(180deg, ${grad.a} 0%, ${grad.a} 24%, ${grad.b} 76%, ${grad.b} 100%)`;
+    fade.style.opacity = "1";
+    if (washTimer.current) clearTimeout(washTimer.current);
+    washTimer.current = setTimeout(() => {
+      const rs = document.documentElement.style;
+      rs.setProperty("--wash-a", grad.a);
+      rs.setProperty("--wash-b", grad.b);
+      fade.style.opacity = "0";
+    }, 680);
+    return () => {
+      if (washTimer.current) clearTimeout(washTimer.current);
+    };
+  }, [grad]);
+  const seenIdSet = useMemo(
+    () => {
+      const now = Date.now();
+      const buried = feedback.skippedIds.filter((x) => (x.count || 1) >= 3);
+      const cooling = feedback.skippedIds.filter((x) => (x.count || 1) < 3 && x.at && now - x.at < SKIP_COOLDOWN_MS);
+      return new Set([...cooling, ...buried, ...feedback.wantedIds, ...feedback.seenIds].map((x) => x.tmdbId + x.mediaType));
+    },
+    [feedback]
+  );
+  const ownedSet = useMemo(
+    () => /* @__PURE__ */ new Set([...collection.map((c) => c.tmdbId + c.mediaType), ...watchlist.map((w) => w.tmdbId + w.mediaType)]),
+    [collection, watchlist]
+  );
+  const loadPool = useCallback(async (includeSkipped = false) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const topGenres = Object.entries(getWeights(taste)).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g).join(",");
+      const pageNum = pageRef.current;
+      const intlLangs = ["ko", "ja", "fr", "es", "it", "de", "hi", "zh"];
+      const langA = intlLangs[pageNum % intlLangs.length];
+      const langB = intlLangs[(pageNum + 3) % intlLangs.length];
+      const yr = (/* @__PURE__ */ new Date()).getFullYear();
+      const recentFloor = `${yr - 6}-01-01`;
+      const freshFloor = `${yr - 2}-01-01`;
+      const decades = [1960, 1970, 1980, 1990, 2e3, 2010];
+      const dec = decades[pageNum % decades.length];
+      const calls = [
+        tmdb.trendingWeek(),
+        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "vote_count.gte": 80, "primary_release_date.gte": recentFloor }),
+        tmdb.discoverMovie({ sort_by: "vote_average.desc", page: pageNum, with_original_language: "en", "vote_count.gte": 300, "primary_release_date.gte": recentFloor }),
+        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "vote_count.gte": 50, "primary_release_date.gte": freshFloor }),
+        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: langA, "vote_count.gte": 40, "primary_release_date.gte": recentFloor }),
+        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: langB, "vote_count.gte": 40, "primary_release_date.gte": recentFloor }),
+        tmdb.discoverTv({ sort_by: "popularity.desc", page: pageNum, "vote_count.gte": 200, without_genres: "10763,10767" }),
+        tmdb.nowPlaying(pageNum),
+        tmdb.topRatedMovies(pageNum),
+        tmdb.discoverTv({ sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 400, without_genres: "10763,10767" }),
+        tmdb.discoverMovie({ sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 300, "primary_release_date.gte": `${dec}-01-01`, "primary_release_date.lte": `${dec + 9}-12-31` }),
+        // blockbuster deep cut: the big recent English movies (1000+ votes, last 3
+        // years) sit several pages deep once he's logged the front page, so pull two
+        // rotating pages of them explicitly - the weave below deals them in early.
+        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "vote_count.gte": 1e3, "primary_release_date.gte": `${yr - 3}-01-01` }),
+        tmdb.discoverMovie({ sort_by: "popularity.desc", page: pageNum + 1, with_original_language: "en", "vote_count.gte": 1e3, "primary_release_date.gte": `${yr - 3}-01-01` })
+      ];
+      if (topGenres) {
+        calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "popularity.desc", page: pageNum, with_original_language: "en", "primary_release_date.gte": recentFloor }));
+        calls.push(tmdb.discoverMovie({ with_genres: topGenres, sort_by: "vote_average.desc", page: pageNum, "vote_count.gte": 200, "primary_release_date.gte": recentFloor }));
+        calls.push(tmdb.discoverTv({ with_genres: topGenres, sort_by: "popularity.desc", page: pageNum, with_original_language: "en" }));
+      }
+      const pages = await Promise.all(calls);
+      const all = pages.flatMap((p) => p.results || []).map(normalize);
+      pageRef.current = all.length === 0 || pageNum + 2 > 9 ? 1 : pageNum + 2;
+      const skipSet = seenIdSet;
+      const fresh = all.filter((a) => !skipSet.has(a.tmdbId + a.mediaType) && !ownedSet.has(a.tmdbId + a.mediaType));
+      const dedup = Array.from(new Map(fresh.map((f) => [f.tmdbId + f.mediaType, f])).values());
+      let unserved = dedup.filter((x) => !servedRef.current.has(x.tmdbId + x.mediaType));
+      if (unserved.length === 0) {
+        servedRef.current.clear();
+        unserved = dedup;
+      }
+      unserved.forEach((x) => servedRef.current.add(x.tmdbId + x.mediaType));
+      const scored = unserved.map((x) => {
+        const m = matchMeta(x, taste, people, crowdRef.current);
+        return { ...x, _pct: m.pct, _conf: m.conf };
+      });
+      const shuffleInPlace = (arr) => {
+        for (let i = arr.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+      };
+      const yrNow = (/* @__PURE__ */ new Date()).getFullYear();
+      const isBlockbuster = (x) => x.mediaType === "movie" && x.originalLanguage === "en" && Number(x.year) >= yrNow - 3 && (x.voteCount || 0) >= 1e3;
+      const byScore = [...scored].sort((a, b) => (b._pct || 50) - (a._pct || 50));
+      const windowed = [];
+      for (let i = 0; i < byScore.length; i += 8) windowed.push(...shuffleInPlace(byScore.slice(i, i + 8)));
+      const bbIdx = shuffleInPlace(windowed.map((x, i) => isBlockbuster(x) ? i : -1).filter((i) => i >= 0)).slice(0, 4);
+      const bbSet = new Set(bbIdx);
+      const woven = windowed.filter((_, i) => !bbSet.has(i));
+      const slots = [1, 4, 7, 10];
+      bbIdx.forEach((from, k) => woven.splice(Math.min(slots[k], woven.length), 0, windowed[from]));
+      setPool((prev) => {
+        const live = prev.filter((p) => !skipSet.has(p.tmdbId + p.mediaType) && !ownedSet.has(p.tmdbId + p.mediaType));
+        return [...live, ...woven];
+      });
+    } catch (e) {
+      setError(e.message);
+    }
+    setLoading(false);
+  }, [tmdb, seenIdSet, ownedSet, taste, feedback]);
+  useEffect(() => {
+    loadPool();
+  }, []);
+  useEffect(() => {
+    if (loading || error) return;
+    if (pool.length > 4) {
+      reloadAttemptsRef.current = 0;
+      return;
+    }
+    if (reloadAttemptsRef.current >= 25) return;
+    reloadAttemptsRef.current += 1;
+    loadPool(true);
+  }, [pool.length, loading, error]);
+  const crowdRef = useRef(null);
+  if (crowdRef.current === null || crowdRef.current._for !== collection) {
+    crowdRef.current = { ...learnCrowdWeight(collection), _for: collection };
+  }
+  const [lbReady, setLbReady] = useState(false);
+  useEffect(() => {
+    loadLetterboxd().then((r) => {
+      if (r && Object.keys(r).length) setLbReady(true);
+    });
+  }, []);
+  useEffect(() => {
+    if (!lbReady) return;
+    const rescore = (x) => {
+      const m = matchMeta(x, taste, people, crowdRef.current);
+      return { ...x, _pct: m.pct, _conf: m.conf };
+    };
+    setPool((prev) => prev.map(rescore));
+    setForYouList((prev) => prev.map(rescore).sort((a, b) => (b._pct || 50) - (a._pct || 50)));
+  }, [lbReady]);
+  const loadForYouList = useCallback(async () => {
+    setForYouLoading(true);
+    try {
+      const topRated = [...collection].filter((t) => t.viewings.some((v) => (v.rating || 0) >= 7)).sort((a, b) => {
+        const ra = Math.max(...a.viewings.map((v) => v.rating || 0));
+        const rb = Math.max(...b.viewings.map((v) => v.rating || 0));
+        return rb - ra;
+      }).slice(0, 6);
+      if (!topRated.length) {
+        setForYouList([]);
+      } else {
+        const pages = await Promise.all(
+          topRated.map((t) => tmdb.recommendations(t.mediaType, t.tmdbId).catch(() => ({ results: [] })))
+        );
+        const all = pages.flatMap((p) => (p.results || []).map(normalize));
+        const dedup = Array.from(new Map(all.map((f) => [f.tmdbId + f.mediaType, f])).values());
+        const fresh = dedup.filter((x) => !ownedSet.has(x.tmdbId + x.mediaType) && !seenIdSet.has(x.tmdbId + x.mediaType));
+        const scored = fresh.map((x) => {
+          const m = matchMeta(x, taste, people, crowdRef.current);
+          return { ...x, _pct: m.pct, _conf: m.conf };
+        });
+        scored.sort((a, b) => (b._pct || 50) - (a._pct || 50));
+        setForYouList(scored.slice(0, 30));
+      }
+    } catch {
+      setForYouList([]);
+    }
+    setForYouLoading(false);
+  }, [collection, tmdb, ownedSet, seenIdSet, taste]);
+  useEffect(() => {
+    if (mode === "list" && !forYouLoadedRef.current) {
+      forYouLoadedRef.current = true;
+      loadForYouList();
+    }
+  }, [mode, loadForYouList]);
+  function recordFeedback(bucket, item) {
+    setFeedback((f) => {
+      const prev = f[bucket].find((x) => x.tmdbId === item.tmdbId && x.mediaType === item.mediaType);
+      const entry = { tmdbId: item.tmdbId, mediaType: item.mediaType, genreIds: item.genreIds, at: Date.now() };
+      if (bucket === "skippedIds") entry.count = (prev && prev.count || (prev ? 1 : 0)) + 1;
+      return { ...f, [bucket]: [...f[bucket].filter((x) => !(x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)), entry] };
+    });
+  }
+  function advance() {
+    setPool((p) => p.slice(1));
+  }
+  function skip(item) {
+    recordFeedback("skippedIds", item);
+    setSkippedPool((p) => [...p, item]);
+    setLastAction({ type: "skip", item });
+    advance();
+  }
+  function undoLast() {
+    if (!lastAction) return;
+    const { item } = lastAction;
+    setFeedback((f) => ({ ...f, skippedIds: f.skippedIds.filter((s) => !(s.tmdbId === item.tmdbId && s.mediaType === item.mediaType)) }));
+    setSkippedPool((p) => p.filter((x) => !(x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)));
+    setPool((p) => [item, ...p]);
+    setLastAction(null);
+  }
+  function replaySkipped() {
+    if (!skippedPool.length) return;
+    const replayable = skippedPool.filter((it) => {
+      const rec = feedback.skippedIds.find((s) => s.tmdbId === it.tmdbId && s.mediaType === it.mediaType);
+      return !rec || (rec.count || 1) < 3;
+    });
+    setPool((p) => [...replayable, ...p]);
+    setFeedback((f) => ({ ...f, skippedIds: f.skippedIds.filter((s) => (s.count || 1) >= 3) }));
+    setSkippedPool([]);
+  }
+  function want(item) {
+    recordFeedback("wantedIds", item);
+    onAddToWatchlist(item);
+    advance();
+  }
+  function rateInline(item, entry) {
+    onLogNew(item, entry);
+    recordFeedback("seenIds", item);
+    resolveRedditUrl(item.title, item.year).then((url) => {
+      setJustLogged({ title: item.title, url });
+      setTimeout(() => setJustLogged(null), 7e3);
+    });
+    advance();
+  }
+  const enough = hasEnoughTaste(collection, feedback);
+  const current = pool[0];
+  return /* @__PURE__ */ jsxs("div", { className: "view", children: [
+    /* @__PURE__ */ jsxs("div", { className: "view-toggle", children: [
+      /* @__PURE__ */ jsx("button", { className: mode === "swipe" ? "toggle-pill active" : "toggle-pill", onClick: () => setMode("swipe"), children: "Swipe" }),
+      /* @__PURE__ */ jsx("button", { className: mode === "list" ? "toggle-pill active" : "toggle-pill", onClick: () => setMode("list"), children: "For You" })
+    ] }),
+    infoItem && /* @__PURE__ */ jsx(
+      DetailModal,
+      {
+        item: infoItem,
+        tmdb,
+        badges: badgesFor(infoItem, people, taste),
+        settings,
+        onClose: () => setInfoItem(null),
+        onAddToWatchlist: (it) => {
+          want(it);
+        },
+        onLogNew: (it, entry, credits) => {
+          onLogNew(it, entry, credits);
+          recordFeedback("seenIds", it);
+          advance();
+        }
+      }
+    ),
+    mode === "swipe" && /* @__PURE__ */ jsxs("div", { className: "view-discover", children: [
+      loading && !current && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 32, className: "spin" }), title: "Shuffling the deck", body: "Pulling titles you haven't seen yet." }),
+      !loading && error && !current && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Info, { size: 32 }), title: "Couldn't load new titles", body: `TMDB said: ${error}. Check your API key in settings, then reopen the app.` }),
+      !loading && !error && !current && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Sparkles, { size: 32 }), title: "That's everything for now", body: "You've been through the pool. Replay your skipped titles to see them again." }),
+      current && /* @__PURE__ */ jsxs("div", { className: "swipe-stack", children: [
+        pool.slice(1, 4).map((p) => p.posterPath && /* @__PURE__ */ jsx("img", { src: tmdbImg(p.posterPath, "w500"), alt: "", style: { display: "none" }, loading: "eager" }, p.tmdbId + p.mediaType)),
+        /* @__PURE__ */ jsx(
+          SwipeCard,
+          {
+            item: current,
+            matchPct: enough ? current._pct : null,
+            matchConf: enough ? current._conf : null,
+            taste,
+            people,
+            crowd: crowdRef.current,
+            tmdb,
+            collection,
+            onSkip: () => skip(current),
+            onWant: () => want(current),
+            onRate: rateInline,
+            onTapInfo: () => setInfoItem(current)
+          },
+          current.tmdbId + current.mediaType
+        )
+      ] }),
+      justLogged && /* @__PURE__ */ jsxs("div", { className: "logged-toast", children: [
+        /* @__PURE__ */ jsx("span", { children: "Logged!" }),
+        /* @__PURE__ */ jsxs("a", { href: justLogged.url, target: "_blank", rel: "noreferrer", onClick: () => setJustLogged(null), children: [
+          /* @__PURE__ */ jsx(ExternalLink, { size: 12 }),
+          " Reddit"
+        ] }),
+        /* @__PURE__ */ jsx("button", { className: "toast-close", onClick: () => setJustLogged(null), children: /* @__PURE__ */ jsx(X, { size: 12 }) })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "discover-foot discover-foot-bottom", children: [
+        lastAction && /* @__PURE__ */ jsxs("button", { className: "btn btn-ghost btn-sm", onClick: undoLast, children: [
+          /* @__PURE__ */ jsx(Undo2, { size: 14 }),
+          " Undo skip"
+        ] }),
+        skippedPool.length > 0 && /* @__PURE__ */ jsxs("button", { className: "btn btn-ghost btn-sm", onClick: replaySkipped, children: [
+          /* @__PURE__ */ jsx(Undo2, { size: 14 }),
+          " Replay skipped (",
+          skippedPool.length,
+          ")"
+        ] })
+      ] })
+    ] }),
+    mode === "list" && /* @__PURE__ */ jsxs(Fragment, { children: [
+      !enough && /* @__PURE__ */ jsxs("div", { className: "hint-banner", children: [
+        /* @__PURE__ */ jsx(Sparkles, { size: 14 }),
+        " Rate a few films or swipe through and these match scores sharpen up."
+      ] }),
+      /* @__PURE__ */ jsx("div", { className: "discover-foot", style: { justifyContent: "flex-end", marginTop: 0, marginBottom: 10 }, children: /* @__PURE__ */ jsxs("button", { className: "btn btn-ghost btn-sm", onClick: () => {
+        forYouLoadedRef.current = false;
+        loadForYouList();
+      }, children: [
+        /* @__PURE__ */ jsx(RefreshCw, { size: 14 }),
+        " Refresh list"
+      ] }) }),
+      forYouLoading && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 32, className: "spin" }), title: "Building your list", body: "Finding titles based on what you've rated." }),
+      !forYouLoading && forYouList.length === 0 && collection.length === 0 && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Heart, { size: 32 }), title: "Nothing yet", body: "Rate a few films in your collection and this list will fill up." }),
+      !forYouLoading && forYouList.length === 0 && collection.length > 0 && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Sparkles, { size: 32 }), title: "No recommendations yet", body: "Rate a few films 7 stars or higher and we'll find you similar ones." }),
+      !forYouLoading && forYouList.length > 0 && /* @__PURE__ */ jsx("div", { className: "suggest-list", children: forYouList.map((item) => /* @__PURE__ */ jsx(
+        SuggestionRow,
+        {
+          item,
+          matchPct: enough ? item._pct : null,
+          matchConf: enough ? item._conf : null,
+          collection,
+          taste,
+          people,
+          settings,
+          tmdb,
+          onSkip: (it) => {
+            recordFeedback("skippedIds", it);
+            setForYouList((l) => l.filter((x) => !(x.tmdbId === it.tmdbId && x.mediaType === it.mediaType)));
+          },
+          onSeen: (it, entry) => {
+            onLogNew(it, entry);
+            recordFeedback("seenIds", it);
+            setForYouList((l) => l.filter((x) => !(x.tmdbId === it.tmdbId && x.mediaType === it.mediaType)));
+          },
+          onAddToWatchlist: (it) => {
+            want(it);
+            setForYouList((l) => l.filter((x) => !(x.tmdbId === it.tmdbId && x.mediaType === it.mediaType)));
+          },
+          onInfo: () => setInfoItem(item)
+        },
+        item.tmdbId + item.mediaType
+      )) })
+    ] })
+  ] });
+}
+function useExtraInfo(item, settings, tmdb) {
+  const [imdb, setImdb] = useState(null);
+  const [providers, setProviders] = useState(null);
+  useEffect(() => {
+    let active = true;
+    if (settings.omdbKey) {
+      const url = `https://www.omdbapi.com/?apikey=${encodeURIComponent(settings.omdbKey)}&t=${encodeURIComponent(item.title)}${item.year ? `&y=${item.year}` : ""}`;
+      fetch(url).then((r) => r.json()).then((d) => {
+        if (active && d && d.imdbRating && d.imdbRating !== "N/A") setImdb(d.imdbRating);
+      }).catch(() => {
+      });
+    }
+    tmdb.watchProviders(item.mediaType, item.tmdbId).then((d) => {
+      if (!active) return;
+      const region = (settings.country || "US").toUpperCase();
+      const entry = d.results && d.results[region];
+      if (entry && entry.flatrate && entry.flatrate.length) {
+        setProviders({ names: entry.flatrate.slice(0, 3).map((p) => p.provider_name), link: entry.link });
+      }
+    }).catch(() => {
+    });
+    return () => {
+      active = false;
+    };
+  }, [item.tmdbId, item.mediaType, settings.omdbKey, settings.country]);
+  return { imdb, providers };
+}
+function SuggestionRow({ item, matchPct, matchConf, settings, tmdb, taste, people, collection, onAddToWatchlist, onSkip, onSeen, onInfo }) {
+  const [expanded, setExpanded] = useState(false);
+  const [logging, setLogging] = useState(false);
+  const { imdb, providers } = useExtraInfo(item, settings, tmdb);
+  const badges = people ? badgesFor(item, people, taste) : [];
+  return /* @__PURE__ */ jsxs("div", { className: "suggest-row", onClick: () => setExpanded((x) => !x), children: [
+    /* @__PURE__ */ jsx("button", { className: "suggest-thumb-btn", onClick: (e) => {
+      e.stopPropagation();
+      onInfo();
+    }, "aria-label": `Details for ${item.title}`, children: item.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w154"), alt: "", className: "suggest-thumb" }) : /* @__PURE__ */ jsx("div", { className: "suggest-thumb suggest-thumb-fallback", children: item.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 18 }) : /* @__PURE__ */ jsx(Film, { size: 18 }) }) }),
+    /* @__PURE__ */ jsxs("div", { className: "suggest-info", children: [
+      /* @__PURE__ */ jsxs("div", { className: "suggest-title-row", children: [
+        /* @__PURE__ */ jsxs("button", { className: "suggest-title-btn", onClick: (e) => {
+          e.stopPropagation();
+          onInfo();
+        }, children: [
+          item.title,
+          " ",
+          item.year ? `\xB7 ${item.year}` : ""
+        ] }),
+        matchPct != null && /* @__PURE__ */ jsxs("span", { className: "match-pill", style: matchStyle(matchPct), children: [
+          matchPct,
+          "%",
+          matchConf ? ` \xB7 ${matchConf.toUpperCase()}` : ""
+        ] })
+      ] }),
+      badges.length > 0 && /* @__PURE__ */ jsx("div", { className: "badge-row", children: badges.map((b, i) => /* @__PURE__ */ jsx("span", { className: "badge badge-" + b.kind, children: b.text }, i)) }),
+      item.aiReason && /* @__PURE__ */ jsx("div", { className: "why-watch", children: item.aiReason }),
+      taste && !item.aiReason && /* @__PURE__ */ jsx(WhyWatch, { item, matchPct }),
+      expanded && /* @__PURE__ */ jsxs("div", { className: "suggest-links", onClick: (e) => e.stopPropagation(), children: [
+        providers && providers.names.map((name) => /* @__PURE__ */ jsx("a", { className: "link-pill link-pill-stream", href: providers.link, target: "_blank", rel: "noreferrer", children: name }, name)),
+        /* @__PURE__ */ jsx("a", { className: "link-pill", href: buildAmcLink(item.title, settings.zip), target: "_blank", rel: "noreferrer", children: "AMC" }),
+        /* @__PURE__ */ jsx("a", { className: "link-pill", href: buildRegalLink(item.title, settings.zip), target: "_blank", rel: "noreferrer", children: "Regal" }),
+        /* @__PURE__ */ jsx("a", { className: "link-pill", href: buildRedditLink(item.title, item.year), target: "_blank", rel: "noreferrer", children: "Reddit" })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "suggest-actions", onClick: (e) => e.stopPropagation(), children: [
+      onSkip && /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => onSkip(item), "aria-label": "Skip", children: /* @__PURE__ */ jsx(X, { size: 15 }) }),
+      onSeen && /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => setLogging(true), "aria-label": "Mark as seen", children: /* @__PURE__ */ jsx(Eye, { size: 15 }) }),
+      /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => onAddToWatchlist(item), "aria-label": "Save to watchlist", children: /* @__PURE__ */ jsx(Bookmark, { size: 15 }) })
+    ] }),
+    logging && /* @__PURE__ */ jsxs(Modal, { onClose: () => setLogging(false), children: [
+      /* @__PURE__ */ jsx("h3", { className: "modal-title", children: item.title }),
+      /* @__PURE__ */ jsx(LogForm, { mediaType: item.mediaType, tmdb, item, saveLabel: "Add to collection", onCancel: () => setLogging(false), onSave: (entry) => {
+        onSeen(item, entry);
+        setLogging(false);
+      } })
+    ] })
+  ] });
+}
+function FavoritesView({ collection, people, taste, crowd, tmdb, settings, onUpdateTicket, onAddToWatchlist, onLogNew }) {
+  const [person, setPerson] = useState(null);
+  const [filmo, setFilmo] = useState(null);
+  const [filmoLoading, setFilmoLoading] = useState(false);
+  const [detail, setDetail] = useState(null);
+  async function openPerson(p, kind) {
+    setPerson({ ...p, kind });
+    setFilmo(null);
+    setFilmoLoading(true);
+    try {
+      const data = await tmdb.personCredits(p.id);
+      let raw = [];
+      if (kind === "actor") raw = data.cast || [];
+      else if (kind === "director") raw = (data.crew || []).filter((c) => c.job === "Director");
+      else raw = (data.crew || []).filter((c) => c.department === "Writing");
+      const seen = /* @__PURE__ */ new Set();
+      const items = raw.filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize).filter((it) => {
+        const k = it.tmdbId + it.mediaType;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      }).map((it) => ({ ...it, _pct: matchMeta(it, taste, people, crowd).pct })).sort((a, b) => (b._pct ?? 0) - (a._pct ?? 0)).slice(0, 30);
+      setFilmo(items);
+    } catch {
+      setFilmo([]);
+    }
+    setFilmoLoading(false);
+  }
+  const [enriching, setEnriching] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const missingCredits = useMemo(
+    () => collection.filter((c) => !c.credits),
+    [collection]
+  );
+  async function enrich() {
+    setEnriching(true);
+    setProgress({ done: 0, total: missingCredits.length });
+    for (let i = 0; i < missingCredits.length; i++) {
+      const t = missingCredits[i];
+      try {
+        const full = await tmdb.detailsFull(t.mediaType, t.tmdbId);
+        const slim = slimCredits(full.credits);
+        onUpdateTicket({ ...t, credits: slim });
+      } catch (e) {
+      }
+      setProgress({ done: i + 1, total: missingCredits.length });
+    }
+    setEnriching(false);
+  }
+  const topMovies = useMemo(
+    () => collection.map((c) => ({ ...c, rating: c.viewings[c.viewings.length - 1].rating || 0 })).sort((a, b) => b.rating - a.rating).slice(0, 6),
+    [collection]
+  );
+  if (collection.length === 0) {
+    return /* @__PURE__ */ jsx("div", { className: "view", children: /* @__PURE__ */ jsx(
+      EmptyState,
+      {
+        icon: /* @__PURE__ */ jsx(Heart, { size: 32 }),
+        title: "No favorites yet",
+        body: "Once you collect and rate a few films, this tab learns your go-to directors, writers, and actors."
+      }
+    ) });
+  }
+  const Section = ({ title, list, kind }) => list && list.length > 0 ? /* @__PURE__ */ jsxs("div", { className: "fav-section", children: [
+    /* @__PURE__ */ jsx("div", { className: "fav-section-title", children: title }),
+    /* @__PURE__ */ jsx("div", { className: "fav-chips", children: list.slice(0, 8).map((p) => /* @__PURE__ */ jsx("button", { className: "fav-chip fav-chip-btn", onClick: () => openPerson(p, kind), children: p.name }, p.id)) })
+  ] }) : null;
+  if (person) {
+    return /* @__PURE__ */ jsxs("div", { className: "view", children: [
+      detail && /* @__PURE__ */ jsx(
+        DetailModal,
+        {
+          item: detail,
+          tmdb,
+          badges: badgesFor(detail, people, taste),
+          settings: settings || {},
+          onClose: () => setDetail(null),
+          onAddToWatchlist: onAddToWatchlist ? (it) => {
+            onAddToWatchlist(it);
+          } : null,
+          onLogNew: onLogNew || null
+        }
+      ),
+      /* @__PURE__ */ jsxs("button", { className: "btn btn-outline btn-sm", onClick: () => {
+        setPerson(null);
+        setFilmo(null);
+      }, style: { marginBottom: 12 }, children: [
+        /* @__PURE__ */ jsx(ChevronLeft, { size: 14 }),
+        " All favorites"
+      ] }),
+      /* @__PURE__ */ jsx("div", { className: "fav-section-title", children: person.name }),
+      filmoLoading && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 28, className: "spin" }), title: "Pulling filmography", body: "One second." }),
+      !filmoLoading && filmo && filmo.length === 0 && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Film, { size: 28 }), title: "Nothing found", body: "No credits on file for this person yet." }),
+      !filmoLoading && filmo && filmo.length > 0 && /* @__PURE__ */ jsx("div", { className: "suggest-list", children: filmo.map((item) => /* @__PURE__ */ jsxs("button", { className: "suggest-row suggest-row-btn", onClick: () => setDetail(item), "aria-label": `Details for ${item.title}`, children: [
+        item.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w154"), alt: "", className: "suggest-thumb" }) : /* @__PURE__ */ jsx("div", { className: "suggest-thumb suggest-thumb-fallback", children: item.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 18 }) : /* @__PURE__ */ jsx(Film, { size: 18 }) }),
+        /* @__PURE__ */ jsx("div", { className: "suggest-info", children: /* @__PURE__ */ jsxs("div", { className: "suggest-title-row", children: [
+          /* @__PURE__ */ jsxs("span", { className: "suggest-title-btn", style: { textAlign: "left" }, children: [
+            item.title,
+            " ",
+            item.year ? `\xB7 ${item.year}` : ""
+          ] }),
+          item._pct != null && /* @__PURE__ */ jsxs("span", { className: "match-pill", style: matchStyle(item._pct), children: [
+            item._pct,
+            "%"
+          ] })
+        ] }) })
+      ] }, item.tmdbId + item.mediaType)) })
+    ] });
+  }
+  return /* @__PURE__ */ jsxs("div", { className: "view", children: [
+    topMovies.length > 0 && /* @__PURE__ */ jsxs("div", { className: "fav-section", children: [
+      /* @__PURE__ */ jsx("div", { className: "fav-section-title", children: "Top rated in your collection" }),
+      /* @__PURE__ */ jsx("div", { className: "fav-poster-row", children: topMovies.map((m) => /* @__PURE__ */ jsx("div", { className: "fav-poster", children: m.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(m.posterPath, "w185"), alt: m.title }) : /* @__PURE__ */ jsx("div", { className: "fav-poster-fallback", children: m.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 20 }) : /* @__PURE__ */ jsx(Film, { size: 20 }) }) }, m.id)) })
+    ] }),
+    people.directors.length === 0 && people.actors.length === 0 && /* @__PURE__ */ jsxs("div", { className: "hint-banner", style: { flexDirection: "column", alignItems: "flex-start", gap: 8 }, children: [
+      /* @__PURE__ */ jsxs("span", { children: [
+        /* @__PURE__ */ jsx(Info, { size: 14 }),
+        " To learn your favorite directors and actors, the app needs to pull credits for what you've collected."
+      ] }),
+      missingCredits.length > 0 && /* @__PURE__ */ jsx("button", { className: "btn btn-primary btn-sm", onClick: enrich, disabled: enriching, children: enriching ? `Scanning ${progress.done}/${progress.total}` : `Scan ${missingCredits.length} titles` })
+    ] }),
+    /* @__PURE__ */ jsx(Section, { title: "Favorite directors", list: people.directors, kind: "director" }),
+    /* @__PURE__ */ jsx(Section, { title: "Favorite writers", list: people.writers, kind: "writer" }),
+    /* @__PURE__ */ jsx(Section, { title: "Actors you keep watching", list: people.actors, kind: "actor" }),
+    (people.directors.length > 0 || people.actors.length > 0) && missingCredits.length > 0 && /* @__PURE__ */ jsx("button", { className: "btn btn-outline btn-sm", style: { marginTop: 8 }, onClick: enrich, disabled: enriching, children: enriching ? `Scanning ${progress.done}/${progress.total}` : `Update from ${missingCredits.length} newer titles` })
+  ] });
+}
+function ComingRow({ item, badges, note, enough, added, inWatchlist, settings, onInfo, onSave, daysOutText }) {
+  const [expanded, setExpanded] = useState(false);
+  return /* @__PURE__ */ jsxs("div", { className: "coming-row", onClick: () => setExpanded((x) => !x), children: [
+    /* @__PURE__ */ jsx("button", { className: "coming-thumb-btn", onClick: (e) => {
+      e.stopPropagation();
+      onInfo();
+    }, "aria-label": `Details for ${item.title}`, children: item.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w154"), alt: "", className: "coming-thumb" }) : /* @__PURE__ */ jsx("div", { className: "coming-thumb coming-thumb-fallback", children: /* @__PURE__ */ jsx(Film, { size: 18 }) }) }),
+    /* @__PURE__ */ jsxs("div", { className: "coming-info", children: [
+      /* @__PURE__ */ jsxs("div", { className: "suggest-title-row", children: [
+        /* @__PURE__ */ jsx("button", { className: "suggest-title-btn", onClick: (e) => {
+          e.stopPropagation();
+          onInfo();
+        }, children: item.title }),
+        /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }, children: [
+          inWatchlist && /* @__PURE__ */ jsx("span", { className: "watchlist-badge", children: /* @__PURE__ */ jsx(Bookmark, { size: 10 }) }),
+          enough && item._pct != null && /* @__PURE__ */ jsxs("span", { className: "match-pill", style: matchStyle(item._pct), children: [
+            item._pct,
+            "%"
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx("div", { className: "coming-date", children: daysOutText }),
+      badges.length > 0 && /* @__PURE__ */ jsx("div", { className: "badge-row", children: badges.map((b, i) => /* @__PURE__ */ jsx("span", { className: "badge badge-" + b.kind, children: b.text }, i)) }),
+      note && /* @__PURE__ */ jsx("div", { className: "proactive-note note-" + note.tone, children: note.text }),
+      expanded && /* @__PURE__ */ jsxs("div", { className: "suggest-links", onClick: (e) => e.stopPropagation(), children: [
+        /* @__PURE__ */ jsx("a", { className: "link-pill", href: `https://www.youtube.com/results?search_query=${encodeURIComponent(item.title + " trailer")}`, target: "_blank", rel: "noreferrer", children: "Trailer" }),
+        /* @__PURE__ */ jsx("a", { className: "link-pill", href: buildRedditLink(item.title, item.year), target: "_blank", rel: "noreferrer", children: "Reddit" })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx(
+      "button",
+      {
+        className: "icon-btn" + (added ? " icon-btn-active" : ""),
+        onClick: (e) => {
+          e.stopPropagation();
+          onSave();
+        },
+        "aria-label": "Save to wishlist",
+        children: /* @__PURE__ */ jsx(Bookmark, { size: 16 })
+      }
+    )
+  ] });
+}
+function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, feedback, onAddToWatchlist, onLogNew }) {
+  const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [added, setAdded] = useState({});
+  const [window2, setWindow] = useState("all");
+  const [sort, setSort] = useState("highest");
+  const [genreFilter, setGenreFilter] = useState("all");
+  const [infoItem, setInfoItem] = useState(null);
+  useEffect(() => {
+    let active = true;
+    async function run() {
+      setLoading(true);
+      setError(null);
+      try {
+        const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+        const endDate = `${(/* @__PURE__ */ new Date()).getFullYear() + 6}-12-31`;
+        const pages = await Promise.all([1, 2, 3, 4, 5, 6].map(
+          (page) => tmdb.discoverMovie({
+            "primary_release_date.gte": today,
+            "primary_release_date.lte": endDate,
+            sort_by: "popularity.desc",
+            page
+          })
+        ));
+        const raw = pages.flatMap((p) => p.results || []);
+        const sorted = raw.map((r) => ({ ...normalize(r), releaseDate: r.release_date })).filter((x) => x.releaseDate).filter((x, i, arr) => arr.findIndex((y) => y.tmdbId === x.tmdbId) === i).sort((a, b) => a.releaseDate < b.releaseDate ? -1 : 1);
+        if (active) setItems(sorted);
+      } catch (e) {
+        if (active) setError(e.message);
+      }
+      if (active) setLoading(false);
+    }
+    run();
+    return () => {
+      active = false;
+    };
+  }, [settings.country]);
+  function daysOut(dateStr) {
+    const diff = Math.ceil((new Date(dateStr) - /* @__PURE__ */ new Date()) / 864e5);
+    if (diff < 0) return formatDate(dateStr);
+    if (diff === 0) return "Today";
+    if (diff === 1) return "Tomorrow";
+    if (diff <= 7) return `In ${diff} days`;
+    return formatDate(dateStr);
+  }
+  function inWindow(dateStr) {
+    const now = /* @__PURE__ */ new Date();
+    const d = new Date(dateStr);
+    const days = Math.ceil((d - now) / 864e5);
+    const thisYear = now.getFullYear();
+    const yr = d.getFullYear();
+    const todayStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    if (dateStr < todayStr) return false;
+    if (window2 === "all") return true;
+    if (window2 === "week") return days >= 0 && days <= 7;
+    if (window2 === "month") return days >= -7 && days <= 31;
+    if (window2 === "thisyear") return yr === thisYear;
+    if (window2 === "nextyear") return yr === thisYear + 1;
+    if (window2 === "beyond") return yr > thisYear + 1;
+    return true;
+  }
+  const enough = hasEnoughTaste(collection, feedback);
+  const note = (item, pct) => {
+    if (pct == null) return null;
+    const _w = getWeights(taste);
+    const likedGenres = Object.entries(_w).filter(([, v]) => v > 0).map(([g]) => Number(g));
+    const itemGenres = item.genreIds || [];
+    const overlapping = itemGenres.filter((g) => likedGenres.includes(g));
+    const pick = (arr, seed2) => arr[seed2 % arr.length];
+    const seed = item.tmdbId % 13;
+    if (pct >= 70) {
+      return { tone: "hot", text: pick(["Very much your kind of film", "This one was made for you", "Strong pull for you", "Built for your taste", "High confidence pick"], seed) };
+    }
+    if (overlapping.length && pct >= 45) {
+      return { tone: "hot", text: pick(["Worth a look - fits your taste", "Decent fit for you", "This one works for you", "On your wavelength"], seed) };
+    }
+    if (!overlapping.length && pct >= 35) {
+      return { tone: "stretch", text: pick(["New territory for you", "Different vibe from your usual", "A stretch pick - keep an open mind", "Outside your usual lane"], seed) };
+    }
+    if (pct < 28) {
+      return { tone: "cool", text: pick(["Not really your world", "Pretty far from what you usually watch", "Outside your usual range", "Probably not your thing"], seed) };
+    }
+    return { tone: "stretch", text: pick(["Could go either way", "Flip a coin on this one", "Worth a second look maybe", "Might click, might not"], seed) };
+  };
+  const genreOpts = useMemo(() => {
+    const ids = /* @__PURE__ */ new Set();
+    items.forEach((x) => (x.genreIds || []).forEach((g) => ids.add(g)));
+    return Array.from(ids).map((id) => ({ id, name: MOVIE_GENRES[id] || TV_GENRES[id] })).filter((x) => x.name).sort((a, b) => a.name.localeCompare(b.name));
+  }, [items]);
+  const ownedKeys = useMemo(() => new Set((collection || []).map((c) => c.tmdbId + c.mediaType)), [collection]);
+  const processed = useMemo(() => {
+    let list = items.map((x) => {
+      const m = matchMeta(x, taste, people, crowd);
+      return { ...x, _pct: m.pct, _conf: m.conf };
+    }).filter((x) => inWindow(x.releaseDate)).filter((x) => !ownedKeys.has(x.tmdbId + x.mediaType));
+    if (genreFilter !== "all") list = list.filter((x) => (x.genreIds || []).includes(Number(genreFilter)));
+    if (!enough) list.sort((a, b) => a.releaseDate < b.releaseDate ? -1 : 1);
+    else if (sort === "lowest") list.sort((a, b) => (a._pct || 0) - (b._pct || 0));
+    else list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
+    return list;
+  }, [items, window2, sort, taste, genreFilter, enough, ownedKeys]);
+  const thisYr = (/* @__PURE__ */ new Date()).getFullYear();
+  const WINDOWS = [
+    { id: "all", label: "All" },
+    { id: "week", label: "This week" },
+    { id: "month", label: "This month" },
+    { id: "thisyear", label: `${thisYr}` },
+    { id: "nextyear", label: `${thisYr + 1}` },
+    { id: "beyond", label: "Beyond" }
+  ];
+  return /* @__PURE__ */ jsxs("div", { className: "view", children: [
+    infoItem && /* @__PURE__ */ jsx(
+      DetailModal,
+      {
+        item: infoItem,
+        tmdb,
+        badges: badgesFor(infoItem, people, taste),
+        settings,
+        onClose: () => setInfoItem(null),
+        onAddToWatchlist: (it) => {
+          onAddToWatchlist(it);
+          setAdded((a) => ({ ...a, [it.tmdbId]: true }));
+        },
+        onLogNew
+      }
+    ),
+    /* @__PURE__ */ jsxs("div", { className: "filter-row", style: { marginBottom: 12, flexWrap: "wrap" }, children: [
+      /* @__PURE__ */ jsx("select", { className: "filter-select", value: window2, onChange: (e) => setWindow(e.target.value), children: WINDOWS.map((w) => /* @__PURE__ */ jsx("option", { value: w.id, children: w.label }, w.id)) }),
+      enough && /* @__PURE__ */ jsxs("select", { className: "filter-select", value: sort, onChange: (e) => setSort(e.target.value), children: [
+        /* @__PURE__ */ jsx("option", { value: "highest", children: "Highest match" }),
+        /* @__PURE__ */ jsx("option", { value: "lowest", children: "Lowest match" })
+      ] })
+    ] }),
+    loading && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 32, className: "spin" }), title: "Checking the calendar", body: "Pulling what's headed to theaters." }),
+    !loading && error && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Info, { size: 32 }), title: "Couldn't load release dates", body: `TMDB said: ${error}` }),
+    !loading && !error && processed.length === 0 && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(CalendarDays, { size: 32 }), title: "Nothing in that window", body: "Try a wider time range." }),
+    !loading && !error && /* @__PURE__ */ jsx("div", { className: "coming-list", children: processed.map((item) => {
+      const badges = badgesFor(item, people, taste);
+      const n = enough ? note(item, item._pct) : null;
+      const inWl = (watchlist || []).some((w) => w.tmdbId === item.tmdbId && w.mediaType === item.mediaType);
+      return /* @__PURE__ */ jsx(
+        ComingRow,
+        {
+          item,
+          badges,
+          note: n,
+          enough,
+          added: added[item.tmdbId],
+          inWatchlist: inWl || added[item.tmdbId],
+          settings,
+          onInfo: () => setInfoItem(item),
+          onSave: () => {
+            onAddToWatchlist(item);
+            setAdded((a) => ({ ...a, [item.tmdbId]: true }));
+          },
+          daysOutText: daysOut(item.releaseDate)
+        },
+        item.tmdbId
+      );
+    }) })
+  ] });
+}
+function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCollection, ownedRating, availability, inWatchlist, onInfo, onSave, onSeen }) {
+  return /* @__PURE__ */ jsxs("div", { className: "outnow-hero", onClick: onInfo, style: { cursor: "pointer" }, children: [
+    item.backdropPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.backdropPath, "w780"), alt: "", className: "outnow-hero-img" }) : item.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w500"), alt: "", className: "outnow-hero-img" }) : /* @__PURE__ */ jsx("div", { className: "outnow-hero-img outnow-hero-blank", children: /* @__PURE__ */ jsx(Film, { size: 28 }) }),
+    /* @__PURE__ */ jsx(
+      "button",
+      {
+        className: "outnow-seen-btn",
+        onClick: (e) => {
+          e.stopPropagation();
+          onSeen();
+        },
+        "aria-label": "Mark as seen",
+        children: /* @__PURE__ */ jsx(Eye, { size: 15 })
+      }
+    ),
+    /* @__PURE__ */ jsx(
+      "button",
+      {
+        className: "outnow-save-btn" + (isOwned ? " outnow-save-btn-active" : ""),
+        onClick: (e) => {
+          e.stopPropagation();
+          onSave();
+        },
+        "aria-label": "Save to wishlist",
+        children: /* @__PURE__ */ jsx(Bookmark, { size: 14 })
+      }
+    ),
+    availability && /* @__PURE__ */ jsx("span", { className: "avail-tag avail-" + availability, children: availability === "theaters" ? /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsx(Ticket, { size: 9 }),
+      " In theaters"
+    ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+      /* @__PURE__ */ jsx(Tv, { size: 9 }),
+      " Streaming"
+    ] }) }),
+    /* @__PURE__ */ jsxs("div", { className: "outnow-hero-overlay", children: [
+      /* @__PURE__ */ jsxs("div", { className: "outnow-hero-top", children: [
+        inWatchlist && /* @__PURE__ */ jsx("span", { className: "watchlist-badge", children: /* @__PURE__ */ jsx(Bookmark, { size: 10 }) }),
+        inCollection ? /* @__PURE__ */ jsx("span", { className: "match-pill match-seen", title: "In your collection", children: ownedRating != null ? /* @__PURE__ */ jsxs(Fragment, { children: [
+          "Seen \xB7 ",
+          ownedRating,
+          /* @__PURE__ */ jsx(Star, { size: 9, style: { marginLeft: 2, verticalAlign: "-1px" }, fill: "currentColor" })
+        ] }) : "Seen" }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+          enough && item._pct != null && /* @__PURE__ */ jsxs("span", { className: "match-pill", style: matchStyle(item._pct), children: [
+            item._pct,
+            "%"
+          ] }),
+          itemNote && /* @__PURE__ */ jsx("span", { className: "proactive-note note-" + itemNote.tone, style: { margin: 0 }, children: itemNote.text })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx("div", { className: "outnow-hero-title" + (idx > 0 ? " outnow-hero-title-sm" : ""), children: item.title }),
+      itemBadges.length > 0 && /* @__PURE__ */ jsx("div", { className: "badge-row", children: itemBadges.map((b, i) => /* @__PURE__ */ jsx("span", { className: "badge badge-" + b.kind, children: b.text }, i)) })
+    ] })
+  ] });
+}
+function ZipBanner({ settings, onSaveSettings }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(settings?.zip || "");
+  const zip = (settings?.zip || "").trim();
+  const save = () => {
+    const z = val.trim();
+    if (!/^\d{5}$/.test(z)) return;
+    onSaveSettings({ ...settings, zip: z });
+    setEditing(false);
+  };
+  if (!zip || editing) {
+    return /* @__PURE__ */ jsxs("div", { className: "zip-banner", children: [
+      /* @__PURE__ */ jsx(MapPin, { size: 14 }),
+      /* @__PURE__ */ jsx(
+        "input",
+        {
+          className: "zip-input",
+          value: val,
+          inputMode: "numeric",
+          maxLength: 5,
+          placeholder: "ZIP for local showtimes",
+          onChange: (e) => setVal(e.target.value.replace(/[^0-9]/g, "").slice(0, 5)),
+          onKeyDown: (e) => {
+            if (e.key === "Enter") save();
+          }
+        }
+      ),
+      /* @__PURE__ */ jsx("button", { className: "btn btn-primary btn-sm", onClick: save, disabled: !/^\d{5}$/.test(val.trim()), children: "Save" }),
+      zip && /* @__PURE__ */ jsx("button", { className: "btn btn-ghost btn-sm", onClick: () => {
+        setVal(zip);
+        setEditing(false);
+      }, children: "Cancel" })
+    ] });
+  }
+  return /* @__PURE__ */ jsxs("div", { className: "zip-banner zip-banner-set", children: [
+    /* @__PURE__ */ jsx(MapPin, { size: 13 }),
+    /* @__PURE__ */ jsxs("span", { children: [
+      "Showtimes near ",
+      /* @__PURE__ */ jsx("b", { children: zip })
+    ] }),
+    /* @__PURE__ */ jsx("button", { className: "zip-change", onClick: () => {
+      setVal(zip);
+      setEditing(true);
+    }, children: "change" })
+  ] });
+}
+function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feedback, onAddToWatchlist, onLogNew, onSaveSettings }) {
+  const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [added, setAdded] = useState({});
+  const [infoItem, setInfoItem] = useState(null);
+  const [logging, setLogging] = useState(null);
+  const [genreFilter, setGenreFilter] = useState("all");
+  const [availMap, setAvailMap] = useState({});
+  const availCacheRef = useRef({});
+  const availRegionRef = useRef((settings.country || "US").toUpperCase());
+  useEffect(() => {
+    let active = true;
+    async function run() {
+      setLoading(true);
+      setError(null);
+      try {
+        const region = (settings.country || "US").toUpperCase();
+        const [p1, p2] = await Promise.all([tmdb.nowPlaying(1, region), tmdb.nowPlaying(2, region)]);
+        const raw = [...p1.results || [], ...p2.results || []];
+        const dedup = Array.from(new Map(raw.map((r) => [r.id, r])).values());
+        const sorted = dedup.map((r) => normalize(r)).sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+        if (active) setItems(sorted);
+      } catch (e) {
+        if (active) setError(e.message);
+      }
+      if (active) setLoading(false);
+    }
+    run();
+    return () => {
+      active = false;
+    };
+  }, [settings.country]);
+  useEffect(() => {
+    if (!items.length) return;
+    let active = true;
+    const region = (settings.country || "US").toUpperCase();
+    if (region !== availRegionRef.current) {
+      availCacheRef.current = {};
+      availRegionRef.current = region;
+    }
+    const toFetch = items.filter((it) => availCacheRef.current[it.tmdbId + it.mediaType] === void 0);
+    if (!toFetch.length) {
+      setAvailMap({ ...availCacheRef.current });
+      return;
+    }
+    Promise.allSettled(
+      toFetch.map(
+        (it) => tmdb.watchProviders(it.mediaType, it.tmdbId).then((d) => {
+          const entry = d.results && d.results[region];
+          const streaming = !!(entry && entry.flatrate && entry.flatrate.length);
+          return { key: it.tmdbId + it.mediaType, val: streaming ? "streaming" : "theaters" };
+        })
+      )
+    ).then((results) => {
+      results.forEach((r) => {
+        if (r.status === "fulfilled" && r.value) availCacheRef.current[r.value.key] = r.value.val;
+      });
+      if (active) setAvailMap({ ...availCacheRef.current });
+    });
+    return () => {
+      active = false;
+    };
+  }, [items, settings.country]);
+  const enough = hasEnoughTaste(collection, feedback);
+  const genreOpts = useMemo(() => {
+    const ids = /* @__PURE__ */ new Set();
+    items.forEach((x) => (x.genreIds || []).forEach((g) => ids.add(g)));
+    return Array.from(ids).map((id) => ({ id, name: MOVIE_GENRES[id] || TV_GENRES[id] })).filter((x) => x.name).sort((a, b) => a.name.localeCompare(b.name));
+  }, [items]);
+  const ownedKeys = useMemo(() => new Set((collection || []).map((c) => c.tmdbId + c.mediaType)), [collection]);
+  const processed = useMemo(() => {
+    let list = items.map((x) => {
+      const m = matchMeta(x, taste, people, crowd);
+      return { ...x, _pct: m.pct, _conf: m.conf };
+    }).filter((x) => !ownedKeys.has(x.tmdbId + x.mediaType));
+    if (genreFilter !== "all") list = list.filter((x) => (x.genreIds || []).includes(Number(genreFilter)));
+    list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
+    return list;
+  }, [items, taste, genreFilter, ownedKeys]);
+  const note = (item, pct) => {
+    if (pct == null) return null;
+    const _w = getWeights(taste);
+    const likedGenres = Object.entries(_w).filter(([, v]) => v > 0).map(([g]) => Number(g));
+    const itemGenres = item.genreIds || [];
+    const overlapping = itemGenres.filter((g) => likedGenres.includes(g));
+    const pick = (arr, seed2) => arr[seed2 % arr.length];
+    const seed = item.tmdbId % 13;
+    if (pct >= 70) {
+      return { tone: "hot", text: pick(["Very much your kind of film", "This one was made for you", "Strong pull for you", "Built for your taste", "High confidence pick"], seed) };
+    }
+    if (overlapping.length && pct >= 45) {
+      return { tone: "hot", text: pick(["Worth a look - fits your taste", "Decent fit for you", "This one works for you", "On your wavelength"], seed) };
+    }
+    if (!overlapping.length && pct >= 35) {
+      return { tone: "stretch", text: pick(["New territory for you", "Different vibe from your usual", "A stretch pick - keep an open mind", "Outside your usual lane"], seed) };
+    }
+    if (pct < 28) {
+      return { tone: "cool", text: pick(["Not really your world", "Pretty far from what you usually watch", "Outside your usual range", "Probably not your thing"], seed) };
+    }
+    return { tone: "stretch", text: pick(["Could go either way", "Flip a coin on this one", "Worth a second look maybe", "Might click, might not"], seed) };
+  };
+  const ownedSet = useMemo(
+    () => /* @__PURE__ */ new Set([...collection.map((c) => c.tmdbId + c.mediaType)]),
+    [collection]
+  );
+  const ownedRatingMap = useMemo(() => {
+    const m = {};
+    collection.forEach((c) => {
+      const last = c.viewings && c.viewings.length ? c.viewings[c.viewings.length - 1] : null;
+      m[c.tmdbId + c.mediaType] = last && last.rating != null ? last.rating : null;
+    });
+    return m;
+  }, [collection]);
+  return /* @__PURE__ */ jsxs("div", { className: "view", children: [
+    infoItem && /* @__PURE__ */ jsx(
+      DetailModal,
+      {
+        item: infoItem,
+        tmdb,
+        badges: badgesFor(infoItem, people, taste),
+        settings,
+        onClose: () => setInfoItem(null),
+        onAddToWatchlist: (it) => {
+          onAddToWatchlist(it);
+          setAdded((a) => ({ ...a, [it.tmdbId]: true }));
+        },
+        onLogNew
+      }
+    ),
+    logging && /* @__PURE__ */ jsxs(Modal, { onClose: () => setLogging(null), children: [
+      /* @__PURE__ */ jsx("h3", { className: "modal-title", children: logging.title }),
+      /* @__PURE__ */ jsx(LogForm, { mediaType: logging.mediaType, tmdb, item: logging, saveLabel: "Add to collection", onCancel: () => setLogging(null), onSave: (entry) => {
+        onLogNew(logging, entry);
+        setLogging(null);
+      } })
+    ] }),
+    onSaveSettings && /* @__PURE__ */ jsx(ZipBanner, { settings, onSaveSettings }),
+    /* @__PURE__ */ jsx("div", { className: "filter-row", style: { marginBottom: 12 }, children: /* @__PURE__ */ jsxs("select", { className: "filter-select", value: genreFilter, onChange: (e) => setGenreFilter(e.target.value), "aria-label": "Filter by genre", children: [
+      /* @__PURE__ */ jsx("option", { value: "all", children: "All genres" }),
+      genreOpts.map((g) => /* @__PURE__ */ jsx("option", { value: g.id, children: g.name }, g.id))
+    ] }) }),
+    loading && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 32, className: "spin" }), title: "Loading theaters", body: "Pulling what's playing right now." }),
+    !loading && error && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Info, { size: 32 }), title: "Couldn't load", body: `TMDB said: ${error}` }),
+    !loading && !error && processed.length === 0 && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Clapperboard, { size: 32 }), title: "Nothing found", body: "No current releases found for your region." }),
+    !loading && !error && processed.length > 0 && /* @__PURE__ */ jsx("div", { className: "outnow-all-heroes", children: processed.map((item, idx) => {
+      const itemNote = enough ? note(item, item._pct) : null;
+      const itemBadges = badgesFor(item, people, taste);
+      const isOwned = ownedSet.has(item.tmdbId + item.mediaType);
+      const inWl = (watchlist || []).some((w) => w.tmdbId === item.tmdbId && w.mediaType === item.mediaType);
+      return /* @__PURE__ */ jsx(
+        OutNowHeroCard,
+        {
+          item,
+          idx,
+          enough,
+          itemNote,
+          itemBadges,
+          isOwned: isOwned || added[item.tmdbId],
+          inCollection: isOwned,
+          ownedRating: ownedRatingMap[item.tmdbId + item.mediaType],
+          availability: availMap[item.tmdbId + item.mediaType],
+          inWatchlist: inWl || added[item.tmdbId],
+          onInfo: () => setInfoItem(item),
+          onSave: () => {
+            onAddToWatchlist(item);
+            setAdded((a) => ({ ...a, [item.tmdbId]: true }));
+          },
+          onSeen: () => setLogging(item)
+        },
+        item.tmdbId
+      );
+    }) })
+  ] });
+}
+function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, onLogNew, onUndoQuick }) {
+  const ownedKeys = useMemo(() => new Set((collection || []).map((c) => c.tmdbId + c.mediaType)), [collection]);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [logging, setLogging] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [aiMode, setAiMode] = useState(false);
+  const [quickRateKey, setQuickRateKey] = useState(null);
+  const [loggedMarks, setLoggedMarks] = useState({});
+  const searchRef = useRef(null);
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setResults([]);
+      return;
+    }
+    const t = setTimeout(() => runSearch(), 420);
+    return () => clearTimeout(t);
+  }, [query]);
+  useEffect(() => {
+    if (searchRef.current) searchRef.current.focus();
+  }, []);
+  async function runSearch(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (searchRef.current) searchRef.current.blur();
+    const q = query.trim();
+    if (!q) return;
+    setLoading(true);
+    setError(null);
+    setAiMode(false);
+    const tmdbSearch = async () => {
+      const data = await tmdb.searchMulti(q);
+      return (data.results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").map(normalize);
+    };
+    const isAsk = /(\blike\b|\bsimilar\b|recommend|suggest|\bmovies? about\b|\bshows? about\b|something to watch|what should i|\?)/i.test(q);
+    try {
+      if (isAsk) {
+        const ai = await smartSearch(q, tmdb);
+        ai.forEach((it) => {
+          it._pct = matchMeta(it, taste, people, crowd).pct;
+        });
+        ai.sort((a, b) => (b._pct ?? 0) - (a._pct ?? 0));
+        setResults(ai);
+        setAiMode(true);
+      } else {
+        const hits = await tmdbSearch();
+        if (hits.length) {
+          setResults(hits);
+        } else {
+          try {
+            const ai = await smartSearch(q, tmdb);
+            ai.forEach((it) => {
+              it._pct = matchMeta(it, taste, people, crowd).pct;
+            });
+            ai.sort((a, b) => (b._pct ?? 0) - (a._pct ?? 0));
+            setResults(ai);
+            setAiMode(true);
+          } catch {
+            setResults([]);
+          }
+        }
+      }
+    } catch {
+      try {
+        setResults(await tmdbSearch());
+      } catch (e2) {
+        setError(e2.message);
+      }
+    }
+    setLoading(false);
+  }
+  return /* @__PURE__ */ jsxs("div", { className: "view", children: [
+    detail && /* @__PURE__ */ jsx(
+      DetailModal,
+      {
+        item: detail,
+        tmdb,
+        badges: [],
+        settings: {},
+        onClose: () => setDetail(null),
+        onAddToWatchlist,
+        onLogNew
+      }
+    ),
+    /* @__PURE__ */ jsxs("form", { className: "search-bar", onSubmit: runSearch, children: [
+      /* @__PURE__ */ jsx(Search, { size: 16 }),
+      /* @__PURE__ */ jsx(
+        "input",
+        {
+          className: "search-input",
+          ref: searchRef,
+          type: "search",
+          name: "q",
+          enterKeyHint: "search",
+          autoCorrect: "off",
+          autoCapitalize: "off",
+          placeholder: 'Search or ask: "movies like Infinity Pool"',
+          value: query,
+          onChange: (e) => setQuery(e.target.value)
+        }
+      ),
+      /* @__PURE__ */ jsx("button", { type: "submit", style: { display: "none" }, "aria-hidden": "true", tabIndex: -1, children: "Search" })
+    ] }),
+    loading && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(RefreshCw, { size: 32, className: "spin" }), title: "Searching", body: "One second." }),
+    error && /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Info, { size: 32 }), title: "Search failed", body: error }),
+    !loading && !error && results.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
+      aiMode && /* @__PURE__ */ jsxs("div", { className: "hint-banner", style: { marginBottom: 12 }, children: [
+        /* @__PURE__ */ jsx(Sparkles, { size: 14 }),
+        " AI-powered results"
+      ] }),
+      /* @__PURE__ */ jsx("div", { className: "suggest-list", children: results.map((item) => /* @__PURE__ */ jsxs("div", { className: "suggest-row", children: [
+        /* @__PURE__ */ jsx("button", { className: "suggest-thumb-btn", onClick: () => setDetail(item), "aria-label": `Details for ${item.title}`, children: item.posterPath ? /* @__PURE__ */ jsx("img", { src: tmdbImg(item.posterPath, "w154"), alt: "", className: "suggest-thumb" }) : /* @__PURE__ */ jsx("div", { className: "suggest-thumb suggest-thumb-fallback", children: item.mediaType === "tv" ? /* @__PURE__ */ jsx(Tv, { size: 18 }) : /* @__PURE__ */ jsx(Film, { size: 18 }) }) }),
+        quickRateKey === item.tmdbId + item.mediaType && !loggedMarks[item.tmdbId + item.mediaType] ? /* @__PURE__ */ jsxs("div", { className: "quick-rate", children: [
+          /* @__PURE__ */ jsx("div", { className: "quick-rate-label", children: "Rate it" }),
+          /* @__PURE__ */ jsx(Stars, { value: 0, size: 26, onChange: (n) => {
+            onLogNew(item, { id: uid(), date: todayISO(), undated: false, location: "", rating: n, notes: "", loggedAt: Date.now() });
+            setLoggedMarks((m) => ({ ...m, [item.tmdbId + item.mediaType]: n }));
+            setQuickRateKey(null);
+          } }),
+          /* @__PURE__ */ jsx("button", { className: "quick-rate-more", onClick: () => {
+            setQuickRateKey(null);
+            setLogging(item);
+          }, children: "more options" })
+        ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+          /* @__PURE__ */ jsx("div", { className: "suggest-info", children: /* @__PURE__ */ jsxs("div", { className: "suggest-title-row", children: [
+            /* @__PURE__ */ jsxs("button", { className: "suggest-title-btn", onClick: () => setDetail(item), children: [
+              item.title,
+              " ",
+              item.year ? `\xB7 ${item.year}` : ""
+            ] }),
+            aiMode && (() => {
+              const m = matchMeta(item, taste, people, crowd);
+              return m.pct != null ? /* @__PURE__ */ jsxs("span", { className: "match-pill", style: matchStyle(m.pct), children: [
+                m.pct,
+                "%"
+              ] }) : null;
+            })()
+          ] }) }),
+          /* @__PURE__ */ jsx("div", { className: "suggest-actions", children: loggedMarks[item.tmdbId + item.mediaType] ? /* @__PURE__ */ jsxs("span", { className: "logged-mark", children: [
+            /* @__PURE__ */ jsx(Check, { size: 15 }),
+            " ",
+            loggedMarks[item.tmdbId + item.mediaType],
+            "/10",
+            onUndoQuick && /* @__PURE__ */ jsx("button", { className: "logged-undo", onClick: () => {
+              onUndoQuick(item);
+              setLoggedMarks((m) => {
+                const n = { ...m };
+                delete n[item.tmdbId + item.mediaType];
+                return n;
+              });
+            }, "aria-label": "Undo log", children: /* @__PURE__ */ jsx(Undo2, { size: 13 }) })
+          ] }) : ownedKeys.has(item.tmdbId + item.mediaType) ? /* @__PURE__ */ jsx("button", { className: "icon-btn logged-owned", onClick: () => setLogging(item), "aria-label": "Already logged - add rewatch", children: /* @__PURE__ */ jsx(Check, { size: 16 }) }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+            /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => onAddToWatchlist(item), "aria-label": "Want to see", children: /* @__PURE__ */ jsx(Bookmark, { size: 16 }) }),
+            /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => setQuickRateKey(item.tmdbId + item.mediaType), "aria-label": "Seen it", children: /* @__PURE__ */ jsx(Check, { size: 16 }) })
+          ] }) })
+        ] })
+      ] }, item.tmdbId + item.mediaType)) })
+    ] }),
+    logging && /* @__PURE__ */ jsxs(Modal, { onClose: () => setLogging(null), children: [
+      /* @__PURE__ */ jsx("h3", { className: "modal-title", children: logging.title }),
+      /* @__PURE__ */ jsx(LogForm, { mediaType: logging.mediaType, tmdb, item: logging, saveLabel: "Add to collection", onCancel: () => setLogging(null), onSave: (entry) => {
+        onLogNew(logging, entry);
+        setLogging(null);
+      } })
+    ] })
+  ] });
+}
+function SettingsPanel({ settings, conn, collection, watchlist, feedback, onSave, onClose, onSaveConnection, onImport, onEnrich, enrichStatus }) {
+  const [tmdbKey, setTmdbKey] = useState(settings.tmdbKey);
+  const [omdbKey, setOmdbKey] = useState(settings.omdbKey);
+  const [zip, setZip] = useState(settings.zip);
+  const [country, setCountry] = useState(settings.country || "US");
+  const [supabaseUrl, setSupabaseUrl] = useState(conn.supabaseUrl);
+  const [supabaseKey, setSupabaseKey] = useState(conn.supabaseKey);
+  const importRef = useRef(null);
+  function downloadBackup() {
+    const payload = {
+      schema: "watchlist-backup-v1",
+      exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      collection: collection || [],
+      watchlist: watchlist || [],
+      feedback: feedback || {}
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `watchlist-backup-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+  function handleImportFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!Array.isArray(data.collection)) {
+          alert("That file doesn't look like a Watchlist backup.");
+          return;
+        }
+        const ok = window.confirm(
+          `Restore ${data.collection.length} collected and ${(data.watchlist || []).length} wishlist items? This replaces what's on this device.`
+        );
+        if (!ok) return;
+        onImport(data);
+        onClose();
+      } catch {
+        alert("Couldn't read that file. Make sure it's a Watchlist backup JSON.");
+      }
+    };
+    reader.readAsText(file);
+  }
+  return /* @__PURE__ */ jsxs(Modal, { onClose, children: [
+    /* @__PURE__ */ jsx("h3", { className: "modal-title", children: "Settings" }),
+    /* @__PURE__ */ jsx("label", { className: "field-label", children: "TMDB API key" }),
+    /* @__PURE__ */ jsx("input", { className: "field-input", value: tmdbKey, onChange: (e) => setTmdbKey(e.target.value), placeholder: "Required" }),
+    /* @__PURE__ */ jsxs("a", { className: "settings-link", href: "https://www.themoviedb.org/settings/api", target: "_blank", rel: "noreferrer", children: [
+      "Get a free key ",
+      /* @__PURE__ */ jsx(ExternalLink, { size: 12 })
+    ] }),
+    /* @__PURE__ */ jsx("label", { className: "field-label", style: { marginTop: 14 }, children: "OMDb API key (optional, for IMDb ratings)" }),
+    /* @__PURE__ */ jsx("input", { className: "field-input", value: omdbKey, onChange: (e) => setOmdbKey(e.target.value), placeholder: "Optional" }),
+    /* @__PURE__ */ jsxs("a", { className: "settings-link", href: "https://www.omdbapi.com/apikey.aspx", target: "_blank", rel: "noreferrer", children: [
+      "Get a free key ",
+      /* @__PURE__ */ jsx(ExternalLink, { size: 12 })
+    ] }),
+    /* @__PURE__ */ jsx("label", { className: "field-label", style: { marginTop: 14 }, children: "Country, for release dates where you actually are" }),
+    /* @__PURE__ */ jsx(
+      "input",
+      {
+        className: "field-input",
+        value: country,
+        onChange: (e) => setCountry(e.target.value.toUpperCase().slice(0, 2)),
+        placeholder: "US, GB, IE, etc"
+      }
+    ),
+    /* @__PURE__ */ jsx("p", { className: "sync-note", children: "Two letter code. Changes which Coming Soon dates and streaming options you see. Doesn't affect AMC/Regal links below, those use zip." }),
+    /* @__PURE__ */ jsx("label", { className: "field-label", style: { marginTop: 14 }, children: "Zip or city, for ticket links" }),
+    /* @__PURE__ */ jsx("input", { className: "field-input", value: zip, onChange: (e) => setZip(e.target.value), placeholder: "e.g. 37064 or wherever you are" }),
+    /* @__PURE__ */ jsx("label", { className: "field-label", style: { marginTop: 18 }, children: "Sync across devices" }),
+    /* @__PURE__ */ jsx("p", { className: "sync-note", children: "Paste your Supabase project URL and key here, once per device, and your collection stays the same on your phone and your computer. Leave this blank and it just stays on this device." }),
+    /* @__PURE__ */ jsx("input", { className: "field-input", value: supabaseUrl, onChange: (e) => setSupabaseUrl(e.target.value), placeholder: "https://yourproject.supabase.co" }),
+    /* @__PURE__ */ jsx("input", { className: "field-input", style: { marginTop: 8 }, value: supabaseKey, onChange: (e) => setSupabaseKey(e.target.value), placeholder: "Supabase publishable or anon key" }),
+    /* @__PURE__ */ jsx("label", { className: "field-label", style: { marginTop: 18 }, children: "Backup and restore" }),
+    /* @__PURE__ */ jsx("p", { className: "sync-note", children: "Download a copy of your whole collection to your device. It survives cache clears, updates, and anything else. Restore it any time, or hand the file to the taste engine. Do this before any big change." }),
+    /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" }, children: [
+      /* @__PURE__ */ jsxs("button", { className: "btn btn-outline btn-sm", onClick: downloadBackup, children: [
+        /* @__PURE__ */ jsx(Download, { size: 14 }),
+        " Download backup"
+      ] }),
+      /* @__PURE__ */ jsxs("button", { className: "btn btn-outline btn-sm", onClick: () => importRef.current && importRef.current.click(), children: [
+        /* @__PURE__ */ jsx(Upload, { size: 14 }),
+        " Restore from file"
+      ] }),
+      /* @__PURE__ */ jsx("input", { ref: importRef, type: "file", accept: "application/json,.json", style: { display: "none" }, onChange: handleImportFile })
+    ] }),
+    /* @__PURE__ */ jsx("label", { className: "field-label", style: { marginTop: 18 }, children: "Enrich your collection" }),
+    /* @__PURE__ */ jsx("p", { className: "sync-note", children: "Fetches cast, directors, and themes for everything you've logged, so the taste engine sees more than genre. Runs once, takes a moment. New logs are enriched automatically from now on." }),
+    /* @__PURE__ */ jsxs("button", { className: "btn btn-outline btn-sm", onClick: onEnrich, children: [
+      /* @__PURE__ */ jsx(Sparkles, { size: 14 }),
+      " Fetch cast, directors and themes"
+    ] }),
+    enrichStatus && /* @__PURE__ */ jsx("p", { className: "sync-note", style: { marginTop: 8, color: "var(--brass)" }, children: enrichStatus }),
+    /* @__PURE__ */ jsxs("div", { className: "form-actions", children: [
+      /* @__PURE__ */ jsx("button", { className: "btn btn-ghost", onClick: onClose, children: "Cancel" }),
+      /* @__PURE__ */ jsx(
+        "button",
+        {
+          className: "btn btn-primary",
+          onClick: () => {
+            onSave({ tmdbKey, omdbKey, zip, country: country || "US" });
+            onSaveConnection({ supabaseUrl: supabaseUrl.trim(), supabaseKey: supabaseKey.trim() });
+          },
+          children: "Save"
+        }
+      )
+    ] })
+  ] });
+}
+function Onboarding({ onSave }) {
+  const [tmdbKey, setTmdbKey] = useState("");
+  return /* @__PURE__ */ jsx("div", { className: "onboarding", children: /* @__PURE__ */ jsxs("div", { className: "onboarding-card", children: [
+    /* @__PURE__ */ jsx(Ticket, { size: 36, className: "onboarding-icon" }),
+    /* @__PURE__ */ jsx("h1", { className: "onboarding-title", children: "Welcome to Watchlist" }),
+    /* @__PURE__ */ jsx("p", { className: "onboarding-body", children: "One free key from TMDB powers everything here: posters, release dates, and where to watch. Takes about a minute to grab." }),
+    /* @__PURE__ */ jsxs("a", { className: "settings-link", href: "https://www.themoviedb.org/settings/api", target: "_blank", rel: "noreferrer", children: [
+      "Get your free TMDB key ",
+      /* @__PURE__ */ jsx(ExternalLink, { size: 12 })
+    ] }),
+    /* @__PURE__ */ jsx(
+      "input",
+      {
+        className: "field-input",
+        style: { marginTop: 16 },
+        placeholder: "Paste your TMDB API key",
+        value: tmdbKey,
+        onChange: (e) => setTmdbKey(e.target.value)
+      }
+    ),
+    /* @__PURE__ */ jsx("button", { className: "btn btn-primary", style: { marginTop: 14, width: "100%" }, disabled: !tmdbKey.trim(), onClick: () => onSave(tmdbKey.trim()), children: "Start collecting" })
+  ] }) });
+}
+const whyWatchCache = {};
+async function getWhyWatch(cacheKey, title, year, genres, tasteGenres, matchPct, voteAvg) {
+  if (whyWatchCache[cacheKey]) return whyWatchCache[cacheKey];
+  const pct = matchPct ?? 50;
+  const qualityLine = voteAvg != null ? `TMDB community score: ${voteAvg}/10.` : "";
+  const data = await callProxy({
+    model: "claude-haiku-4-5",
+    max_tokens: 90,
+    messages: [{
+      role: "user",
+      content: `You're a trusted movie friend giving a personal opinion. NEVER describe the movie or its plot. ONLY say whether this viewer will like it and why, based on their taste AND the movie's quality.
+
+WRONG (describes film): "Witty humor and quirky charm that appeals to everyone"
+WRONG (plot): "A detective comedy following a quirky investigator"
+RIGHT at 82% match, 7.8/10: "This is right in your lane \u2014 you're gonna love it"
+RIGHT at 65% match, 6.2/10: "Decent but nothing special \u2014 worth it if you're in the mood"
+RIGHT at 51% match, 5.5/10: "Pretty middle of the road, even for a fan of this genre"
+RIGHT at 30% match, 7.5/10: "Probably not your thing but critically solid \u2014 keep an open mind"
+RIGHT at 25% match, 4.8/10: "Skip this one \u2014 weak film and outside your lane"
+
+Movie genres: ${genres}. ${qualityLine} Their top genres: ${tasteGenres}. Match score: ${pct}%.
+Write ONE frank opinion sentence, max 16 words. No quotation marks.`
+    }]
+  });
+  const text = data.content?.[0]?.text?.trim().replace(/^["']|["']$/g, "") || null;
+  if (text) whyWatchCache[cacheKey] = text;
+  return text;
+}
+const WHY_LINES = {
+  high: [
+    "This is the kind of pick the ring exists for.",
+    "High confidence - clear your evening.",
+    "The match is strong; trust it.",
+    "If anything in this deck is for you, it's this.",
+    "About as sure a thing as this app gets.",
+    "Lock this one in.",
+    "The numbers like you two together.",
+    "Don't overthink this one.",
+    "An easy yes."
+  ],
+  good: [
+    "A comfortable bet, not a risky one.",
+    "Solid odds you'll enjoy this.",
+    "Leans your way more than not.",
+    "Worth the slot on your list.",
+    "A safe add with real upside.",
+    "Good chance this lands for you.",
+    "More hit than miss for your taste.",
+    "Reasonably confident you'll get along.",
+    "A good bet for a quiet night."
+  ],
+  maybe: [
+    "A coin flip - your call.",
+    "Could go either way for you.",
+    "Not a sure thing, but not a no.",
+    "Approach with curiosity, not expectations.",
+    "The match is lukewarm; mood decides.",
+    "Maybe. That's the honest read.",
+    "A maybe, with upside if you're patient.",
+    "Fifty-fifty - go with your gut.",
+    "Borderline, in an interesting way."
+  ],
+  low: [
+    "Probably not your pick tonight.",
+    "The match says pass, politely.",
+    "Likely not for you - no harm skipping.",
+    "Your taste and this one don't overlap much.",
+    "Low odds; only if you're feeling adventurous.",
+    "The numbers say skip, kindly.",
+    "Not the one for you, most likely.",
+    "Save your evening for a better match.",
+    "A long shot for your taste."
+  ]
+};
+function buildWhyWatch(item, matchPct) {
+  if (matchPct == null) return null;
+  const band = matchPct >= 75 ? "high" : matchPct >= 55 ? "good" : matchPct >= 38 ? "maybe" : "low";
+  const lines = WHY_LINES[band];
+  return lines[Math.abs(item.tmdbId || 0) % lines.length];
+}
+function WhyWatch({ item, matchPct }) {
+  const reason = useMemo(
+    () => buildWhyWatch(item, matchPct),
+    [item.tmdbId, item.mediaType, matchPct]
+  );
+  if (!reason) return null;
+  return /* @__PURE__ */ jsx("div", { className: "why-watch", children: reason });
+}
+const redditCache = {};
+async function resolveRedditUrl(title, year) {
+  const key = title + year;
+  if (redditCache[key]) return redditCache[key];
+  const q = encodeURIComponent(`${title}${year ? " " + year : ""} official discussion`);
+  try {
+    const res = await fetch(
+      `https://www.reddit.com/r/movies/search.json?q=${q}&restrict_sr=1&sort=relevance&limit=1`,
+      { headers: { Accept: "application/json" } }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const post = data?.data?.children?.[0]?.data;
+      if (post?.permalink) {
+        const url = `https://www.reddit.com${post.permalink}`;
+        redditCache[key] = url;
+        return url;
+      }
+    }
+  } catch {
+  }
+  const fallback = buildRedditLink(title, year);
+  redditCache[key] = fallback;
+  return fallback;
+}
+async function smartSearch(query, tmdb) {
+  const data = await callProxy({
+    model: "claude-haiku-4-5",
+    max_tokens: 500,
+    messages: [{
+      role: "user",
+      content: `The user searched for: "${query}". Return 12 movie or TV show recommendations that best match this query. For each, provide the exact title and approximate year. Reply ONLY with a valid JSON array, no other text: [{"title":"...","year":"YYYY"}]`
+    }]
+  });
+  const text = data.content?.[0]?.text?.trim() || "";
+  const match = text.match(/\[[\s\S]*\]/);
+  if (!match) throw new Error("No results parsed");
+  const suggestions = JSON.parse(match[0]);
+  const hydrated = await Promise.all(
+    suggestions.map(async (s) => {
+      try {
+        const normT = (t) => (t || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+        const pickBest = (results) => {
+          const cands = (results || []).filter((r) => r.media_type === "movie" || r.media_type === "tv").slice(0, 5);
+          if (!cands.length) return null;
+          const exact = cands.filter((r) => normT(r.title || r.name) === normT(s.title));
+          const pool = exact.length ? exact : cands;
+          return pool.sort((a, b) => (b.popularity || 0) - (a.popularity || 0))[0];
+        };
+        let res = await tmdb.searchMulti(`${s.title} ${s.year || ""}`.trim());
+        let hit = pickBest(res.results);
+        if (!hit) {
+          res = await tmdb.searchMulti(s.title);
+          hit = pickBest(res.results);
+        }
+        if (hit) return normalize(hit);
+      } catch {
+      }
+      return null;
+    })
+  );
+  return hydrated.filter(Boolean);
+}
+function YearInReview({ collection, onClose }) {
+  const year = (/* @__PURE__ */ new Date()).getFullYear();
+  const [step, setStep] = useState(0);
+  const thisYear = useMemo(() => {
+    return collection.filter(
+      (t) => t.viewings.some((v) => v.date && v.date.startsWith(String(year)))
+    );
+  }, [collection, year]);
+  const totalWatched = thisYear.length;
+  const genreCounts = useMemo(() => {
+    const counts = {};
+    thisYear.forEach((t) => (t.genreIds || []).forEach((g) => {
+      counts[g] = (counts[g] || 0) + 1;
+    }));
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([g, n]) => ({ name: MOVIE_GENRES[g] || TV_GENRES[g] || "Unknown", count: n })).filter((x) => x.name !== "Unknown");
+  }, [thisYear]);
+  const topRated = useMemo(() => [...thisYear].sort((a, b) => {
+    const ra = Math.max(...a.viewings.map((v) => v.rating || 0));
+    const rb = Math.max(...b.viewings.map((v) => v.rating || 0));
+    return rb - ra;
+  })[0], [thisYear]);
+  const mostRewatched = useMemo(
+    () => [...thisYear].sort((a, b) => b.viewings.length - a.viewings.length)[0],
+    [thisYear]
+  );
+  const busiestMonth = useMemo(() => {
+    const months = {};
+    thisYear.forEach(
+      (t) => t.viewings.filter((v) => v.date?.startsWith(String(year))).forEach((v) => {
+        const m = v.date.slice(0, 7);
+        months[m] = (months[m] || 0) + 1;
+      })
+    );
+    const top = Object.entries(months).sort((a, b) => b[1] - a[1])[0];
+    if (!top) return null;
+    const d = /* @__PURE__ */ new Date(top[0] + "-01");
+    return { name: d.toLocaleDateString(void 0, { month: "long" }), count: top[1] };
+  }, [thisYear]);
+  const totalHours = useMemo(() => {
+    const mins = thisYear.reduce((sum, t) => sum + (t.runtimeMinutes || 0), 0);
+    return mins > 0 ? (mins / 60).toFixed(1) : null;
+  }, [thisYear]);
+  const ratedThisYear = useMemo(() => {
+    const rs = [];
+    thisYear.forEach((t) => t.viewings.forEach((v) => {
+      if (v.date && v.date.startsWith(String(year)) && (v.rating || 0) > 0) rs.push(v.rating);
+    }));
+    return rs;
+  }, [thisYear, year]);
+  const avgRating = ratedThisYear.length ? ratedThisYear.reduce((a, b) => a + b, 0) / ratedThisYear.length : null;
+  const highCount = ratedThisYear.filter((r) => r >= 9).length;
+  const topSpots = useMemo(() => {
+    const counts = {};
+    thisYear.forEach((t) => t.viewings.forEach((v) => {
+      if (!v.date || !v.date.startsWith(String(year))) return;
+      const loc = (v.location || "").trim();
+      if (!loc) return;
+      counts[loc] = (counts[loc] || 0) + 1;
+    }));
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count }));
+  }, [thisYear, year]);
+  const topDirectors = useMemo(() => {
+    const counts = {};
+    thisYear.forEach((t) => {
+      (t.credits?.directors || []).forEach((d) => {
+        counts[d.name] = (counts[d.name] || 0) + 1;
+      });
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count }));
+  }, [thisYear]);
+  const topActors = useMemo(() => {
+    const counts = {};
+    thisYear.forEach((t) => {
+      (t.credits?.cast || []).slice(0, 3).forEach((a) => {
+        counts[a.name] = (counts[a.name] || 0) + 1;
+      });
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count }));
+  }, [thisYear]);
+  const cards = [
+    {
+      key: "total",
+      label: `${year} at the movies`,
+      big: String(totalWatched),
+      sub: totalWatched === 1 ? "movie watched" : "movies watched",
+      color: "var(--brass-bright)"
+    },
+    avgRating != null && {
+      key: "avg",
+      label: "Your average score",
+      big: avgRating.toFixed(1),
+      sub: `${ratedThisYear.length} rating${ratedThisYear.length !== 1 ? "s" : ""}` + (highCount ? ` \xB7 ${highCount} scored 9+` : ""),
+      color: "#5fd99a"
+    },
+    topSpots.length > 0 && {
+      key: "spots",
+      label: "Where you watched",
+      big: topSpots[0].name,
+      sub: `${topSpots[0].count}\xD7` + (topSpots.length > 1 ? " \xB7 " + topSpots.slice(1).map((s) => `${s.name} ${s.count}\xD7`).join(" \xB7 ") : ""),
+      color: "var(--brass)"
+    },
+    genreCounts.length > 0 && {
+      key: "genres",
+      label: "Top genres",
+      big: genreCounts[0]?.name,
+      sub: genreCounts.slice(1).map((g) => g.name).join(" \xB7 ") || "",
+      color: "var(--brass)"
+    },
+    topRated && {
+      key: "top",
+      label: "Highest rated",
+      big: topRated.title,
+      sub: topRated.year || "",
+      poster: topRated.posterPath,
+      color: "#5fd99a"
+    },
+    mostRewatched && mostRewatched.viewings.length > 1 && {
+      key: "rewatch",
+      label: "Most rewatched",
+      big: mostRewatched.title,
+      sub: `${mostRewatched.viewings.length}\xD7 this year`,
+      poster: mostRewatched.posterPath,
+      color: "var(--brass-bright)"
+    },
+    busiestMonth && {
+      key: "month",
+      label: "Busiest month",
+      big: busiestMonth.name,
+      sub: `${busiestMonth.count} movie${busiestMonth.count !== 1 ? "s" : ""}`,
+      color: "#ff8080"
+    },
+    totalHours && {
+      key: "hours",
+      label: "Time well spent",
+      big: `${totalHours}h`,
+      sub: "of movies this year",
+      color: "var(--brass-bright)"
+    },
+    topDirectors.length > 1 && {
+      key: "directors",
+      label: "Your most-watched directors",
+      big: topDirectors[0].name,
+      sub: topDirectors.slice(1).map((d) => d.name).join(" \xB7 "),
+      color: "var(--brass-bright)"
+    },
+    topActors.length > 1 && {
+      key: "actors",
+      label: "On your screen the most",
+      big: topActors[0].name,
+      sub: topActors.slice(1).map((a) => a.name).join(" \xB7 "),
+      color: "#ff8080"
+    }
+  ].filter(Boolean);
+  if (totalWatched === 0) {
+    return /* @__PURE__ */ jsx("div", { className: "yir-wrap", children: /* @__PURE__ */ jsx(EmptyState, { icon: /* @__PURE__ */ jsx(Sparkles, { size: 32 }), title: `Nothing logged in ${year} yet`, body: "Log a movie and come back." }) });
+  }
+  const card = cards[step];
+  return /* @__PURE__ */ jsxs("div", { className: "yir-wrap", children: [
+    /* @__PURE__ */ jsxs("div", { className: "yir-card", style: { borderColor: card.color }, children: [
+      /* @__PURE__ */ jsx("div", { className: "yir-label", style: { color: card.color }, children: card.label }),
+      card.poster && /* @__PURE__ */ jsx("img", { src: tmdbImg(card.poster, "w342"), alt: "", className: "yir-poster" }),
+      /* @__PURE__ */ jsx("div", { className: "yir-big", style: { color: card.color }, children: card.big }),
+      card.sub && /* @__PURE__ */ jsx("div", { className: "yir-sub", children: card.sub })
+    ] }),
+    /* @__PURE__ */ jsx("div", { className: "yir-dots", children: cards.map((c, i) => /* @__PURE__ */ jsx("button", { className: "yir-dot" + (i === step ? " yir-dot-active" : ""), onClick: () => setStep(i) }, c.key)) }),
+    /* @__PURE__ */ jsxs("div", { className: "yir-nav", children: [
+      step > 0 && /* @__PURE__ */ jsxs("button", { className: "btn btn-ghost btn-sm", onClick: () => setStep((s) => s - 1), children: [
+        /* @__PURE__ */ jsx(ChevronLeft, { size: 14 }),
+        " Back"
+      ] }),
+      step < cards.length - 1 ? /* @__PURE__ */ jsxs("button", { className: "btn btn-primary btn-sm", onClick: () => setStep((s) => s + 1), children: [
+        "Next ",
+        /* @__PURE__ */ jsx(ChevronRight, { size: 14 })
+      ] }) : /* @__PURE__ */ jsx("button", { className: "btn btn-primary btn-sm", onClick: onClose, children: "Done" })
+    ] })
+  ] });
+}
+const TABS = [
+  { id: "collection", label: "Collection", icon: Ticket },
+  { id: "outnow", label: "Out Now", icon: Clapperboard },
+  { id: "discover", label: "Discover", icon: Sparkles },
+  { id: "soon", label: "Coming Soon", icon: CalendarDays },
+  { id: "search", label: "Search", icon: Search }
+];
+const BUILD_V = (() => {
+  try {
+    const m = (document.querySelector('script[src*="stub.js"]') || {}).src.match(/[?&]v=(\d+)/);
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+})();
+function useAutoRefresh() {
+  useEffect(() => {
+    if (!BUILD_V) return;
+    let stopped = false;
+    async function check() {
+      try {
+        const html = await (await fetch(location.pathname, { cache: "no-store" })).text();
+        const m = html.match(/stub\.js\?v=(\d+)/);
+        if (!stopped && m && m[1] !== BUILD_V) location.reload();
+      } catch {
+      }
+    }
+    const t = setInterval(check, 5 * 60 * 1e3);
+    const onVis = () => {
+      if (!document.hidden) check();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+}
+function App() {
+  useAutoRefresh();
+  const [ready, setReady] = useState(false);
+  const [conn, setConn] = useState(() => getConnection());
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [collection, setCollection] = useState([]);
+  const [watchlist, setWatchlist] = useState([]);
+  const [feedback, setFeedback] = useState({ skippedIds: [], wantedIds: [], seenIds: [] });
+  const [tab, setTab] = useState("discover");
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await fetch(location.pathname + "?wu=" + Date.now(), { cache: "no-store" });
+        const html = await res.text();
+        const m = html.match(/stub\.js\?v=([0-9]+)/);
+        if (m && Number(m[1]) > Number(APP_VERSION) && !sessionStorage.getItem("wu-done")) {
+          sessionStorage.setItem("wu-done", "1");
+          location.reload();
+        }
+      } catch {
+      }
+    };
+    const onVis = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    const t = setTimeout(check, 4e3);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      clearTimeout(t);
+    };
+  }, []);
+  const [mountedTabs, setMountedTabs] = useState(() => /* @__PURE__ */ new Set(["discover"]));
+  const [showSettings, setShowSettings] = useState(false);
+  const [showYIR, setShowYIR] = useState(false);
+  const [rateNudge, setRateNudge] = useState(null);
+  const [scanning, setScanning] = useState(false);
+  const [showFavorites, setShowFavorites] = useState(false);
+  const [enrichStatus, setEnrichStatus] = useState("");
+  function switchTab(id) {
+    setTab(id);
+    setMountedTabs((m) => {
+      const n = new Set(m);
+      n.add(id);
+      return n;
+    });
+    window.scrollTo(0, 0);
+  }
+  function applyNudgeRating(n) {
+    if (!rateNudge) return;
+    setCollection((c) => c.map((x) => x.id === rateNudge.ticketId ? { ...x, viewings: x.viewings.map((v) => v.id === rateNudge.viewingId ? { ...v, rating: n } : v), log: [...x.log || [], { at: Date.now(), text: `Rated it ${n}/10` }] } : x));
+    setRateNudge(null);
+  }
+  useEffect(() => {
+    async function load() {
+      const [s, c, w, f] = await Promise.all([
+        loadKey(STORAGE_KEYS.settings, DEFAULT_SETTINGS, conn),
+        loadKey(STORAGE_KEYS.collection, [], conn),
+        loadKey(STORAGE_KEYS.watchlist, [], conn),
+        loadKey(STORAGE_KEYS.feedback, { skippedIds: [], wantedIds: [], seenIds: [] }, conn)
+      ]);
+      setSettings(s);
+      setCollection(c);
+      setWatchlist(w);
+      setFeedback(f);
+      setReady(true);
+    }
+    load();
+  }, []);
+  useEffect(() => {
+    if (ready) saveKey(STORAGE_KEYS.settings, settings, conn);
+  }, [settings, ready]);
+  useEffect(() => {
+    if (ready) saveKey(STORAGE_KEYS.collection, collection, conn);
+  }, [collection, ready]);
+  useEffect(() => {
+    if (ready) saveKey(STORAGE_KEYS.watchlist, watchlist, conn);
+  }, [watchlist, ready]);
+  useEffect(() => {
+    if (ready) saveKey(STORAGE_KEYS.feedback, feedback, conn);
+  }, [feedback, ready]);
+  useEffect(() => {
+    if (!ready || !hasCloud(conn)) return;
+    let active = true;
+    (async () => {
+      const [c, w, f] = await Promise.all([
+        loadKey(STORAGE_KEYS.collection, [], conn),
+        loadKey(STORAGE_KEYS.watchlist, [], conn),
+        loadKey(STORAGE_KEYS.feedback, { skippedIds: [], wantedIds: [], seenIds: [] }, conn)
+      ]);
+      if (!active) return;
+      setCollection((local) => Array.isArray(c) && c.length ? c : local);
+      setWatchlist((local) => Array.isArray(w) && w.length ? w : local);
+      setFeedback((local) => {
+        const cloudHas = f && ((f.skippedIds || []).length || (f.wantedIds || []).length || (f.seenIds || []).length);
+        return cloudHas ? f : local;
+      });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [conn]);
+  function updateConnection(next) {
+    saveConnection(next);
+    setConn(next);
+  }
+  const tmdb = useMemo(() => makeTmdb(settings.tmdbKey), [settings.tmdbKey]);
+  const taste = useMemo(() => buildTasteProfile(collection, feedback), [collection, feedback]);
+  const people = useMemo(() => buildPeopleProfile(collection), [collection]);
+  useMemo(() => setOwnRatings(collection), [collection]);
+  const crowd = useMemo(() => learnCrowdWeight(collection), [collection]);
+  const [burst, setBurst] = useState(null);
+  function fireBurst(kind) {
+    setBurst({ kind, key: Date.now() });
+    setTimeout(() => setBurst(null), 850);
+  }
+  function addToWatchlist(item) {
+    setWatchlist((w) => {
+      if (w.find((x) => x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)) return w;
+      const clean = {};
+      Object.keys(item).forEach((k) => {
+        if (!k.startsWith("_")) clean[k] = item[k];
+      });
+      return [{ ...clean, addedAt: Date.now() }, ...w];
+    });
+    fireBurst("want");
+  }
+  const [rewatchPrompt, setRewatchPrompt] = useState(null);
+  function confirmRewatch() {
+    if (!rewatchPrompt) return;
+    const { ticket, viewing } = rewatchPrompt;
+    updateTicket({ ...ticket, viewings: [...ticket.viewings, viewing], log: [...ticket.log || [], { at: Date.now(), text: "Added a rewatch" }] });
+    setWatchlist((w) => w.filter((x) => !(x.tmdbId === ticket.tmdbId && x.mediaType === ticket.mediaType)));
+    setRewatchPrompt(null);
+    fireBurst("collect");
+    if (!viewing.rating) setRateNudge({ ticketId: ticket.id, viewingId: viewing.id, title: ticket.title });
+  }
+  function undoQuick(item) {
+    setCollection((c) => {
+      const key = item.tmdbId + item.mediaType;
+      const idx = c.map((x) => x.tmdbId + x.mediaType).lastIndexOf(key);
+      if (idx < 0) return c;
+      const t = c[idx];
+      if (!t.viewings || t.viewings.length !== 1) return c;
+      return [...c.slice(0, idx), ...c.slice(idx + 1)];
+    });
+  }
+  function logNew(item, viewing, credits, extra) {
+    const existing = collection.find((x) => x.tmdbId === item.tmdbId && x.mediaType === item.mediaType);
+    if (existing) {
+      setRewatchPrompt({ ticket: existing, viewing });
+      return;
+    }
+    const ticket = {
+      id: uid(),
+      tmdbId: item.tmdbId,
+      mediaType: item.mediaType,
+      title: item.title,
+      year: item.year,
+      posterPath: item.posterPath,
+      genreIds: item.genreIds,
+      voteAverage: item.voteAverage ?? null,
+      voteCount: item.voteCount ?? 0,
+      backdropPath: item.backdropPath ?? null,
+      credits: credits || item.credits || null,
+      runtimeMinutes: extra?.runtime || item.runtimeMinutes || null,
+      tmdbKeywords: extra?.keywords?.length ? extra.keywords : item.tmdbKeywords || null,
+      viewings: [viewing],
+      log: [{ at: Date.now(), text: "Added to your collection" }],
+      history: []
+    };
+    setCollection((c) => [...c, ticket]);
+    setWatchlist((w) => w.filter((x) => !(x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)));
+    fireBurst("collect");
+    if (!ticket.credits || !ticket.tmdbKeywords) enrichTicket(ticket);
+    if (!viewing.rating) setRateNudge({ ticketId: ticket.id, viewingId: viewing.id, title: ticket.title });
+    return ticket;
+  }
+  function enrichTicket(ticket) {
+    if (!settings.tmdbKey) return;
+    tmdb.detailsFull(ticket.mediaType, ticket.tmdbId).then((full) => {
+      const credits = slimCredits(full.credits);
+      const kwRaw = full.keywords && (full.keywords.keywords || full.keywords.results) || [];
+      const tmdbKeywords = kwRaw.map((k) => ({ id: k.id, name: k.name }));
+      setCollection((c) => c.map((x) => x.id === ticket.id ? { ...x, credits: x.credits || credits, tmdbKeywords: x.tmdbKeywords && x.tmdbKeywords.length ? x.tmdbKeywords : tmdbKeywords } : x));
+    }).catch(() => {
+    });
+  }
+  async function runEnrich() {
+    if (!settings.tmdbKey) {
+      setEnrichStatus("Set your TMDB key first.");
+      return;
+    }
+    const need = collection.filter((t) => !t.credits || !(t.tmdbKeywords && t.tmdbKeywords.length));
+    if (!need.length) {
+      setEnrichStatus("Everything's already enriched.");
+      return;
+    }
+    for (let i = 0; i < need.length; i++) {
+      const t = need[i];
+      setEnrichStatus(`Enriching ${i + 1} of ${need.length}...`);
+      try {
+        const full = await tmdb.detailsFull(t.mediaType, t.tmdbId);
+        const credits = slimCredits(full.credits);
+        const kwRaw = full.keywords && (full.keywords.keywords || full.keywords.results) || [];
+        const tmdbKeywords = kwRaw.map((k) => ({ id: k.id, name: k.name }));
+        setCollection((c) => c.map((x) => x.id === t.id ? { ...x, credits: x.credits || credits, tmdbKeywords: x.tmdbKeywords && x.tmdbKeywords.length ? x.tmdbKeywords : tmdbKeywords } : x));
+      } catch {
+      }
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    setEnrichStatus(`Done. Enriched ${need.length} titles with cast, directors, and themes.`);
+  }
+  function updateTicket(t) {
+    setCollection((c) => c.map((x) => x.id === t.id ? t : x));
+  }
+  function deleteTicket(id) {
+    setCollection((c) => c.filter((x) => x.id !== id));
+  }
+  function logFromWatchlist(w) {
+    logNew(w, { id: uid(), date: todayISO(), location: "", rating: null, notes: "", loggedAt: Date.now() });
+  }
+  function removeFromWatchlist(item) {
+    setWatchlist((w) => w.filter((x) => !(x.tmdbId === item.tmdbId && x.mediaType === item.mediaType)));
+  }
+  if (!ready) return /* @__PURE__ */ jsx("div", { className: "boot-screen", children: /* @__PURE__ */ jsx(Ticket, { size: 28, className: "spin" }) });
+  if (!settings.tmdbKey) {
+    return /* @__PURE__ */ jsxs("div", { className: "app", children: [
+      /* @__PURE__ */ jsx(GlobalStyle, {}),
+      /* @__PURE__ */ jsx(Onboarding, { onSave: (key) => setSettings((s) => ({ ...s, tmdbKey: key })) })
+    ] });
+  }
+  setScoringContext({ taste, people, crowd });
+  return /* @__PURE__ */ jsxs("div", { className: "app" + (tab === "discover" ? " wash-on" : ""), children: [
+    /* @__PURE__ */ jsx(GlobalStyle, {}),
+    burst && /* @__PURE__ */ jsx("div", { className: "burst-overlay", children: /* @__PURE__ */ jsx("div", { className: "burst-icon burst-" + burst.kind, children: burst.kind === "collect" ? /* @__PURE__ */ jsx(Ticket, { size: 46 }) : burst.kind === "want" ? /* @__PURE__ */ jsx(Bookmark, { size: 46 }) : /* @__PURE__ */ jsx(Eye, { size: 46 }) }) }, burst.key),
+    /* @__PURE__ */ jsxs("header", { className: "app-header", children: [
+      /* @__PURE__ */ jsx("div", { className: "header-bulbs", children: Array.from({ length: 10 }).map((_, i) => /* @__PURE__ */ jsx("i", {}, i)) }),
+      /* @__PURE__ */ jsxs("div", { className: "header-row", children: [
+        /* @__PURE__ */ jsxs("div", { className: "wordmark", children: [
+          "WATCH",
+          /* @__PURE__ */ jsx("span", { className: "wordmark-dot", children: "LIST" })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "header-right", children: [
+          /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => setScanning(true), "aria-label": "Scan ticket", title: "Scan ticket", children: /* @__PURE__ */ jsx(Camera, { size: 17 }) }),
+          /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => setShowFavorites(true), "aria-label": "Favorites", title: "Favorites", children: /* @__PURE__ */ jsx(Heart, { size: 17 }) }),
+          collection.length > 0 && /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => setShowYIR(true), "aria-label": "Recap", title: "Recap", children: /* @__PURE__ */ jsx(Sparkles, { size: 17 }) }),
+          /* @__PURE__ */ jsx("span", { className: "sync-pill" + (hasCloud(conn) ? " sync-on" : ""), children: (hasCloud(conn) ? "Synced" : "This device only") + " \xB7 v" + APP_VERSION }),
+          /* @__PURE__ */ jsx("button", { className: "icon-btn", onClick: () => setShowSettings(true), "aria-label": "Settings", children: /* @__PURE__ */ jsx(Settings, { size: 18 }) })
+        ] })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("main", { className: "app-main", children: [
+      /* @__PURE__ */ jsx("div", { style: { display: tab === "collection" ? "" : "none" }, children: /* @__PURE__ */ jsx(
+        CollectionView,
+        {
+          collection,
+          watchlist,
+          tmdb,
+          taste,
+          people,
+          settings,
+          onUpdateTicket: updateTicket,
+          onDeleteTicket: deleteTicket,
+          onLogFromWatchlist: logFromWatchlist,
+          onAddToWatchlist: addToWatchlist,
+          onLogNew: logNew,
+          onRemoveFromWatchlist: removeFromWatchlist,
+          onShowYIR: () => setShowYIR(true)
+        }
+      ) }),
+      mountedTabs.has("discover") && /* @__PURE__ */ jsx("div", { style: { display: tab === "discover" ? "" : "none" }, children: /* @__PURE__ */ jsx(
+        DiscoverView,
+        {
+          tmdb,
+          feedback,
+          setFeedback,
+          taste,
+          people,
+          settings,
+          collection,
+          watchlist,
+          onAddToWatchlist: addToWatchlist,
+          onLogNew: logNew
+        }
+      ) }),
+      mountedTabs.has("outnow") && /* @__PURE__ */ jsx("div", { style: { display: tab === "outnow" ? "" : "none" }, children: /* @__PURE__ */ jsx(
+        OutNowView,
+        {
+          tmdb,
+          settings,
+          taste,
+          people,
+          collection,
+          watchlist,
+          feedback,
+          onAddToWatchlist: addToWatchlist,
+          onLogNew: logNew,
+          onSaveSettings: (s) => setSettings(s)
+        }
+      ) }),
+      mountedTabs.has("soon") && /* @__PURE__ */ jsx("div", { style: { display: tab === "soon" ? "" : "none" }, children: /* @__PURE__ */ jsx(
+        ComingSoonView,
+        {
+          tmdb,
+          settings,
+          taste,
+          people,
+          collection,
+          watchlist,
+          feedback,
+          onAddToWatchlist: addToWatchlist,
+          onLogNew: logNew
+        }
+      ) }),
+      mountedTabs.has("search") && /* @__PURE__ */ jsx("div", { style: { display: tab === "search" ? "" : "none" }, children: /* @__PURE__ */ jsx(SearchView, { tmdb, taste, people, crowd, collection, onAddToWatchlist: addToWatchlist, onLogNew: logNew, onUndoQuick: undoQuick }) })
+    ] }),
+    showYIR && /* @__PURE__ */ jsx(Modal, { onClose: () => setShowYIR(false), wide: true, children: /* @__PURE__ */ jsx(YearInReview, { collection, onClose: () => setShowYIR(false) }) }),
+    rateNudge && /* @__PURE__ */ jsxs(Modal, { onClose: () => setRateNudge(null), children: [
+      /* @__PURE__ */ jsxs("h3", { className: "modal-title", children: [
+        "How was ",
+        rateNudge.title,
+        "?"
+      ] }),
+      /* @__PURE__ */ jsx("p", { className: "sync-note", style: { margin: "2px 0 14px" }, children: "Logged without a rating - score it while it's fresh. Your ratings are what the match scores learn from." }),
+      /* @__PURE__ */ jsx("div", { style: { display: "flex", justifyContent: "center", marginBottom: 18 }, children: /* @__PURE__ */ jsx(Stars, { value: 0, size: 34, onChange: applyNudgeRating }) }),
+      /* @__PURE__ */ jsx("button", { className: "btn btn-ghost", style: { width: "100%" }, onClick: () => setRateNudge(null), children: "Skip for now" })
+    ] }),
+    rewatchPrompt && /* @__PURE__ */ jsxs(Modal, { onClose: () => setRewatchPrompt(null), children: [
+      /* @__PURE__ */ jsx("h3", { className: "modal-title", children: "Already in your collection" }),
+      /* @__PURE__ */ jsxs("p", { className: "sync-note", style: { margin: "6px 0 14px" }, children: [
+        "You logged ",
+        rewatchPrompt.ticket.title,
+        (() => {
+          const ds = rewatchPrompt.ticket.viewings.map((v) => v.date).filter(Boolean).sort();
+          if (!ds.length) return "";
+          const d = ds[ds.length - 1];
+          return ` on ${rewatchPrompt.ticket.mediaType === "tv" && d.endsWith("-01-01") ? d.slice(0, 4) : d}`;
+        })(),
+        ". Add a rewatch instead?"
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", gap: 10 }, children: [
+        /* @__PURE__ */ jsx("button", { className: "btn btn-primary", style: { flex: 1 }, onClick: confirmRewatch, children: "Add rewatch" }),
+        /* @__PURE__ */ jsx("button", { className: "btn btn-outline", style: { flex: 1 }, onClick: () => setRewatchPrompt(null), children: "Cancel" })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx("nav", { className: "tab-bar", children: TABS.map((t) => {
+      const Icon = t.icon;
+      return /* @__PURE__ */ jsxs("button", { className: "tab-btn" + (tab === t.id ? " active" : ""), onClick: () => switchTab(t.id), children: [
+        /* @__PURE__ */ jsx(Icon, { size: 19 }),
+        /* @__PURE__ */ jsx("span", { children: t.label })
+      ] }, t.id);
+    }) }),
+    showSettings && /* @__PURE__ */ jsx(
+      SettingsPanel,
+      {
+        settings,
+        conn,
+        collection,
+        watchlist,
+        feedback,
+        onClose: () => setShowSettings(false),
+        onSave: (s) => setSettings(s),
+        onSaveConnection: (c) => {
+          updateConnection(c);
+          setShowSettings(false);
+        },
+        onImport: (data) => {
+          if (Array.isArray(data.collection)) setCollection(data.collection);
+          if (Array.isArray(data.watchlist)) setWatchlist(data.watchlist);
+          if (data.feedback && typeof data.feedback === "object") setFeedback(data.feedback);
+        },
+        onEnrich: runEnrich,
+        enrichStatus
+      }
+    ),
+    scanning && /* @__PURE__ */ jsx(
+      TicketScanner,
+      {
+        tmdb,
+        onClose: () => setScanning(false),
+        onLogNew: (it, entry) => {
+          logNew(it, entry);
+        }
+      }
+    ),
+    showFavorites && /* @__PURE__ */ jsxs(Modal, { onClose: () => setShowFavorites(false), wide: true, children: [
+      /* @__PURE__ */ jsx("h3", { className: "modal-title", children: "Favorites" }),
+      /* @__PURE__ */ jsx(FavoritesView, { collection, people, taste, crowd, tmdb, settings, onUpdateTicket: updateTicket, onAddToWatchlist: addToWatchlist, onLogNew: logNew })
+    ] })
+  ] });
+}
+function GlobalStyle() {
+  return /* @__PURE__ */ jsx("style", { children: CSS });
+}
+const CSS = `
+:root {
+  --curtain: #140a06;
+  --velvet: #211309;
+  --velvet-2: #301d0f;
+  --brass: #f5b301;
+  --brass-bright: #ffd24d;
+  --marquee-red: #ff3030;
+  --stub-cream: #f3eeec;
+  --ink: #0d0000;
+  --cream-text: #fff9f0;
+  --muted: #b09478;
+  --line: rgba(226,168,54,0.16);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+button { font-family: inherit; cursor: pointer; }
+input, textarea { font-family: inherit; }
+
+.app {
+  background: radial-gradient(ellipse at 50% -10%, #2a1f08 0%, #16100a 45%, var(--curtain) 80%);
+  color: var(--cream-text);
+  font-family: 'Inter', system-ui, sans-serif;
+  min-height: 100vh;
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.boot-screen { display:flex; align-items:center; justify-content:center; height:100vh; color: var(--brass); }
+.spin { animation: spin 1.1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.app-header {
+  display: flex; flex-direction: column; gap: 9px;
+  padding: calc(10px + env(safe-area-inset-top)) 18px 12px;
+  position: sticky; top: 0; z-index: 5;
+  background: transparent;
+}
+.header-row { display: flex; align-items: flex-end; justify-content: space-between; }
+.header-bulbs { display: flex; justify-content: space-between; padding: 0 2px; }
+.header-bulbs i { width: 8px; height: 8px; border-radius: 50%; background: #f8d97e; box-shadow: 0 0 13px 3px rgba(245,205,110,0.9); animation: bulb-glow 2.2s infinite alternate; }
+.header-bulbs i:nth-child(2n) { animation-delay: 1.1s; }
+.header-bulbs i:nth-child(3n) { animation-delay: 0.55s; }
+.header-right { display: flex; align-items: center; gap: 10px; }
+.sync-pill {
+  font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--muted); border: 1px solid var(--line); padding: 4px 9px; border-radius: 999px;
+}
+.sync-pill.sync-on { color: var(--brass); border-color: rgba(226,168,54,0.4); }
+.sync-note { font-size: 12px; color: var(--muted); line-height: 1.45; margin: 4px 0 10px; }
+.wordmark {
+  font-family: 'Bebas Neue', sans-serif; font-weight: 400; font-size: 30px; letter-spacing: 0.14em; line-height: 0.9;
+  color: var(--cream-text); text-shadow: 0 0 22px rgba(245,205,110,0.45);
+}
+.wordmark-dot { color: var(--brass); }
+
+.app-main { flex: 1; padding: 2px 14px 86px; }
+
+.tab-bar {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%) translateZ(0);
+  width: 100%; max-width: 480px;
+  display: flex; background: rgba(10,8,16,0.38); backdrop-filter: blur(18px) saturate(1.25); -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
+  z-index: 10;
+}
+.tab-btn {
+  flex: 1; background: none; border: none; color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  font-size: 10.5px; letter-spacing: 0.02em; padding: 6px 2px; border-radius: 10px;
+  transition: color 0.15s, background 0.15s;
+}
+.tab-btn.active { color: var(--brass-bright); background: rgba(226,168,54,0.14); }
+
+.view { padding-top: 4px; }
+.view-toggle { display: flex; gap: 8px; margin-bottom: 12px; }
+.collection-top-actions { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 10px; }
+.collection-icon-btn { width: 34px; height: 34px; border-radius: 10px; background: var(--velvet-2); border: 1px solid var(--line); color: var(--brass); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.collection-icon-btn:active { transform: scale(0.92); }
+.toggle-pill {
+  flex: 1; background: var(--velvet); border: 1px solid var(--line); color: var(--muted);
+  padding: 9px 0; border-radius: 999px; font-size: 13px; font-weight: 600;
+  transition: all 0.15s;
+}
+.toggle-pill.active { background: var(--brass); color: var(--ink); border-color: var(--brass); }
+
+.empty-state { text-align: center; padding: 60px 24px; color: var(--muted); }
+.empty-icon { color: var(--brass); margin-bottom: 14px; display: flex; justify-content: center; }
+.empty-title { font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 0.03em; color: var(--cream-text); margin-bottom: 8px; }
+.empty-body { font-size: 13.5px; line-height: 1.5; max-width: 280px; margin: 0 auto; }
+
+.hint-banner {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(226,168,54,0.12); border: 1px solid rgba(226,168,54,0.3);
+  color: var(--brass-bright); font-size: 12.5px; padding: 10px 12px; border-radius: 10px; margin-bottom: 14px;
+}
+
+/* ---- collection footer strip ---- */
+.collection-footer-strip {
+  position: sticky; bottom: 78px; z-index: 4;
+  display: flex; justify-content: center; align-items: center; gap: 28px;
+  padding: 11px 24px; margin: 20px auto 0; width: fit-content;
+  background: rgba(15,0,0,0.92); border: 1.5px solid rgba(255,255,255,0.28);
+  border-radius: 999px; backdrop-filter: blur(12px);
+}
+.cta-icon-btn { background: none; border: none; color: var(--cream-text); display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; letter-spacing: 0.02em; cursor: pointer; padding: 0; }
+.cta-icon-btn:active { color: var(--brass); }
+
+/* ---- ticket stub grid ---- */
+.stub-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+}
+.stub {
+  background: var(--stub-cream); border: none; border-radius: 12px; padding: 0;
+  display: flex; flex-direction: column; overflow: hidden; position: relative;
+  text-align: left; box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+  transition: transform 0.15s;
+}
+.stub:active { transform: scale(0.97); }
+.stub-poster { position: relative; aspect-ratio: 2/3; background: var(--velvet); }
+.stub-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.stub-poster-fallback { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--brass); }
+.stub-perf {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 10px;
+  background-image: radial-gradient(circle, var(--curtain) 3px, transparent 3.5px);
+  background-size: 14px 14px; background-position: 0 center;
+  background-color: var(--stub-cream);
+}
+.stub-tab { padding: 9px 10px 11px; color: var(--ink); }
+.stub-tab-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; margin-bottom: 4px; }
+.stub-title { font-size: 12.5px; font-weight: 700; line-height: 1.25;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.stub-rewatch-inline { font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; color: #8a5a2a; flex-shrink: 0; padding-top: 1px; }
+.stub-shine {
+  position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
+  background: linear-gradient(115deg, transparent, rgba(255,255,255,0.5), transparent);
+  transform: skewX(-20deg); pointer-events: none; opacity: 0; transition: opacity 0.2s;
+}
+.stub:hover .stub-shine, .stub:focus .stub-shine { opacity: 1; animation: shine 0.9s ease forwards; }
+@keyframes shine { from { left: -60%; } to { left: 130%; } }
+
+/* stars */
+.stars { display: flex; gap: 1px; position: relative; }
+.star-slot { position: relative; }
+.star-bg { color: rgba(255,255,255,0.55); position: absolute; top: 0; left: 0; }
+.star-fill { position: absolute; top: 0; left: 0; color: var(--brass-bright); overflow: hidden; }
+.star-fg { display: block; }
+.star-hit { position: absolute; top: 0; bottom: 0; width: 50%; background: none; border: none; padding: 0; }
+.star-hit-full { left: 0; right: 0; width: 100%; }
+.star-slot { margin: 0 1px; }
+
+/* watchlist stub grid */
+.wl-showtimes { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 4px 0 6px; padding: 5px 7px; background: rgba(122,74,8,0.10); border: 1px solid rgba(122,74,8,0.28); border-radius: 8px; }
+.wl-showtimes-label { font-size: 9.5px; font-weight: 700; color: #7a4a08; text-transform: uppercase; letter-spacing: 0.05em; }
+.wl-showtimes-links { display: flex; gap: 5px; }
+.wl-showtimes-links a { font-size: 10.5px; font-weight: 700; color: #7a4a08; text-decoration: none; padding: 2px 8px; border: 1px solid rgba(122,74,8,0.45); border-radius: 999px; background: rgba(255,255,255,0.55); }
+.wl-stub { background: var(--stub-cream); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; position: relative; box-shadow: 0 4px 14px rgba(0,0,0,0.3); }
+.wl-poster-btn { display: block; padding: 0; border: none; background: none; cursor: pointer; width: 100%; }
+.wl-poster { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; }
+.wl-poster-fallback { width: 100%; aspect-ratio: 2/3; background: var(--velvet-2); display: flex; align-items: center; justify-content: center; color: var(--brass); }
+.wl-tab { padding: 8px 9px 10px; color: var(--ink); }
+.wl-title { font-size: 12px; font-weight: 700; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 2px; }
+.wl-year { font-size: 10.5px; color: rgba(0,0,0,0.5); margin-bottom: 6px; }
+.wl-actions { display: flex; align-items: center; gap: 5px; }
+.stub-poster-link { display: block; width: 100%; padding: 0; border: none; background: none; cursor: pointer; }
+.stub-grid-compact .wl-watched-btn { font-size: 10px; padding: 4px 4px; }
+.stub-grid-compact .wl-remove-btn { width: 22px; height: 22px; }
+.wl-watched-btn { flex: 1; background: var(--brass); color: var(--ink); border: none; border-radius: 999px; padding: 5px 8px; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 3px; cursor: pointer; }
+.wl-remove-btn { background: rgba(0,0,0,0.1); border: none; color: rgba(0,0,0,0.5); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+
+/* watchlist badge in cards */
+.watchlist-badge { display: inline-flex; align-items: center; gap: 3px; background: rgba(74,240,144,0.2); border: 1px solid rgba(74,240,144,0.4); color: #4af090; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; flex-shrink: 0; }
+
+/* approximate date toggle */
+.approx-toggle { display: flex; gap: 6px; margin-bottom: 8px; }
+.approx-chip { flex: 1; padding: 7px 0; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--velvet-2); border: 1px solid var(--line); color: var(--muted); }
+.approx-chip-active { background: rgba(226,54,54,0.18); border-color: rgba(226,54,54,0.5); color: #ff8080; }
+.anytime-hint { font-size: 12px; color: var(--muted); background: var(--velvet-2); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; line-height: 1.4; }
+
+/* buttons */
+.btn { border-radius: 999px; padding: 10px 18px; font-size: 13.5px; font-weight: 600; border: none; display: inline-flex; align-items: center; gap: 6px; justify-content: center; }
+.btn-primary { background: var(--brass); color: var(--ink); font-weight: 700; }
+.btn-ghost { background: none; color: var(--muted); }
+.btn-outline { background: none; border: 1px solid var(--line); color: var(--cream-text); }
+.btn-sm { padding: 7px 12px; font-size: 12px; }
+.btn-danger { color: #e98b85; border-color: rgba(233,139,133,0.4); }
+.btn:disabled { opacity: 0.4; }
+.icon-btn { background: var(--velvet); border: 1px solid var(--line); color: var(--cream-text); width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.icon-btn-active { background: var(--brass); border-color: var(--brass); color: var(--ink); }
+
+/* modal */
+.modal-veil { position: fixed; inset: 0; background: rgba(10,5,9,0.72); backdrop-filter: blur(2px); display: flex; align-items: flex-end; justify-content: center; z-index: 50; cursor: pointer; }
+.modal-card { background: var(--velvet); width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto; border-radius: 20px 20px 0 0; padding: 22px 18px 28px; position: relative; }
+.modal-wide { max-height: 92vh; }
+.modal-close { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); right: 14px; z-index: 70; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.3); color: #fff; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.modal-grip { width: 44px; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.22); margin: 0 auto 14px; }
+.modal-title { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 0.02em; margin: 0 0 14px; padding-right: 30px; }
+
+/* forms */
+.field-label { display: block; font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 12px 0 6px; }
+.field-input { width: 100%; background: var(--curtain); border: 1px solid var(--line); color: var(--cream-text); padding: 10px 12px; border-radius: 10px; font-size: 16px; }
+.field-textarea { min-height: 80px; resize: vertical; }
+.form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.settings-link { color: var(--brass-bright); font-size: 12px; display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; text-decoration: none; }
+
+/* ticket detail */
+.ticket-detail { }
+/* ticket back = the reverse of the stub: cream paper, dark ink, gold accents */
+.td-back { background: var(--stub-cream); border-radius: 18px; padding: 14px; color: #241612; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+.td-back .td-hero { margin: -14px -14px 0; border-radius: 18px 18px 0 0; }
+.td-back-title { font-family: 'Bebas Neue', sans-serif; font-size: 26px; font-weight: 400; letter-spacing: 0.04em; color: #241612; margin: 0 0 4px; line-height: 1.1; }
+.td-back-genres { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.18em; color: #8a6f57; margin-bottom: 6px; }
+.td-rewatch-count { color: #8a6d1f; }
+.td-back .td-overview { color: #4a382c; }
+.td-back .td-stat { color: #8a6f57; }
+.td-back .td-stat span { color: #241612; }
+.td-back .td-cast-label { color: #8a6f57; }
+.td-back .cast-chip { background: #e7ded6; color: #3a2a20; }
+.td-back .td-reddit-btn { border-color: #cbb9a4; color: #6b4f2a; }
+.td-back .td-tool-btn { background: #fffdf9; border-color: #d8cbbd; color: #3a2a20; }
+.td-back .td-tool-btn:hover { background: #f7f1e8; }
+.td-back .td-tool-danger { color: #b3432f; border-color: rgba(179,67,47,0.4); }
+.td-back .td-tool-danger:hover { background: rgba(179,67,47,0.08); }
+.td-back .viewing-list { border-top: 2px dashed rgba(60,40,20,0.25); padding-top: 14px; }
+.td-back .viewing-row { background: #fffdf9; border: 1px solid #e4d8ca; }
+.td-back .viewing-row-new { border: 1px dashed var(--brass); }
+.td-back .viewing-date { color: #8a6d1f; }
+.td-back .viewing-loc { color: #8a6f57; }
+.td-back .viewing-notes { color: #3a2a20; }
+.td-back .icon-btn { border-color: #d8cbbd; color: #6b5a44; background: #fffdf9; }
+.td-poster-view { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.detail-poster { width: 100%; border-radius: 14px; aspect-ratio: 2/3; object-fit: cover; background: var(--curtain); }
+.detail-poster-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); }
+.td-back-header { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
+.td-thumb-btn { flex-shrink: 0; background: none; border: none; padding: 0; cursor: pointer; border-radius: 8px; overflow: hidden; }
+.td-back-thumb { width: 72px; border-radius: 8px; aspect-ratio: 2/3; object-fit: cover; display: block; }
+.td-thumb-fallback { width: 72px; aspect-ratio: 2/3; background: var(--velvet-2); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--brass); }
+.td-back-meta { flex: 1; min-width: 0; }
+.td-back-title { font-size: 18px; font-weight: 700; color: var(--cream-text); margin: 0 0 4px; line-height: 1.25; }
+.td-back-genres { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.td-rewatch-count { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--brass-bright); font-weight: 600; }
+.td-toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.td-tool-btn { display: flex; align-items: center; gap: 6px; background: var(--velvet); border: 1px solid var(--line); color: var(--cream-text); border-radius: 20px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+.td-tool-btn:hover { background: var(--velvet-2); }
+.td-tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.td-tool-danger { color: #e9695f; border-color: rgba(233,105,95,0.35); }
+.td-tool-danger:hover { background: rgba(226,54,54,0.12); }
+.flip-hint { margin-top: 12px; width: 100%; }
+.flip-hint-back { margin-top: 0; margin-bottom: 10px; }
+.detail-title { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 0.02em; margin: 0 0 4px; }
+.detail-genres { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+.detail-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+
+.viewing-list { display: flex; flex-direction: column; gap: 10px; }
+.viewing-row { background: var(--curtain); border-radius: 12px; padding: 12px; position: relative; }
+.viewing-row-new { border: 1px dashed var(--brass); }
+.viewing-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.viewing-date { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--brass-bright); }
+.viewing-loc { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.viewing-notes { font-size: 13px; line-height: 1.45; color: var(--cream-text); }
+.viewing-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; }
+.viewing-actions .icon-btn { width: 26px; height: 26px; }
+
+.edit-log { margin-top: 16px; font-size: 12px; color: var(--muted); }
+.edit-log summary { cursor: pointer; color: var(--brass-bright); }
+.edit-log-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.edit-log-time { font-family: 'Space Mono', monospace; font-size: 10.5px; flex-shrink: 0; }
+
+/* discover swipe */
+.view-discover { display: flex; flex-direction: column; align-items: center; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-x; overscroll-behavior: contain; }
+.view-discover * { user-select: none; -webkit-user-select: none; }
+.swipe-stack { touch-action: pan-x; width: 100%; max-width: 354px; height: calc(100vh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); height: calc(100dvh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; position: relative; z-index: 1; margin: 2px auto 0; border-radius: 19px; box-shadow: 0 20px 34px -14px rgba(0,0,0,0.25); }
+.swipe-card {
+  background: var(--velvet); border-radius: 18px; overflow: hidden; position: relative;
+  touch-action: none; user-select: none;
+  border: 1px solid rgba(226,54,54,0.1);
+  flex: 1; display: flex; flex-direction: column; min-height: 0;
+  transition: transform 0.24s cubic-bezier(.22,.9,.32,1);
+  --notch-y: 62%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+.swipe-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; z-index: 1; }
+.swipe-poster-blur { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(30px) brightness(0.72) saturate(1.15); transform: scale(1.3); }
+.swipe-poster-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); background: var(--velvet-2); }
+.swipe-meta { padding: 16px 18px 12px; flex-shrink: 0; background: var(--stub-cream); color: var(--ink); position: relative; }
+.swipe-title { font-family: 'Bebas Neue', sans-serif; font-weight: 400; font-size: 27px; letter-spacing: 0.02em; line-height: 1.05; margin-bottom: 5px; color: var(--ink); }
+.swipe-sub { font-family: 'Space Mono', monospace; font-weight: 700; font-size: 10px; letter-spacing: 0.18em; color: #8a5a2a; }
+.swipe-perf { border-top: 2px dashed rgba(22,8,0,0.22); margin: 13px -18px 10px; position: relative; }
+.swipe-meta .why-watch { color: #6b4213; font-style: normal; font-weight: 600; font-size: 12px; margin-top: 0; line-height: 1.45; }
+.swipe-buttons-wrap { background: var(--stub-cream); flex-shrink: 0; border-radius: 0 0 18px 18px; }
+.match-ring { position: absolute; top: 12px; right: 12px; z-index: 3; width: 72px; height: 72px; }
+.match-ring-arc { filter: drop-shadow(0 0 5px rgba(245,205,110,0.75)); }
+.match-ring-label { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; line-height: 1; }
+.match-ring-label b { font-family: 'Space Mono', monospace; font-size: 17px; text-shadow: 0 1px 6px rgba(0,0,0,0.65); }
+.match-ring-label span { font-family: 'Space Mono', monospace; font-size: 8px; font-weight: 700; letter-spacing: 0.2em; color: var(--brass-bright); margin-top: 3px; }
+.match-ring-conf { position: absolute; top: 74px; left: 0; right: 0; text-align: center; font-family: 'Space Mono', monospace; font-size: 7px; font-weight: 700; letter-spacing: 0.22em; color: rgba(255,245,245,0.75); text-shadow: 0 1px 4px rgba(0,0,0,0.7); }
+.deck-label { width: 100%; max-width: 320px; font-family: 'Space Mono', monospace; font-weight: 700; font-size: 10px; letter-spacing: 0.3em; color: var(--muted); padding: 2px 0 10px; position: relative; z-index: 1; }
+.marquee-bulbs { display: flex; justify-content: center; gap: 15px; padding: 0 0 9px; position: relative; z-index: 1; }
+.marquee-bulbs i { width: 6px; height: 6px; border-radius: 50%; background: var(--brass-bright); box-shadow: 0 0 9px 2px rgba(245,205,110,0.8); animation: bulb-glow 2.2s infinite alternate; }
+.marquee-bulbs i:nth-child(2n) { animation-delay: 1.1s; opacity: 0.6; }
+@keyframes bulb-glow { to { opacity: 0.55; box-shadow: 0 0 6px 1.5px rgba(245,205,110,0.45); } }
+.app.wash-on { background: linear-gradient(180deg, var(--wash-a, #c98f2e) 0%, var(--wash-a, #c98f2e) 24%, var(--wash-b, #503a72) 76%, var(--wash-b, #503a72) 100%); }
+.wash-fade { display: none; position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0; transition: opacity 0.65s ease; }
+.app.wash-on .wash-fade { display: block; }
+.discover-bg { position: absolute; top: -150px; right: -130px; width: 440px; height: 440px; border-radius: 50%; background-size: cover; background-position: center; filter: blur(90px) brightness(1.0) saturate(1.5); opacity: 0.65; pointer-events: none; z-index: 0; }
+.discover-bg-b { top: auto; right: auto; bottom: -120px; left: -150px; opacity: 0.45; filter: blur(90px) brightness(0.9) saturate(1.4); }
+.view-discover::after { content: none; }
+.view-discover { position: relative; overflow: hidden; background: transparent; border-radius: inherit; }
+.view-discover .discover-foot, .view-discover .logged-toast, .view-discover .view-toggle, .view-discover .deck-label, .view-discover .marquee-bulbs, .view-discover .empty-state, .view-discover .hint-banner { position: relative; z-index: 1; }
+.choice-overlay { position: absolute; inset: 0; z-index: 6; background: rgba(15,1,0,0.9); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; border-radius: 18px; animation: card-enter 0.22s cubic-bezier(.22,.9,.32,1.15); }
+.choice-title { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 0.05em; color: var(--cream-text); margin-bottom: 4px; text-align: center; padding: 0 20px; }
+.choice-btn { width: 72%; padding: 14px 0; border-radius: 14px; font-family: 'Space Mono', monospace; font-weight: 700; font-size: 12px; letter-spacing: 0.14em; border: none; cursor: pointer; transition: transform 0.14s cubic-bezier(.34,1.56,.64,1); }
+.choice-btn:active { transform: scale(0.92); }
+.choice-btn-want { background: var(--brass); color: var(--ink); box-shadow: 0 6px 20px rgba(226,168,54,0.3); }
+.choice-btn-seen { background: var(--stub-cream); color: var(--ink); }
+.choice-dismiss { background: none; border: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 4px 10px; text-decoration: underline; }
+.choice-stars { padding: 4px 0 8px; }
+.swipe-card.dragging { transition: none; }
+.swipe-buttons { display: flex; justify-content: center; align-items: center; gap: 20px; padding: 10px 0 14px; flex-shrink: 0; }
+.round-btn { width: 52px; height: 52px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; transition: transform 0.16s cubic-bezier(.34,1.56,.64,1), box-shadow 0.16s; }
+.round-btn:active { transform: scale(0.86); }
+.round-btn-skip:active { box-shadow: 0 0 0 7px rgba(80,140,220,0.22); }
+.round-btn-seen:active { box-shadow: 0 0 0 7px rgba(220,170,50,0.24); }
+.round-btn-want:active { box-shadow: 0 0 0 7px rgba(60,200,110,0.24); }
+.round-btn-skip { background: #152535; border: 1.5px solid rgba(80,140,220,0.55); color: #7ec2ff; box-shadow: 0 4px 14px rgba(80,140,220,0.18); }
+.round-btn-seen { background: #3a2200; border: 2px solid rgba(220,170,50,0.6); color: #f0c060; width: 62px; height: 62px; box-shadow: 0 4px 18px rgba(220,170,50,0.22); }
+.round-btn-want { background: #0a2818; border: 1.5px solid rgba(60,200,110,0.55); color: #6ae898; box-shadow: 0 4px 14px rgba(60,200,110,0.18); }
+.swipe-flag { position: absolute; top: 20px; font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 0.05em; padding: 6px 14px; border-radius: 6px; z-index: 3; transform: rotate(-8deg); }
+.swipe-flag-want { left: 16px; border: 3px solid #6fbf73; color: #6fbf73; }
+.swipe-flag-skip { right: 16px; border: 3px solid #e9695f; color: #e9695f; transform: rotate(8deg); }
+.swipe-glow { position: absolute; inset: 0; border-radius: 18px; pointer-events: none; z-index: 2; }
+.swipe-glow-want { box-shadow: inset 0 0 0 3px rgba(74,240,144,0.95), inset 0 0 44px rgba(74,240,144,0.4); }
+.swipe-glow-skip { box-shadow: inset 0 0 0 3px rgba(233,105,95,0.95), inset 0 0 44px rgba(233,105,95,0.4); }
+@keyframes swipe-fly-left {
+  0%   { transform: translateX(var(--fly-from, 0px)) rotate(0deg) scale(1); opacity: 1; }
+  100% { transform: translateX(-135vw) rotate(-24deg) scale(0.85); opacity: 0; }
+}
+@keyframes swipe-fly-right {
+  0%   { transform: translateX(var(--fly-from, 0px)) rotate(0deg) scale(1); opacity: 1; }
+  100% { transform: translateX(135vw) rotate(24deg) scale(0.85); opacity: 0; }
+}
+@keyframes swipe-fly-up {
+  0%   { transform: translateY(0) scale(1) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(-95vh) scale(0.6) rotate(-4deg); opacity: 0; }
+}
+.swipe-fly-left  { animation: swipe-fly-left  0.3s cubic-bezier(0.45,0,0.7,0.2) forwards; pointer-events: none; z-index: 5; }
+.swipe-fly-right { animation: swipe-fly-right 0.3s cubic-bezier(0.45,0,0.7,0.2) forwards; pointer-events: none; z-index: 5; }
+.swipe-fly-up    { animation: swipe-fly-up    0.3s cubic-bezier(0.45,0,0.7,0.2) forwards; pointer-events: none; z-index: 5; }
+
+/* tap + entrance polish (v52) */
+.btn, .icon-btn, .td-tool-btn { transition: transform 0.14s cubic-bezier(.34,1.56,.64,1), background 0.15s, box-shadow 0.15s, color 0.15s; }
+.btn:active, .icon-btn:active, .td-tool-btn:active { transform: scale(0.9); }
+@keyframes card-enter { 0% { transform: translateY(16px) scale(0.95); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
+@keyframes card-rise { 0% { transform: translateY(10px); } 100% { transform: translateY(0); } }
+.swipe-card:not(.swipe-fly-left):not(.swipe-fly-right):not(.swipe-fly-up) { animation: card-rise 0.22s cubic-bezier(.22,.9,.32,1.15); }
+@keyframes match-pop { 0% { transform: scale(0.4); opacity: 0; } 70% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+
+
+/* out now cards */
+.outnow-hero { position: relative; border-radius: 14px; overflow: hidden; cursor: pointer; }
+.outnow-hero-img { width: 100%; aspect-ratio: 16/7; object-fit: cover; display: block; background: var(--velvet-2); }
+.outnow-hero-blank { display: flex; align-items: center; justify-content: center; background: var(--velvet-2); color: var(--brass); }
+.outnow-hero-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 24px 12px 10px; background: linear-gradient(to top, rgba(10,5,9,0.95) 30%, rgba(10,5,9,0.45) 65%, transparent); }
+.outnow-hero-top { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; margin-bottom: 3px; }
+.outnow-hero-title { font-size: 16px; font-weight: 800; color: var(--cream-text); line-height: 1.2; margin-bottom: 2px; }
+.outnow-hero-title-sm { font-size: 14px; }
+.outnow-hero-genres { font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 4px; }
+.outnow-save-btn { position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; border-radius: 50%; background: rgba(10,5,9,0.65); border: 1px solid rgba(255,255,255,0.25); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; backdrop-filter: blur(6px); }
+.outnow-save-btn-active { background: rgba(226,168,54,0.85) !important; border-color: var(--brass) !important; color: var(--ink) !important; }
+.outnow-seen-btn { position: absolute; top: 10px; right: 50px; width: 32px; height: 32px; border-radius: 50%; background: rgba(10,5,9,0.65); border: 1px solid rgba(255,255,255,0.25); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; backdrop-filter: blur(6px); }
+.outnow-seen-btn:active { transform: scale(0.9); }
+.outnow-all-heroes { display: flex; flex-direction: column; gap: 8px; }
+.outnow-zip-row { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.zip-tap { background: none; border: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 0; text-align: left; }
+.zip-tap:hover { color: var(--cream-text); }
+.zip-tap strong { color: var(--cream-text); }
+.zip-input { background: var(--velvet-2); border: 1px solid var(--line); color: var(--cream-text); border-radius: 6px; padding: 3px 7px; font-size: 16px; width: 100px; }
+.zip-save-btn { background: var(--brass); border: none; color: var(--ink); border-radius: 6px; padding: 3px 9px; font-size: 11px; cursor: pointer; }
+.zip-cancel-btn { background: none; border: none; color: var(--muted); font-size: 13px; cursor: pointer; padding: 0 2px; }
+
+/* td stats + cast */
+.td-stats { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 10px 0 12px; }
+.td-stat { font-size: 12px; color: var(--muted); }
+.td-stat span { color: var(--cream-text); font-weight: 600; margin-right: 4px; }
+.td-cast-section { margin-bottom: 12px; }
+.td-cast-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; }
+.td-cast-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.td-reddit-btn { display: inline-flex; margin-bottom: 12px; }
+
+/* ticket detail hero */
+.td-hero { position: relative; border-radius: 14px; overflow: hidden; margin-bottom: 0; cursor: pointer; }
+.td-hero-img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
+.td-hero-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 32px 14px 14px; background: linear-gradient(to top, rgba(10,5,9,0.95) 40%, transparent); }
+.td-hero-title { font-size: 20px; font-weight: 800; color: var(--cream-text); line-height: 1.2; margin-bottom: 3px; }
+.td-hero-genres { font-size: 12px; color: rgba(255,255,255,0.55); }
+.td-overview { font-size: 13px; color: var(--muted); line-height: 1.55; margin: 12px 0 4px; }
+
+/* suggestions / search / coming soon shared rows */
+.suggest-list, .coming-list { display: flex; flex-direction: column; gap: 10px; }
+.suggest-row, .coming-row { display: flex; gap: 12px; background: var(--velvet); border-radius: 12px; padding: 10px 12px; position: relative; cursor: pointer; }
+.suggest-thumb, .coming-thumb { width: 46px; height: 69px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: var(--velvet-2); }
+.suggest-thumb-fallback, .coming-thumb-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); }
+.suggest-info, .coming-info { flex: 1; min-width: 0; }
+.suggest-title, .coming-title { font-weight: 600; font-size: 13.5px; margin-bottom: 2px; }
+.suggest-genres { color: var(--muted); font-size: 11.5px; margin-bottom: 6px; }
+.coming-date { color: var(--brass-bright); font-size: 11.5px; font-family: 'Space Mono', monospace; margin-bottom: 6px; }
+.suggest-links { display: flex; gap: 6px; flex-wrap: wrap; }
+.link-pill { font-size: 10.5px; color: var(--cream-text); background: var(--velvet-2); padding: 3px 9px; border-radius: 999px; text-decoration: none; }
+.suggest-actions { display: flex; flex-direction: column; gap: 5px; justify-content: center; align-items: center; }
+.quick-rate { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 2px 0; }
+.quick-rate-label { font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; color: var(--muted); }
+.quick-rate .stars { direction: ltr; }
+.quick-rate-more { background: none; border: none; color: var(--muted); font-size: 10px; text-decoration: underline; padding: 1px 2px; cursor: pointer; }
+.logged-mark { color: var(--brass-bright); font-size: 11px; font-weight: 700; display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+.icon-btn.logged-owned { color: var(--brass-bright); background: rgba(245,179,1,0.14); border-color: rgba(245,179,1,0.4); }
+
+/* search bar */
+.search-bar { display: flex; align-items: center; gap: 8px; background: var(--velvet); border-radius: 999px; padding: 10px 16px; margin-bottom: 16px; color: var(--muted); }
+.search-input { flex: 1; background: none; border: none; color: var(--cream-text); font-size: 16px; outline: none; }
+
+/* onboarding */
+.onboarding { flex: 1; display: flex; align-items: center; justify-content: center; padding: 30px; }
+.onboarding-card { text-align: center; max-width: 320px; }
+.onboarding-icon { color: var(--brass); margin-bottom: 14px; }
+.onboarding-title { font-family: 'Bebas Neue', sans-serif; font-size: 32px; letter-spacing: 0.04em; color: var(--cream-text); margin: 0 0 10px; }
+.onboarding-body { font-size: 13.5px; color: var(--muted); line-height: 1.5; margin-bottom: 10px; }
+
+/* ---- new feature styles ---- */
+
+/* imdb rating + streaming providers */
+.imdb-badge { font-size: 9.5px; font-weight: 700; color: #f5c518; border: 1px solid rgba(245,197,24,0.5); padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+.link-pill-stream { background: var(--brass); color: var(--ink); border-color: var(--brass); }
+.detail-imdb { margin: 6px 0; }
+
+/* compact collection grid: smaller posters, 3 across */
+.stub-grid-compact { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stub-grid-compact .stub-title { font-size: 11px; }
+.stub-grid-compact .stub-tab { padding: 7px 8px 9px; }
+
+/* collection controls */
+.collection-controls { margin-bottom: 14px; }
+.collection-search { margin-bottom: 10px; }
+.filter-row { display: flex; gap: 8px; }
+.filter-select {
+  flex: 1; background: var(--velvet); border: 1px solid var(--line); color: var(--cream-text);
+  padding: 9px 10px; border-radius: 10px; font-size: 12.5px; appearance: none;
+}
+.scan-btn {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;
+  background: rgba(226,54,54,0.1); border: 1px dashed rgba(226,54,54,0.4); color: #ff6b6b;
+  padding: 11px; border-radius: 12px; font-size: 13px; font-weight: 600; margin-bottom: 16px;
+}
+
+/* tappable watchlist row */
+.watch-tap { display: flex; align-items: center; gap: 12px; background: none; border: none; padding: 0; flex: 1; min-width: 0; text-align: left; color: inherit; }
+
+/* detail modal */
+.detail-modal { padding-top: 4px; }
+.detail-head { display: flex; gap: 14px; margin-bottom: 16px; }
+.detail-head-poster { width: 92px; height: 138px; border-radius: 10px; object-fit: cover; flex-shrink: 0; background: var(--velvet-2); }
+.detail-head-info { flex: 1; min-width: 0; }
+.detail-loading { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; padding: 14px 0; }
+.detail-body { margin-bottom: 16px; }
+.detail-facts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.detail-facts > div { font-size: 13px; color: var(--cream-text); display: flex; gap: 8px; }
+.detail-facts span { color: var(--muted); min-width: 72px; display: inline-block; }
+.detail-cast-label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+.detail-cast-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.cast-chip { font-size: 11.5px; background: var(--velvet-2); color: var(--cream-text); padding: 4px 9px; border-radius: 999px; }
+.detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* badges */
+.badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.badge { font-size: 10.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px; letter-spacing: 0.02em; }
+.badge-director { background: rgba(226,54,54,0.18); color: #ff8080; }
+.badge-actor { background: rgba(226,168,54,0.18); color: var(--brass-bright); }
+.badge-genre { background: rgba(226,54,54,0.12); color: #ff9a9a; }
+
+/* match scores */
+.match-badge { position: absolute; top: 14px; right: 14px; z-index: 3; font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; backdrop-filter: blur(8px); }
+.match-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex-shrink: 0; }
+.zip-banner { display: flex; align-items: center; gap: 8px; background: var(--velvet); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
+.zip-banner-set { padding: 7px 12px; }
+.zip-banner-set b { color: var(--cream-text); }
+.zip-input { flex: 1; background: var(--ink); border: 1px solid var(--line); border-radius: 8px; color: var(--cream-text); padding: 7px 10px; font-size: 14px; min-width: 0; }
+.zip-input:focus { outline: none; border-color: var(--brass); }
+.zip-change { background: none; border: none; color: var(--brass-bright); font-size: 11px; text-decoration: underline; cursor: pointer; padding: 2px 4px; margin-left: auto; }
+.detail-score { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.detail-score-conf { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.detail-score-aud { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-bright); }
+.match-ring-btn { position: absolute; top: 12px; right: 12px; z-index: 4; background: none; border: none; padding: 0; cursor: pointer; }
+.match-ring-btn .match-ring { position: static; }
+.ring-info-overlay { position: fixed; inset: 0; z-index: 120; background: rgba(10,2,2,0.7); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.ring-info-card { background: var(--velvet); border: 1px solid var(--line); border-radius: 16px; padding: 20px; max-width: 320px; color: var(--cream-text); font-size: 14px; line-height: 1.5; }
+.ring-info-title { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 0.04em; color: var(--brass-bright); margin-bottom: 8px; }
+.ring-info-legend { font-size: 12px; }
+.ring-info-conf { font-size: 12px; color: var(--muted); }
+.ring-info-card .btn { margin-top: 10px; width: 100%; }
+.ring-info-lines { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 10px; }
+.ring-info-line { font-size: 13px; line-height: 1.45; color: var(--cream-text); padding-left: 13px; position: relative; }
+.ring-info-line::before { content: ""; position: absolute; left: 0; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--brass); }
+.stub-rate-badge { position: absolute; top: 5px; right: 5px; width: 34px; height: 34px; z-index: 3; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6)); }
+.stub-rate-star { fill: var(--brass); color: var(--brass); }
+.stub-rate-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; margin-top: 3px; font-family: 'Space Mono', monospace; font-size: 9.5px; font-weight: 700; color: #1c1206; letter-spacing: -0.02em; }
+.wl-unreleased { flex: 1; background: rgba(255,255,255,0.08); color: var(--muted); border-radius: 999px; padding: 5px 8px; font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }
+.season-group-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 14px 0 4px; }
+button.suggest-row-btn { width: 100%; text-align: left; border: none; font: inherit; color: inherit; }
+button.suggest-row-btn:active { transform: scale(0.99); }
+.logged-undo { background: none; border: none; color: var(--muted); cursor: pointer; padding: 2px; display: inline-flex; align-items: center; margin-left: 4px; }
+.logged-undo:active { color: var(--brass-bright); }
+.match-high { background: rgba(34,150,86,0.88); color: #eafff3; border: 1px solid rgba(120,240,170,0.9); }
+.match-seen { background: rgba(196,140,40,0.92); color: #fff6e6; border: 1px solid rgba(240,200,120,0.9); display: inline-flex; align-items: center; }
+.avail-tag { position: absolute; top: 10px; left: 10px; z-index: 3; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 999px; backdrop-filter: blur(6px); }
+.avail-theaters { background: rgba(226,54,54,0.85); color: #fff; border: 1px solid rgba(255,150,150,0.55); }
+.avail-streaming { background: rgba(38,38,46,0.82); color: #cfd6e4; border: 1px solid rgba(150,160,180,0.45); }
+.match-mid { background: rgba(198,140,30,0.9); color: #fff7e6; border: 1px solid rgba(245,204,106,0.95); }
+.match-low { background: rgba(90,80,80,0.9); color: #ffffff; border: 1px solid rgba(210,200,200,0.7); }
+
+/* swipe poster tap */
+.swipe-poster-btn { display: block; width: 100%; padding: 0; border: none; background: none; position: relative; cursor: pointer; flex: 1 1 0; min-height: 0; overflow: hidden; }
+.discover-foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 12px; }
+.discover-foot-bottom { margin-top: 10px; margin-bottom: 0; }
+
+/* suggestion rows */
+.suggest-thumb-btn, .coming-thumb-btn { padding: 0; border: none; background: none; flex-shrink: 0; cursor: pointer; }
+.suggest-title-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.suggest-title-btn { background: none; border: none; color: var(--cream-text); font-weight: 600; font-size: 13.5px; padding: 0; text-align: left; cursor: pointer; }
+
+/* choice grid */
+.choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.choice-grid .btn { width: 100%; }
+
+/* favorites tab */
+.fav-section { margin-bottom: 22px; }
+.fav-section-title { font-family: 'Bebas Neue', sans-serif; font-size: 17px; letter-spacing: 0.03em; color: var(--cream-text); margin-bottom: 10px; }
+.fav-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.fav-chip { font-size: 13px; background: var(--velvet); border: 1px solid var(--line); color: var(--cream-text); padding: 7px 12px; border-radius: 999px; }
+.fav-chip-btn { cursor: pointer; font-family: inherit; }
+.fav-chip-btn:active { background: var(--brass); color: var(--ink); }
+.fav-poster-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.fav-poster { width: 72px; flex-shrink: 0; }
+.fav-poster img { width: 72px; height: 108px; border-radius: 8px; object-fit: cover; }
+.fav-poster-fallback { width: 72px; height: 108px; border-radius: 8px; background: var(--velvet-2); display: flex; align-items: center; justify-content: center; color: var(--brass); }
+
+/* coming soon chips + notes */
+.chip-scroll { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 6px; }
+.chip { flex-shrink: 0; background: var(--velvet); border: 1px solid var(--line); color: var(--muted); padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.chip-active { background: var(--brass); color: var(--ink); border-color: var(--brass); }
+.proactive-note { font-size: 11.5px; margin: 6px 0; padding: 5px 9px; border-radius: 8px; line-height: 1.35; }
+.note-hot { background: rgba(47,184,107,0.12); color: #5fd99a; }
+.note-stretch { background: rgba(226,168,54,0.12); color: var(--brass-bright); }
+.note-cool { background: rgba(154,138,138,0.1); color: var(--muted); }
+
+/* why watch this */
+.why-watch {
+  font-size: 12px; color: var(--brass-bright); font-style: italic;
+  margin-top: 5px; line-height: 1.4;
+}
+
+/* logged toast */
+.logged-toast {
+  display: flex; align-items: center; gap: 8px;
+  position: fixed; left: 16px; right: 16px; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); z-index: 55;
+  background: rgba(14,20,12,0.92); border: 1px solid rgba(34,197,94,0.4);
+  border-radius: 10px; padding: 8px 12px; margin: 0;
+  font-size: 13px; color: var(--cream-text);
+  backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+}
+.logged-toast a { color: var(--brass-bright); text-decoration: none; display: flex; align-items: center; gap: 4px; font-weight: 600; }
+.toast-close { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0; display: flex; align-items: center; margin-left: auto; }
+
+/* year in review */
+.yir-wrap { padding: 8px 0 4px; }
+.yir-card {
+  background: var(--curtain); border: 2px solid var(--line); border-radius: 20px;
+  padding: 32px 24px; text-align: center; margin-bottom: 20px; min-height: 220px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+}
+.yir-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.7; }
+.yir-big { font-family: 'Bebas Neue', sans-serif; font-size: 42px; letter-spacing: 0.03em; line-height: 1; }
+.yir-sub { font-size: 14px; color: var(--muted); }
+.yir-poster { width: 80px; border-radius: 8px; }
+.yir-dots { display: flex; justify-content: center; gap: 8px; margin-bottom: 16px; }
+.yir-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--velvet); border: 1px solid var(--line); padding: 0; }
+.yir-dot-active { background: var(--brass); border-color: var(--brass); }
+.yir-nav { display: flex; justify-content: space-between; gap: 10px; }
+.yir-nav .btn { flex: 1; }
+
+/* where presets */
+.where-presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+.where-chip {
+  background: var(--velvet); border: 1px solid var(--line); color: var(--muted);
+  padding: 7px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
+}
+.where-chip-active { background: var(--brass); color: var(--ink); border-color: var(--brass); }
+
+/* ticket scanner */
+.scan-candidates { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+.scan-cand { display: flex; align-items: center; gap: 10px; background: var(--velvet); border: 1px solid var(--line); border-radius: 10px; padding: 8px; color: var(--cream-text); text-align: left; font-size: 13px; }
+.scan-cand img { width: 36px; height: 54px; border-radius: 5px; object-fit: cover; }
+.scan-cand-fallback { width: 36px; height: 54px; border-radius: 5px; background: var(--velvet-2); display: flex; align-items: center; justify-content: center; color: var(--brass); }
+.scan-cand-active { border-color: var(--brass); background: rgba(226,168,54,0.1); }
+.scan-raw { font-size: 10.5px; color: var(--muted); white-space: pre-wrap; max-height: 140px; overflow-y: auto; font-family: 'Space Mono', monospace; }
+
+/* action burst animation */
+.burst-overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 100; }
+.burst-icon { animation: burstPop 0.9s cubic-bezier(.18,.85,.32,1) forwards; }
+.burst-collect { color: var(--brass-bright); filter: drop-shadow(0 0 18px rgba(245,205,110,0.7)); }
+.burst-want { color: #4af090; filter: drop-shadow(0 0 18px rgba(74,240,144,0.7)); }
+@keyframes burstPop {
+  0%   { transform: scale(0.1) rotate(-20deg); opacity: 0; }
+  18%  { transform: scale(1.55) rotate(6deg); opacity: 1; }
+  40%  { transform: scale(1.15) rotate(-2deg); opacity: 1; }
+  60%  { transform: scale(1.05) rotate(0deg); opacity: 1; }
+  80%  { transform: scale(0.95) translateY(-20px); opacity: 0.7; }
+  100% { transform: scale(0.7) translateY(-60px); opacity: 0; }
+}
+
+/* ---- desktop layout (v54, audit A) ---- */
+@media (min-width: 768px) {
+  .app { max-width: 1060px; }
+  .app-main { padding: 8px 28px 116px; }
+  .tab-bar { max-width: 620px; bottom: 18px; border: 1px solid var(--line); border-radius: 22px; padding: 10px 8px; box-shadow: 0 14px 44px rgba(0,0,0,0.55); background: rgba(10,8,16,0.38); backdrop-filter: blur(18px) saturate(1.25); -webkit-backdrop-filter: blur(18px) saturate(1.25); }
+  .tab-btn { border-radius: 14px; }
+  .stub-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 18px; }
+  .stub-grid-compact { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .modal-veil { align-items: center; }
+  .modal-card { max-width: 560px; border-radius: 20px; max-height: 84vh; }
+  .modal-wide { max-width: 860px; }
+  .outnow-hero-img { aspect-ratio: 16/6; }
+  .swipe-stack { max-width: 380px; }
+  .empty-body { max-width: 340px; }
+  .onboarding-card { max-width: 400px; }
+}
+@media (min-width: 1200px) {
+  .app { max-width: 1240px; }
+  .stub-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .stub-grid-compact { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .burst-icon { animation: none !important; }
+  .stub-shine, .spin, .flip-stage { animation: none !important; transition: none !important; }
+  .swipe-fly-left, .swipe-fly-right, .swipe-fly-up { animation-duration: 0.12s !important; }
+  .swipe-glow { display: none !important; }
+}
+`;
+createRoot(document.getElementById("root")).render(/* @__PURE__ */ jsx(App, {}));
+export {
+  App as default
+};
