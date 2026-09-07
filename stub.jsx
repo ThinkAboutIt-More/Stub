@@ -1034,7 +1034,7 @@ function LogForm({ initial, onSave, onCancel, saveLabel, mediaType, tmdb, item }
    TICKET STUB, the collectible card
 --------------------------------------------------------- */
 
-function TicketStub({ ticket, onOpen }) {
+const TicketStub = React.memo(function TicketStub({ ticket, onOpen }) {
   const last = ticket.viewings[ticket.viewings.length - 1];
   return (
     <button className="stub" onClick={() => onOpen(ticket)}>
@@ -1065,13 +1065,13 @@ function TicketStub({ ticket, onOpen }) {
       <span className="stub-shine" />
     </button>
   );
-}
+});
 
 /* ---------------------------------------------------------
    WISHLIST STUB  — grid card for items saved but not watched
 ---------------------------------------------------------*/
 
-function WatchlistStub({ item, onClick, onLog, inTheaters }) {
+const WatchlistStub = React.memo(function WatchlistStub({ item, onClick, onLog, inTheaters }) {
   const unreleased = item.releaseDate
     ? item.releaseDate > todayISO()
     : (item.year && Number(item.year) > new Date().getFullYear());
@@ -1112,13 +1112,86 @@ function WatchlistStub({ item, onClick, onLog, inTheaters }) {
       <span className="stub-shine" />
     </div>
   );
-}
+});
+
+/* ---------------------------------------------------------
+   RATED STUB - ratings browser card with inline star adjust
+---------------------------------------------------------*/
+
+const RatedStub = React.memo(function RatedStub({ ticket, onRate }) {
+  const [editing, setEditing] = useState(false);
+  const last = ticket.viewings[ticket.viewings.length - 1];
+  return (
+    <div className="stub">
+      <button className="stub-poster-link" onClick={() => setEditing((e) => !e)} aria-label={`Adjust rating for ${ticket.title}`}>
+        <div className="stub-poster">
+          {ticket.posterPath ? (
+            <img src={tmdbImg(ticket.posterPath, "w342")} alt="" loading="lazy" />
+          ) : (
+            <div className="stub-poster-fallback">
+              {ticket.mediaType === "tv" ? <Tv size={28} /> : <Film size={28} />}
+            </div>
+          )}
+          {last.rating != null && last.rating > 0 && (
+            <div className="stub-rate-badge" aria-label={`Rated ${last.rating} out of 10`}>
+              <Star size={34} strokeWidth={1} className="stub-rate-star" />
+              <span className="stub-rate-num">{last.rating % 1 ? last.rating.toFixed(1) : last.rating}</span>
+            </div>
+          )}
+          <div className="stub-perf" />
+        </div>
+      </button>
+      <div className="stub-tab">
+        <div className="stub-tab-top">
+          <div className="stub-title">{ticket.title}</div>
+          {ticket.viewings.length > 1 && (
+            <div className="stub-rewatch-inline">{ticket.viewings.length}×</div>
+          )}
+        </div>
+      </div>
+      {editing && (
+        <div className="rated-stub-editor">
+          <Stars value={last.rating || 0} size={22} onChange={(n) => onRate(ticket, n)} />
+        </div>
+      )}
+      <span className="stub-shine" />
+    </div>
+  );
+});
 
 /* ---------------------------------------------------------
    TICKET DETAIL, flip card with history, edit, undo
 --------------------------------------------------------- */
 
-function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
+function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings, taste, people, collection, watchlist, onAddToWatchlist }) {
+  const lastViewing = ticket.viewings[ticket.viewings.length - 1];
+  const isRated = !!(lastViewing && lastViewing.rating > 0);
+  const [topFive, setTopFive] = useState(null);
+  useEffect(() => {
+    if (!isRated || !tmdb || !ticket.tmdbId) return undefined;
+    let active = true;
+    (async () => {
+      try {
+        const recs = await tmdb.recommendations(ticket.mediaType, ticket.tmdbId).catch(() => ({ results: [] }));
+        let all = (recs.results || []).map(normalize).filter((x) => !isJunkTv(x));
+        const owned = new Set([
+          ...(collection || []).map((c) => c.tmdbId + c.mediaType),
+          ...(watchlist || []).map((w) => w.tmdbId + w.mediaType),
+        ]);
+        const self = ticket.tmdbId + ticket.mediaType;
+        all = all.filter((x) => x.tmdbId + x.mediaType !== self && !owned.has(x.tmdbId + x.mediaType));
+        const crowd = learnCrowdWeight(collection || []);
+        const scored = all.map((x) => { const m = matchMeta(x, taste, people, crowd); return { ...x, _pct: m.pct }; });
+        scored.sort((a, b) => (b._pct || 50) - (a._pct || 50));
+        if (active) setTopFive(scored.slice(0, 5));
+      } catch {
+        if (active) setTopFive([]);
+      }
+    })();
+    return () => { active = false; };
+    // eslint-disable-next-line
+  }, [ticket.tmdbId, isRated]);
+  const [savedFive, setSavedFive] = useState(() => new Set());
   const [showPoster, setShowPoster] = useState(false);
   const [editingViewingId, setEditingViewingId] = useState(null);
   const [logging, setLogging] = useState(false);
@@ -1352,6 +1425,35 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
                 </div>
               )}
             </div>
+
+            {isRated && topFive && topFive.length > 0 && (
+              <div className="top-five">
+                <div className="top-five-label">Top five for you</div>
+                <div className="top-five-sub">Picked by your match engine from titles related to this one.</div>
+                {topFive.map((x) => (
+                  <div className="top-five-row" key={x.tmdbId + x.mediaType}>
+                    {x.posterPath ? (
+                      <img className="top-five-thumb" src={tmdbImg(x.posterPath, "w92")} alt="" loading="lazy" />
+                    ) : (
+                      <div className="top-five-thumb top-five-thumb-fallback"><Film size={16} /></div>
+                    )}
+                    <div className="top-five-info">
+                      <div className="top-five-name">{x.title}</div>
+                      <div className="top-five-meta">{x.year || ""}{x._pct != null ? ` · ${x._pct}% match` : ""}</div>
+                    </div>
+                    {onAddToWatchlist && (
+                      savedFive.has(x.tmdbId + x.mediaType) ? (
+                        <span className="top-five-saved"><Bookmark size={14} fill="currentColor" /></span>
+                      ) : (
+                        <button className="icon-btn" aria-label={`Save ${x.title} to watchlist`} onClick={() => { onAddToWatchlist(x); setSavedFive((s) => new Set([...s, x.tmdbId + x.mediaType])); }}>
+                          <Bookmark size={14} />
+                        </button>
+                      )
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1542,6 +1644,27 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
   const [wlQuery, setWlQuery] = useState("");
   const [wlGenre, setWlGenre] = useState("all");
   const [wlSort, setWlSort] = useState("added");
+  const openTicket = useCallback((t) => setOpen(t), []);
+  const openWlDetail = useCallback((w) => setDetail(w), []);
+  const [ratingFilter, setRatingFilter] = useState("all");
+  const ratingOptions = useMemo(() => {
+    const vals = new Set();
+    collection.forEach((c) => {
+      const r = c.viewings.length ? c.viewings[c.viewings.length - 1].rating : 0;
+      if (r) vals.add(r);
+    });
+    return Array.from(vals).sort((a, b) => b - a);
+  }, [collection]);
+  const adjustRating = useCallback((ticket, n) => {
+    const lastV = ticket.viewings[ticket.viewings.length - 1];
+    if (!lastV) return;
+    onUpdateTicket({
+      ...ticket,
+      viewings: ticket.viewings.map((v) => (v.id === lastV.id ? { ...v, rating: n } : v)),
+      log: [...(ticket.log || []), { at: Date.now(), text: `Rated it ${n}/10` }],
+    });
+  }, [onUpdateTicket]);
+  const logWl = useCallback((w) => setLoggingWl(w), []);
 
   // opening-night mode: a wishlist title that's playing in theaters gets
   // showtimes links (near the saved zip) right on its card.
@@ -1605,6 +1728,9 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
     if (yearFilter !== "all") {
       list = list.filter((c) => c.year === yearFilter);
     }
+    if (ratingFilter !== "all") {
+      list = list.filter((c) => (c.viewings[c.viewings.length - 1].rating || 0) === Number(ratingFilter));
+    }
     const lastDate = (t) => t.viewings[t.viewings.length - 1].date || "";
     const lastRating = (t) => t.viewings[t.viewings.length - 1].rating || 0;
     list.sort((a, b) => {
@@ -1615,7 +1741,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
       return 0;
     });
     return list;
-  }, [collection, query, genreFilter, sort, yearFilter]);
+  }, [collection, query, genreFilter, sort, yearFilter, ratingFilter]);
 
   if (open) {
     return (
@@ -1623,6 +1749,11 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
         ticket={open}
         tmdb={tmdb}
         settings={settings}
+        taste={taste}
+        people={people}
+        collection={collection}
+        watchlist={watchlist}
+        onAddToWatchlist={onAddToWatchlist}
         onClose={() => setOpen(null)}
         onUpdate={(t) => { onUpdateTicket(t); setOpen(t); }}
         onDelete={(id) => { onDeleteTicket(id); setOpen(null); }}
@@ -1696,6 +1827,16 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
                     ))}
                   </select>
                 </div>
+                {ratingOptions.length > 0 && (
+                  <div className="rating-chip-row">
+                    <button className={ratingFilter === "all" ? "rating-chip active" : "rating-chip"} onClick={() => setRatingFilter("all")}>All ratings</button>
+                    {ratingOptions.map((r) => (
+                      <button key={r} className={ratingFilter === String(r) ? "rating-chip active" : "rating-chip"} onClick={() => setRatingFilter(String(r))}>
+                        <Star size={11} fill="currentColor" strokeWidth={1.5} /> {r % 1 ? r.toFixed(1) : r}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             {visibleCollection.length === 0 ? (
@@ -1703,7 +1844,9 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
             ) : (
               <div className="stub-grid stub-grid-compact">
                 {visibleCollection.map((t) => (
-                  <TicketStub ticket={t} key={t.id} onOpen={setOpen} />
+                  ratingFilter === "all"
+                    ? <TicketStub ticket={t} key={t.id} onOpen={openTicket} />
+                    : <RatedStub ticket={t} key={t.id} onRate={adjustRating} />
                 ))}
               </div>
             )}
@@ -1770,8 +1913,8 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
                     key={w.tmdbId + w.mediaType}
                     item={w}
                     inTheaters={w.mediaType !== "tv" && nowPlayingIds.has(w.tmdbId)}
-                    onClick={() => setDetail(w)}
-                    onLog={() => setLoggingWl(w)}
+                    onClick={openWlDetail}
+                    onLog={logWl}
                   />
                 ))}
               </div>
@@ -2037,7 +2180,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "106";
+const APP_VERSION = "108";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -3364,17 +3507,26 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
       </div>
 
       {outTab === "theaters" && onSaveSettings && (
-        <ZipBanner settings={settings} onSaveSettings={onSaveSettings} />
+        <div className="outnow-filter-row">
+          <ZipBanner settings={settings} onSaveSettings={onSaveSettings} />
+          <select className="filter-select outnow-genre-select" value={genreFilter} onChange={(e) => setGenreFilter(e.target.value)} aria-label="Filter by genre">
+            <option value="all">All genres</option>
+            {genreOpts.map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        </div>
       )}
-
-      <div className="filter-row" style={{ marginBottom: 12 }}>
-        <select className="filter-select" value={genreFilter} onChange={(e) => setGenreFilter(e.target.value)} aria-label="Filter by genre">
-          <option value="all">All genres</option>
-          {genreOpts.map((g) => (
-            <option key={g.id} value={g.id}>{g.name}</option>
-          ))}
-        </select>
-      </div>
+      {outTab === "streaming" && (
+        <div className="outnow-filter-row">
+          <select className="filter-select outnow-genre-select" value={genreFilter} onChange={(e) => setGenreFilter(e.target.value)} aria-label="Filter by genre">
+            <option value="all">All genres</option>
+            {genreOpts.map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
 
       {outTab === "theaters" && loading && <EmptyState icon={<RefreshCw size={32} className="spin" />} title="Loading theaters" body="Pulling what's playing right now." />}
@@ -3446,25 +3598,63 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
   }, [query]);
   useEffect(() => { if (searchRef.current) searchRef.current.focus(); }, []);
 
-  // person search: "Idris Elba" isn't a title, it's a filmography request.
-  // Resolve the name to a TMDB person (all query tokens must appear in the
-  // name, so "Dune" never matches "Dunaway"), then pull their movie credits.
-  async function personFilmography(q) {
+  // person search: "Idris Elba" isn't a title, it's a filmography request -
+  // and "Idris Elba Tilda Swinton" is two. Tokenize left to right, greedily
+  // matching the longest window that resolves to a real person (all window
+  // tokens must appear in the name, so "Dune" never matches "Dunaway").
+  // With 2+ people, shared credits rank first: that's "their movie together".
+  async function resolvePeople(q) {
     const toks = q.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
-    if (toks.length < 1) return null;
-    let people;
-    try { people = (await tmdb.searchPerson(q)).results || []; } catch { return null; }
-    const person = people.find((p) => {
-      const nt = (p.name || "").toLowerCase().split(/\s+/);
-      return toks.every((t) => nt.includes(t));
+    if (!toks.length) return null;
+    const people = [];
+    let i = 0;
+    while (i < toks.length) {
+      let found = null, foundLen = 0;
+      for (let len = Math.min(4, toks.length - i); len >= 1; len--) {
+        const win = toks.slice(i, i + len).join(" ");
+        let res;
+        try { res = (await tmdb.searchPerson(win)).results || []; } catch { res = []; }
+        const p = res.find((x) => {
+          const nt = (x.name || "").toLowerCase().split(/\s+/);
+          return toks.slice(i, i + len).every((t) => nt.includes(t));
+        });
+        if (p) { found = p; foundLen = len; break; }
+      }
+      if (!found) return null; // some token isn't a person - not a person query
+      if (!people.some((x) => x.id === found.id)) people.push(found);
+      i += foundLen;
+    }
+    return people.length ? people : null;
+  }
+
+  async function personFilmography(q) {
+    const people = await resolvePeople(q);
+    if (!people || !people.length) return null;
+    const creditsLists = await Promise.all(people.map((p) => tmdb.personMovieCredits(p.id).catch(() => null)));
+    const filmLists = creditsLists.map((cr) => {
+      if (!cr) return [];
+      const mine = [...(cr.cast || []), ...(cr.crew || []).filter((c) => c.job === "Director")];
+      const dedup = Array.from(new Map(mine.map((m) => [m.id, m])).values());
+      return dedup.map(normalize).filter((x) => x.title && x.posterPath && x.voteCount > 0);
     });
-    if (!person) return null;
-    const cr = await tmdb.personMovieCredits(person.id).catch(() => null);
-    if (!cr) return null;
-    const mine = [...(cr.cast || []), ...(cr.crew || []).filter((c) => c.job === "Director")];
-    const dedup = Array.from(new Map(mine.map((m) => [m.id, m])).values());
-    const items = dedup.map(normalize).filter((x) => x.title && x.posterPath && x.voteCount > 0);
-    return { person, items };
+    let shared = [], rest = [];
+    if (filmLists.length >= 2) {
+      const counts = new Map();
+      filmLists.forEach((list) => list.forEach((it) => {
+        const c = counts.get(it.tmdbId) || { item: it, n: 0 };
+        c.n += 1;
+        counts.set(it.tmdbId, c);
+      }));
+      shared = [...counts.values()].filter((c) => c.n === filmLists.length).map((c) => c.item);
+      rest = [...counts.values()].filter((c) => c.n < filmLists.length).map((c) => c.item);
+    } else {
+      rest = filmLists[0] || [];
+    }
+    // fame order within each group: person searches are "find their movies"
+    const byVotes = (a, b) => (b.voteCount || 0) - (a.voteCount || 0);
+    shared.sort(byVotes);
+    rest.sort(byVotes);
+    return { people, items: [...shared, ...rest], sharedCount: shared.length };
   }
 
   async function runSearch(e) {
@@ -3498,11 +3688,8 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
         const film = await personFilmography(q);
         if (film && film.items.length) {
           film.items.forEach((it) => { it._pct = matchMeta(it, taste, people, crowd).pct; });
-          // fame order, not match order: a person search is "find their movies",
-          // and sorting 100+ credits by his match buries the famous ones.
-          film.items.sort((a, b) => (b.voteCount || 0) - (a.voteCount || 0));
           setResults(film.items);
-          setPersonName(film.person.name);
+          setPersonName(film.people.map((p) => p.name).join(" and "));
         } else if (hits.length) {
           setResults(hits);
           setPersonName(null);
@@ -4824,9 +5011,12 @@ input, textarea { font-family: inherit; }
 .stub {
   background: var(--stub-cream); border: none; border-radius: 12px; padding: 0;
   display: flex; flex-direction: column; overflow: hidden; position: relative;
-  text-align: left; box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+  text-align: left; box-shadow: 0 3px 8px rgba(0,0,0,0.3);
   transition: transform 0.15s;
+  content-visibility: auto; contain-intrinsic-size: auto 240px;
+  contain: layout paint style;
 }
+.stub:active { will-change: transform; }
 .stub:active { transform: scale(0.97); }
 .stub-poster { position: relative; aspect-ratio: 2/3; background: var(--velvet); }
 .stub-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -5164,6 +5354,22 @@ input, textarea { font-family: inherit; }
 
 /* collection controls */
 .collection-controls { margin-bottom: 14px; }
+.rating-chip-row { display: flex; gap: 6px; overflow-x: auto; margin-top: 8px; padding-bottom: 2px; scrollbar-width: none; }
+.top-five { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+.top-five-label { font-weight: 700; font-size: 14px; color: var(--cream-text); }
+.top-five-sub { font-size: 11.5px; color: var(--muted); margin: 2px 0 10px; }
+.top-five-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.top-five-thumb { width: 34px; height: 51px; border-radius: 5px; object-fit: cover; flex-shrink: 0; background: var(--velvet-2); }
+.top-five-thumb-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); }
+.top-five-info { flex: 1; min-width: 0; }
+.top-five-name { font-size: 13px; font-weight: 600; color: var(--cream-text); }
+.top-five-meta { font-size: 11.5px; color: var(--muted); }
+.top-five-saved { color: var(--brass-bright); display: inline-flex; padding: 6px; }
+.rating-chip-row::-webkit-scrollbar { display: none; }
+.rating-chip { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--velvet); color: var(--muted); font-size: 12px; }
+.rating-chip.active { border-color: var(--brass); color: var(--brass-bright); }
+.rated-stub-editor { background: var(--velvet); border-top: 1px dashed var(--line); padding: 8px 6px 10px; display: flex; justify-content: center; }
+.rated-stub-editor .star-bg { color: rgba(255,255,255,0.35); }
 .collection-search { margin-bottom: 10px; }
 .filter-row { display: flex; gap: 8px; }
 .filter-select {
@@ -5204,6 +5410,11 @@ input, textarea { font-family: inherit; }
 /* match scores */
 .match-badge { position: absolute; top: 14px; right: 14px; z-index: 3; font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; backdrop-filter: blur(8px); }
 .match-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex-shrink: 0; }
+.outnow-filter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.outnow-filter-row .zip-banner { flex: 1 1 auto; margin-bottom: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.outnow-filter-row .zip-banner svg { flex: 0 0 auto !important; }
+.outnow-filter-row .zip-banner span { flex: 0 1 auto !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.outnow-genre-select, .outnow-filter-row .bb-custom-select-container { flex: 0 0 auto !important; max-width: 140px; }
 .zip-banner { display: flex; align-items: center; gap: 8px; background: var(--velvet); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
 .zip-banner-set { padding: 7px 12px; }
 .zip-banner-set b { color: var(--cream-text); }
