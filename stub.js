@@ -1416,7 +1416,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
     ), /* @__PURE__ */ React.createElement("button", { className: "choice-dismiss", onClick: () => setChoice("choose") }, "back")))
   );
 }
-var APP_VERSION = "109";
+var APP_VERSION = "110";
 var posterGradCache = {};
 var DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" };
 function usePosterGradient(item) {
@@ -1511,7 +1511,7 @@ function usePosterGradient(item) {
   }, [item && item.tmdbId, item && item.mediaType]);
   return grad;
 }
-function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, collection, watchlist, onAddToWatchlist, onLogNew }) {
+function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, collection, watchlist, onAddToWatchlist, onLogNew, active }) {
   const [pool, setPool] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -1524,14 +1524,14 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   const [forYouLoading, setForYouLoading] = useState(false);
   const forYouLoadedRef = useRef(false);
   useEffect(() => {
-    const lock = mode === "swipe";
+    const lock = active && mode === "swipe";
     document.body.classList.toggle("deck-lock", lock);
     document.documentElement.classList.toggle("deck-lock", lock);
     return () => {
       document.body.classList.remove("deck-lock");
       document.documentElement.classList.remove("deck-lock");
     };
-  }, [mode]);
+  }, [active, mode]);
   const pageRef = useRef(1);
   const reloadAttemptsRef = useRef(0);
   const servedRef = useRef(/* @__PURE__ */ new Set());
@@ -3345,6 +3345,7 @@ function App() {
   )), mountedTabs.has("discover") && /* @__PURE__ */ React.createElement("div", { style: { display: tab === "discover" ? "" : "none" } }, /* @__PURE__ */ React.createElement(
     DiscoverView,
     {
+      active: tab === "discover",
       tmdb,
       feedback,
       setFeedback,
