@@ -779,7 +779,39 @@ var RatedStub = React.memo(function RatedStub2({ ticket, onRate }) {
   const last = ticket.viewings[ticket.viewings.length - 1];
   return /* @__PURE__ */ React.createElement("div", { className: "stub" }, /* @__PURE__ */ React.createElement("button", { className: "stub-poster-link", onClick: () => setEditing((e) => !e), "aria-label": `Adjust rating for ${ticket.title}` }, /* @__PURE__ */ React.createElement("div", { className: "stub-poster" }, ticket.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(ticket.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ React.createElement("div", { className: "stub-poster-fallback" }, ticket.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 28 }) : /* @__PURE__ */ React.createElement(Film, { size: 28 })), last.rating != null && last.rating > 0 && /* @__PURE__ */ React.createElement("div", { className: "stub-rate-badge", "aria-label": `Rated ${last.rating} out of 10` }, /* @__PURE__ */ React.createElement(Star, { size: 34, strokeWidth: 1, className: "stub-rate-star" }), /* @__PURE__ */ React.createElement("span", { className: "stub-rate-num" }, last.rating % 1 ? last.rating.toFixed(1) : last.rating)), /* @__PURE__ */ React.createElement("div", { className: "stub-perf" }))), /* @__PURE__ */ React.createElement("div", { className: "stub-tab" }, /* @__PURE__ */ React.createElement("div", { className: "stub-tab-top" }, /* @__PURE__ */ React.createElement("div", { className: "stub-title" }, ticket.title), ticket.viewings.length > 1 && /* @__PURE__ */ React.createElement("div", { className: "stub-rewatch-inline" }, ticket.viewings.length, "\xD7"))), editing && /* @__PURE__ */ React.createElement("div", { className: "rated-stub-editor" }, /* @__PURE__ */ React.createElement(Stars, { value: last.rating || 0, size: 22, onChange: (n) => onRate(ticket, n) })), /* @__PURE__ */ React.createElement("span", { className: "stub-shine" }));
 });
-function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
+function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings, taste, people, collection, watchlist, onAddToWatchlist }) {
+  const lastViewing = ticket.viewings[ticket.viewings.length - 1];
+  const isRated = !!(lastViewing && lastViewing.rating > 0);
+  const [topFive, setTopFive] = useState(null);
+  useEffect(() => {
+    if (!isRated || !tmdb || !ticket.tmdbId) return void 0;
+    let active = true;
+    (async () => {
+      try {
+        const recs = await tmdb.recommendations(ticket.mediaType, ticket.tmdbId).catch(() => ({ results: [] }));
+        let all = (recs.results || []).map(normalize).filter((x) => !isJunkTv(x));
+        const owned = /* @__PURE__ */ new Set([
+          ...(collection || []).map((c) => c.tmdbId + c.mediaType),
+          ...(watchlist || []).map((w) => w.tmdbId + w.mediaType)
+        ]);
+        const self = ticket.tmdbId + ticket.mediaType;
+        all = all.filter((x) => x.tmdbId + x.mediaType !== self && !owned.has(x.tmdbId + x.mediaType));
+        const crowd = learnCrowdWeight(collection || []);
+        const scored = all.map((x) => {
+          const m = matchMeta(x, taste, people, crowd);
+          return { ...x, _pct: m.pct };
+        });
+        scored.sort((a, b) => (b._pct || 50) - (a._pct || 50));
+        if (active) setTopFive(scored.slice(0, 5));
+      } catch {
+        if (active) setTopFive([]);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [ticket.tmdbId, isRated]);
+  const [savedFive, setSavedFive] = useState(() => /* @__PURE__ */ new Set());
   const [showPoster, setShowPoster] = useState(false);
   const [editingViewingId, setEditingViewingId] = useState(null);
   const [logging, setLogging] = useState(false);
@@ -881,7 +913,10 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
       (a, b) => a === "whole" ? 1 : b === "whole" ? -1 : a - b
     );
     return keys.map((k) => /* @__PURE__ */ React.createElement("div", { className: "season-group", key: String(k) }, /* @__PURE__ */ React.createElement("div", { className: "season-group-label" }, k === "whole" ? "Whole show" : `Season ${k}`), groups.get(k).map(renderViewing)));
-  })(), logging && /* @__PURE__ */ React.createElement("div", { className: "viewing-row viewing-row-new" }, /* @__PURE__ */ React.createElement("div", { className: "field-label", style: { marginTop: 0 } }, "New viewing"), /* @__PURE__ */ React.createElement(LogForm, { mediaType: ticket.mediaType, tmdb, item: ticket, saveLabel: "Add to ticket", onSave: handleSaveViewing, onCancel: () => setLogging(false) }))))));
+  })(), logging && /* @__PURE__ */ React.createElement("div", { className: "viewing-row viewing-row-new" }, /* @__PURE__ */ React.createElement("div", { className: "field-label", style: { marginTop: 0 } }, "New viewing"), /* @__PURE__ */ React.createElement(LogForm, { mediaType: ticket.mediaType, tmdb, item: ticket, saveLabel: "Add to ticket", onSave: handleSaveViewing, onCancel: () => setLogging(false) }))), isRated && topFive && topFive.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "top-five" }, /* @__PURE__ */ React.createElement("div", { className: "top-five-label" }, "Top five for you"), /* @__PURE__ */ React.createElement("div", { className: "top-five-sub" }, "Picked by your match engine from titles related to this one."), topFive.map((x) => /* @__PURE__ */ React.createElement("div", { className: "top-five-row", key: x.tmdbId + x.mediaType }, x.posterPath ? /* @__PURE__ */ React.createElement("img", { className: "top-five-thumb", src: tmdbImg(x.posterPath, "w92"), alt: "", loading: "lazy" }) : /* @__PURE__ */ React.createElement("div", { className: "top-five-thumb top-five-thumb-fallback" }, /* @__PURE__ */ React.createElement(Film, { size: 16 })), /* @__PURE__ */ React.createElement("div", { className: "top-five-info" }, /* @__PURE__ */ React.createElement("div", { className: "top-five-name" }, x.title), /* @__PURE__ */ React.createElement("div", { className: "top-five-meta" }, x.year || "", x._pct != null ? ` \xB7 ${x._pct}% match` : "")), onAddToWatchlist && (savedFive.has(x.tmdbId + x.mediaType) ? /* @__PURE__ */ React.createElement("span", { className: "top-five-saved" }, /* @__PURE__ */ React.createElement(Bookmark, { size: 14, fill: "currentColor" })) : /* @__PURE__ */ React.createElement("button", { className: "icon-btn", "aria-label": `Save ${x.title} to watchlist`, onClick: () => {
+    onAddToWatchlist(x);
+    setSavedFive((s) => /* @__PURE__ */ new Set([...s, x.tmdbId + x.mediaType]));
+  } }, /* @__PURE__ */ React.createElement(Bookmark, { size: 14 })))))))));
 }
 function TicketScanner({ tmdb, onClose, onLogNew }) {
   const [stage, setStage] = useState("upload");
@@ -1091,6 +1126,11 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
         ticket: open,
         tmdb,
         settings,
+        taste,
+        people,
+        collection,
+        watchlist,
+        onAddToWatchlist,
         onClose: () => setOpen(null),
         onUpdate: (t) => {
           onUpdateTicket(t);
@@ -3836,6 +3876,16 @@ input, textarea { font-family: inherit; }
 /* collection controls */
 .collection-controls { margin-bottom: 14px; }
 .rating-chip-row { display: flex; gap: 6px; overflow-x: auto; margin-top: 8px; padding-bottom: 2px; scrollbar-width: none; }
+.top-five { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+.top-five-label { font-weight: 700; font-size: 14px; color: var(--cream-text); }
+.top-five-sub { font-size: 11.5px; color: var(--muted); margin: 2px 0 10px; }
+.top-five-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.top-five-thumb { width: 34px; height: 51px; border-radius: 5px; object-fit: cover; flex-shrink: 0; background: var(--velvet-2); }
+.top-five-thumb-fallback { display: flex; align-items: center; justify-content: center; color: var(--brass); }
+.top-five-info { flex: 1; min-width: 0; }
+.top-five-name { font-size: 13px; font-weight: 600; color: var(--cream-text); }
+.top-five-meta { font-size: 11.5px; color: var(--muted); }
+.top-five-saved { color: var(--brass-bright); display: inline-flex; padding: 6px; }
 .rating-chip-row::-webkit-scrollbar { display: none; }
 .rating-chip { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--velvet); color: var(--muted); font-size: 12px; }
 .rating-chip.active { border-color: var(--brass); color: var(--brass-bright); }
