@@ -514,11 +514,17 @@ function matchMetaFull(item, taste, people, crowd) {
   }
   let pct = Math.max(1, Math.min(99, Math.round(blended)));
 
+  // UNRELEASED TITLES: an upcoming movie has no crowd verdict - its votes are
+  // anticipation, not reception. Applying the released-title rules (reception
+  // gate + thin-data shrink) crushes every Coming Soon card toward 50 no
+  // matter how strong the taste fit. Unreleased scores run on his taste
+  // profile alone, capped at 95, never "high" confidence until it's out.
+  const unreleased = !!item.releaseDate && item.releaseDate > todayISO();
   // RECEPTION GATE: when a real audience consensus exists (300+ votes),
   // pattern-match alone can't carry a title past what the crowd saw in it.
   // Bayesian-shrunk rating decides the ceiling.
   let cappedBy = null, effReception = null, lbRating = null;
-  if (item.voteAverage != null && (item.voteCount ?? 0) >= 300) {
+  if (!unreleased && item.voteAverage != null && (item.voteCount ?? 0) >= 300) {
     let eff = (item.voteAverage * item.voteCount + 6.8 * 300) / (item.voteCount + 300);
     const lb = letterboxdRating(item);
     lbRating = lb;
@@ -532,9 +538,13 @@ function matchMetaFull(item, taste, people, crowd) {
   // The thinner the vote evidence, the harder the pull toward 50.
   const vc = item.voteCount ?? 0;
   let shrink = 1;
-  if (vc < 300) {
+  if (!unreleased && vc < 300) {
     shrink = Math.max(0.15, Math.min(1, vc / 300));
     pct = Math.round(50 + (pct - 50) * shrink);
+  }
+  if (unreleased) {
+    if (pct > 95) pct = 95;
+    if (conf === "high") conf = "medium";
   }
   // THIN-DATA CONFIDENCE CAP: when the crowd verdict is too thin to trust,
   // the number is already pulled toward 50 - the confidence label must not
@@ -562,6 +572,9 @@ function explainMatch(item, taste, people, crowd, collection) {
   if (meta.pct == null) {
     lines.push("Rate a few titles and this score starts meaning something.");
     return { ...meta, lines };
+  }
+  if (item.releaseDate && item.releaseDate > todayISO()) {
+    lines.push("Not out yet - no crowd verdict exists, so this score is all your taste profile.");
   }
   // people evidence: the single strongest director/writer/cast connection
   if (item.credits && people) {
@@ -616,6 +629,17 @@ function explainMatch(item, taste, people, crowd, collection) {
     lines.push(vc === 0
       ? "No crowd ratings exist yet, so this plays it safe near the middle until more data lands."
       : "Thin crowd data, so the score deliberately plays it safe.");
+  }
+  // always say what the number IS: his personal fit, with the crowd as a
+  // smaller input - and call out when the two disagree, so "TMDB 7.9 but 55%"
+  // reads as an answer instead of a contradiction.
+  if (meta.pct != null) {
+    lines.unshift(`${meta.pct}% is your personal fit - built from your own ratings (genres, directors, cast), with the crowd as a smaller input.`);
+    const crowdHigh = item.voteAverage != null && item.voteAverage >= 7.2 && (item.voteCount ?? 0) >= 300;
+    const crowdLow = item.voteAverage != null && item.voteAverage <= 5.5 && (item.voteCount ?? 0) >= 300;
+    if (crowdHigh && meta.pct <= 65) lines.push("The crowd rates it higher than your fit - your own history is what keeps the number down.");
+    if (crowdLow && meta.pct >= 70) lines.push("The crowd is cooler on it than your fit - your history is what carries this one.");
+    if (detail.peopleScore == null && !meta.own) lines.push("No director, writer, or cast connections in your ratings yet - so this leans on genre history alone.");
   }
   if (!lines.length) lines.push("A blend of your genre history and the crowd consensus.");
   return { ...meta, lines };
@@ -1056,6 +1080,14 @@ function WatchlistStub({ item, onClick, onLog, onRemove, inTheaters, zip, stream
             </div>
           )}
           <div className="stub-perf" />
+          <button className="stub-corner-btn stub-corner-x" onClick={(e) => { e.stopPropagation(); onRemove(); }} aria-label="Remove">
+            <X size={13} />
+          </button>
+          {!unreleased && (
+            <button className="stub-corner-btn stub-corner-check" onClick={(e) => { e.stopPropagation(); onLog(); }} aria-label="Mark watched">
+              <Check size={14} />
+            </button>
+          )}
         </div>
       </button>
       <div className="stub-tab">
@@ -1077,20 +1109,11 @@ function WatchlistStub({ item, onClick, onLog, onRemove, inTheaters, zip, stream
             </span>
           </div>
         )}
-        <div className="wl-actions">
-          {unreleased ? (
-            <div className="wl-unreleased" title="Not released yet">
-              <CalendarDays size={12} /> {item.releaseDate ? `Out ${formatDate(item.releaseDate)}` : `Out ${item.year}`}
-            </div>
-          ) : (
-            <button className="wl-watched-btn" onClick={(e) => { e.stopPropagation(); onLog(); }}>
-              <Check size={12} /> Mark watched
-            </button>
-          )}
-          <button className="wl-remove-btn" onClick={(e) => { e.stopPropagation(); onRemove(); }} aria-label="Remove">
-            <X size={13} />
-          </button>
-        </div>
+        {unreleased && (
+          <div className="wl-unreleased" title="Not released yet">
+            <CalendarDays size={12} /> {item.releaseDate ? `Out ${formatDate(item.releaseDate)}` : `Out ${item.year}`}
+          </div>
+        )}
       </div>
       <span className="stub-shine" />
     </div>
@@ -2023,7 +2046,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "103";
+const APP_VERSION = "104";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -4477,7 +4500,7 @@ export default function App() {
             <button className="icon-btn" onClick={() => setShowYIR(true)} aria-label="Recap" title="Recap"><Sparkles size={17} /></button>
           )}
           <span className={"sync-pill" + (hasCloud(conn) ? " sync-on" : "")}>
-            {(hasCloud(conn) ? "Synced" : "This device only") + " · v" + APP_VERSION}
+            {hasCloud(conn) ? "Synced" : "This device only"}
           </span>
           <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="Settings"><Settings size={18} /></button>
         </div>
@@ -4817,6 +4840,9 @@ input, textarea { font-family: inherit; }
 .wl-stream-new { color: #4ade80; font-weight: 700; }
 .stream-banner { display: flex; align-items: center; gap: 10px; justify-content: space-between; background: rgba(74, 222, 128, 0.08); border: 1px solid rgba(74, 222, 128, 0.35); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
 .stream-banner-text { font-family: 'Space Mono', monospace; font-size: 11px; line-height: 1.5; color: var(--fg); }
+.stub-corner-btn { position: absolute; z-index: 3; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(10, 8, 6, 0.72); color: #fff; border: 1px solid rgba(255, 255, 255, 0.25); cursor: pointer; padding: 0; }
+.stub-corner-x { top: 6px; right: 6px; }
+.stub-corner-check { bottom: 8px; right: 6px; background: rgba(74, 222, 128, 0.88); color: #052e12; border-color: transparent; }
 .stream-banner-btn { flex-shrink: 0; font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: #052e12; background: #4ade80; border: none; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
 
 .wl-showtimes-label { font-size: 9.5px; font-weight: 700; color: #7a4a08; text-transform: uppercase; letter-spacing: 0.05em; }

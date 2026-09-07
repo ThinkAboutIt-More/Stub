@@ -452,8 +452,9 @@ function matchMetaFull(item, taste, people, crowd) {
     conf = crowd && crowd.n >= 20 ? "medium" : "low";
   }
   let pct = Math.max(1, Math.min(99, Math.round(blended)));
+  const unreleased = !!item.releaseDate && item.releaseDate > todayISO();
   let cappedBy = null, effReception = null, lbRating = null;
-  if (item.voteAverage != null && (item.voteCount ?? 0) >= 300) {
+  if (!unreleased && item.voteAverage != null && (item.voteCount ?? 0) >= 300) {
     let eff = (item.voteAverage * item.voteCount + 6.8 * 300) / (item.voteCount + 300);
     const lb = letterboxdRating(item);
     lbRating = lb;
@@ -467,9 +468,13 @@ function matchMetaFull(item, taste, people, crowd) {
   }
   const vc = item.voteCount ?? 0;
   let shrink = 1;
-  if (vc < 300) {
+  if (!unreleased && vc < 300) {
     shrink = Math.max(0.15, Math.min(1, vc / 300));
     pct = Math.round(50 + (pct - 50) * shrink);
+  }
+  if (unreleased) {
+    if (pct > 95) pct = 95;
+    if (conf === "high") conf = "medium";
   }
   if (shrink < 1) {
     if (shrink < 0.5) conf = "low";
@@ -490,6 +495,9 @@ function explainMatch(item, taste, people, crowd, collection) {
   if (meta.pct == null) {
     lines.push("Rate a few titles and this score starts meaning something.");
     return { ...meta, lines };
+  }
+  if (item.releaseDate && item.releaseDate > todayISO()) {
+    lines.push("Not out yet - no crowd verdict exists, so this score is all your taste profile.");
   }
   if (item.credits && people) {
     const cand = [];
@@ -534,6 +542,14 @@ function explainMatch(item, taste, people, crowd, collection) {
     lines.push(`Held at ${detail.cappedBy}% - audience reception (${detail.effReception.toFixed(1)}/10) isn't strong enough for a higher score, whatever the pattern fit.`);
   } else if (detail.shrink < 1) {
     lines.push(vc === 0 ? "No crowd ratings exist yet, so this plays it safe near the middle until more data lands." : "Thin crowd data, so the score deliberately plays it safe.");
+  }
+  if (meta.pct != null) {
+    lines.unshift(`${meta.pct}% is your personal fit - built from your own ratings (genres, directors, cast), with the crowd as a smaller input.`);
+    const crowdHigh = item.voteAverage != null && item.voteAverage >= 7.2 && (item.voteCount ?? 0) >= 300;
+    const crowdLow = item.voteAverage != null && item.voteAverage <= 5.5 && (item.voteCount ?? 0) >= 300;
+    if (crowdHigh && meta.pct <= 65) lines.push("The crowd rates it higher than your fit - your own history is what keeps the number down.");
+    if (crowdLow && meta.pct >= 70) lines.push("The crowd is cooler on it than your fit - your history is what carries this one.");
+    if (detail.peopleScore == null && !meta.own) lines.push("No director, writer, or cast connections in your ratings yet - so this leans on genre history alone.");
   }
   if (!lines.length) lines.push("A blend of your genre history and the crowd consensus.");
   return { ...meta, lines };
@@ -750,13 +766,13 @@ function TicketStub({ ticket, onOpen }) {
 }
 function WatchlistStub({ item, onClick, onLog, onRemove, inTheaters, zip, streamNames, streamNew }) {
   const unreleased = item.releaseDate ? item.releaseDate > todayISO() : item.year && Number(item.year) > (/* @__PURE__ */ new Date()).getFullYear();
-  return /* @__PURE__ */ React.createElement("div", { className: "stub" }, /* @__PURE__ */ React.createElement("button", { className: "stub-poster-link", onClick, "aria-label": item.title }, /* @__PURE__ */ React.createElement("div", { className: "stub-poster" }, item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ React.createElement("div", { className: "stub-poster-fallback" }, item.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 28 }) : /* @__PURE__ */ React.createElement(Film, { size: 28 })), /* @__PURE__ */ React.createElement("div", { className: "stub-perf" }))), /* @__PURE__ */ React.createElement("div", { className: "stub-tab" }, /* @__PURE__ */ React.createElement("div", { className: "stub-tab-top" }, /* @__PURE__ */ React.createElement("div", { className: "stub-title" }, item.title)), streamNew && /* @__PURE__ */ React.createElement("div", { className: "wl-stream wl-stream-new" }, "Just landed on ", streamNames.slice(0, 3).join(", ")), !streamNew && streamNames && streamNames.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "wl-stream" }, "On ", streamNames.slice(0, 3).join(", ")), inTheaters && !unreleased && /* @__PURE__ */ React.createElement("div", { className: "wl-showtimes", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("span", { className: "wl-showtimes-label" }, "In theaters"), /* @__PURE__ */ React.createElement("span", { className: "wl-showtimes-links" }, /* @__PURE__ */ React.createElement("a", { href: buildAmcLink(item.title, zip || ""), target: "_blank", rel: "noreferrer" }, "AMC"), /* @__PURE__ */ React.createElement("a", { href: buildRegalLink(item.title, zip || ""), target: "_blank", rel: "noreferrer" }, "Regal"))), /* @__PURE__ */ React.createElement("div", { className: "wl-actions" }, unreleased ? /* @__PURE__ */ React.createElement("div", { className: "wl-unreleased", title: "Not released yet" }, /* @__PURE__ */ React.createElement(CalendarDays, { size: 12 }), " ", item.releaseDate ? `Out ${formatDate(item.releaseDate)}` : `Out ${item.year}`) : /* @__PURE__ */ React.createElement("button", { className: "wl-watched-btn", onClick: (e) => {
-    e.stopPropagation();
-    onLog();
-  } }, /* @__PURE__ */ React.createElement(Check, { size: 12 }), " Mark watched"), /* @__PURE__ */ React.createElement("button", { className: "wl-remove-btn", onClick: (e) => {
+  return /* @__PURE__ */ React.createElement("div", { className: "stub" }, /* @__PURE__ */ React.createElement("button", { className: "stub-poster-link", onClick, "aria-label": item.title }, /* @__PURE__ */ React.createElement("div", { className: "stub-poster" }, item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ React.createElement("div", { className: "stub-poster-fallback" }, item.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 28 }) : /* @__PURE__ */ React.createElement(Film, { size: 28 })), /* @__PURE__ */ React.createElement("div", { className: "stub-perf" }), /* @__PURE__ */ React.createElement("button", { className: "stub-corner-btn stub-corner-x", onClick: (e) => {
     e.stopPropagation();
     onRemove();
-  }, "aria-label": "Remove" }, /* @__PURE__ */ React.createElement(X, { size: 13 })))), /* @__PURE__ */ React.createElement("span", { className: "stub-shine" }));
+  }, "aria-label": "Remove" }, /* @__PURE__ */ React.createElement(X, { size: 13 })), !unreleased && /* @__PURE__ */ React.createElement("button", { className: "stub-corner-btn stub-corner-check", onClick: (e) => {
+    e.stopPropagation();
+    onLog();
+  }, "aria-label": "Mark watched" }, /* @__PURE__ */ React.createElement(Check, { size: 14 })))), /* @__PURE__ */ React.createElement("div", { className: "stub-tab" }, /* @__PURE__ */ React.createElement("div", { className: "stub-tab-top" }, /* @__PURE__ */ React.createElement("div", { className: "stub-title" }, item.title)), streamNew && /* @__PURE__ */ React.createElement("div", { className: "wl-stream wl-stream-new" }, "Just landed on ", streamNames.slice(0, 3).join(", ")), !streamNew && streamNames && streamNames.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "wl-stream" }, "On ", streamNames.slice(0, 3).join(", ")), inTheaters && !unreleased && /* @__PURE__ */ React.createElement("div", { className: "wl-showtimes", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("span", { className: "wl-showtimes-label" }, "In theaters"), /* @__PURE__ */ React.createElement("span", { className: "wl-showtimes-links" }, /* @__PURE__ */ React.createElement("a", { href: buildAmcLink(item.title, zip || ""), target: "_blank", rel: "noreferrer" }, "AMC"), /* @__PURE__ */ React.createElement("a", { href: buildRegalLink(item.title, zip || ""), target: "_blank", rel: "noreferrer" }, "Regal"))), unreleased && /* @__PURE__ */ React.createElement("div", { className: "wl-unreleased", title: "Not released yet" }, /* @__PURE__ */ React.createElement(CalendarDays, { size: 12 }), " ", item.releaseDate ? `Out ${formatDate(item.releaseDate)}` : `Out ${item.year}`)), /* @__PURE__ */ React.createElement("span", { className: "stub-shine" }));
 }
 function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
   const [showPoster, setShowPoster] = useState(false);
@@ -1325,7 +1341,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
     ), /* @__PURE__ */ React.createElement("button", { className: "choice-dismiss", onClick: () => setChoice("choose") }, "back")))
   );
 }
-var APP_VERSION = "103";
+var APP_VERSION = "104";
 var posterGradCache = {};
 var DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" };
 function usePosterGradient(item) {
@@ -3151,7 +3167,7 @@ function App() {
     return /* @__PURE__ */ React.createElement("div", { className: "app" }, /* @__PURE__ */ React.createElement(GlobalStyle, null), /* @__PURE__ */ React.createElement(Onboarding, { onSave: (key) => setSettings((s) => ({ ...s, tmdbKey: key })) }));
   }
   setScoringContext({ taste, people, crowd });
-  return /* @__PURE__ */ React.createElement("div", { className: "app" + (tab === "discover" ? " wash-on" : "") }, /* @__PURE__ */ React.createElement(GlobalStyle, null), burst && /* @__PURE__ */ React.createElement("div", { className: "burst-overlay", key: burst.key }, /* @__PURE__ */ React.createElement("div", { className: "burst-icon burst-" + burst.kind }, burst.kind === "collect" ? /* @__PURE__ */ React.createElement(Ticket, { size: 46 }) : burst.kind === "want" ? /* @__PURE__ */ React.createElement(Bookmark, { size: 46 }) : /* @__PURE__ */ React.createElement(Eye, { size: 46 }))), /* @__PURE__ */ React.createElement("header", { className: "app-header" }, /* @__PURE__ */ React.createElement("div", { className: "header-bulbs" }, Array.from({ length: 10 }).map((_, i) => /* @__PURE__ */ React.createElement("i", { key: i }))), /* @__PURE__ */ React.createElement("div", { className: "header-row" }, /* @__PURE__ */ React.createElement("div", { className: "wordmark" }, "WATCH", /* @__PURE__ */ React.createElement("span", { className: "wordmark-dot" }, "LIST")), /* @__PURE__ */ React.createElement("div", { className: "header-right" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setScanning(true), "aria-label": "Scan ticket", title: "Scan ticket" }, /* @__PURE__ */ React.createElement(Camera, { size: 17 })), /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setShowFavorites(true), "aria-label": "Favorites", title: "Favorites" }, /* @__PURE__ */ React.createElement(Heart, { size: 17 })), collection.length > 0 && /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setShowYIR(true), "aria-label": "Recap", title: "Recap" }, /* @__PURE__ */ React.createElement(Sparkles, { size: 17 })), /* @__PURE__ */ React.createElement("span", { className: "sync-pill" + (hasCloud(conn) ? " sync-on" : "") }, (hasCloud(conn) ? "Synced" : "This device only") + " \xB7 v" + APP_VERSION), /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setShowSettings(true), "aria-label": "Settings" }, /* @__PURE__ */ React.createElement(Settings, { size: 18 }))))), /* @__PURE__ */ React.createElement("main", { className: "app-main" }, /* @__PURE__ */ React.createElement("div", { style: { display: tab === "collection" ? "" : "none" } }, /* @__PURE__ */ React.createElement(
+  return /* @__PURE__ */ React.createElement("div", { className: "app" + (tab === "discover" ? " wash-on" : "") }, /* @__PURE__ */ React.createElement(GlobalStyle, null), burst && /* @__PURE__ */ React.createElement("div", { className: "burst-overlay", key: burst.key }, /* @__PURE__ */ React.createElement("div", { className: "burst-icon burst-" + burst.kind }, burst.kind === "collect" ? /* @__PURE__ */ React.createElement(Ticket, { size: 46 }) : burst.kind === "want" ? /* @__PURE__ */ React.createElement(Bookmark, { size: 46 }) : /* @__PURE__ */ React.createElement(Eye, { size: 46 }))), /* @__PURE__ */ React.createElement("header", { className: "app-header" }, /* @__PURE__ */ React.createElement("div", { className: "header-bulbs" }, Array.from({ length: 10 }).map((_, i) => /* @__PURE__ */ React.createElement("i", { key: i }))), /* @__PURE__ */ React.createElement("div", { className: "header-row" }, /* @__PURE__ */ React.createElement("div", { className: "wordmark" }, "WATCH", /* @__PURE__ */ React.createElement("span", { className: "wordmark-dot" }, "LIST")), /* @__PURE__ */ React.createElement("div", { className: "header-right" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setScanning(true), "aria-label": "Scan ticket", title: "Scan ticket" }, /* @__PURE__ */ React.createElement(Camera, { size: 17 })), /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setShowFavorites(true), "aria-label": "Favorites", title: "Favorites" }, /* @__PURE__ */ React.createElement(Heart, { size: 17 })), collection.length > 0 && /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setShowYIR(true), "aria-label": "Recap", title: "Recap" }, /* @__PURE__ */ React.createElement(Sparkles, { size: 17 })), /* @__PURE__ */ React.createElement("span", { className: "sync-pill" + (hasCloud(conn) ? " sync-on" : "") }, hasCloud(conn) ? "Synced" : "This device only"), /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setShowSettings(true), "aria-label": "Settings" }, /* @__PURE__ */ React.createElement(Settings, { size: 18 }))))), /* @__PURE__ */ React.createElement("main", { className: "app-main" }, /* @__PURE__ */ React.createElement("div", { style: { display: tab === "collection" ? "" : "none" } }, /* @__PURE__ */ React.createElement(
     CollectionView,
     {
       collection,
@@ -3421,6 +3437,9 @@ input, textarea { font-family: inherit; }
 .wl-stream-new { color: #4ade80; font-weight: 700; }
 .stream-banner { display: flex; align-items: center; gap: 10px; justify-content: space-between; background: rgba(74, 222, 128, 0.08); border: 1px solid rgba(74, 222, 128, 0.35); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
 .stream-banner-text { font-family: 'Space Mono', monospace; font-size: 11px; line-height: 1.5; color: var(--fg); }
+.stub-corner-btn { position: absolute; z-index: 3; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(10, 8, 6, 0.72); color: #fff; border: 1px solid rgba(255, 255, 255, 0.25); cursor: pointer; padding: 0; }
+.stub-corner-x { top: 6px; right: 6px; }
+.stub-corner-check { bottom: 8px; right: 6px; background: rgba(74, 222, 128, 0.88); color: #052e12; border-color: transparent; }
 .stream-banner-btn { flex-shrink: 0; font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: #052e12; background: #4ade80; border: none; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
 
 .wl-showtimes-label { font-size: 9.5px; font-weight: 700; color: #7a4a08; text-transform: uppercase; letter-spacing: 0.05em; }
