@@ -2839,7 +2839,12 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
             toFetch.map(
               (it) => tmdb.watchProviders(it.mediaType, it.tmdbId).then((d) => {
                 const entry = d.results && d.results[region];
-                const names = entry && entry.flatrate ? entry.flatrate.map((p) => p.provider_name) : [];
+                const raw2 = entry && entry.flatrate ? entry.flatrate.map((p) => p.provider_name) : [];
+                const names = [];
+                raw2.forEach((n) => {
+                  const clean = n.replace(/\s+(with Ads|Amazon Channel|Apple TV Channel|Premium|Essential|Standard|Basic)$/i, "").trim();
+                  if (clean && !names.some((x) => x.toLowerCase() === clean.toLowerCase())) names.push(clean);
+                });
                 return { key: it.tmdbId + it.mediaType, val: names };
               })
             )
