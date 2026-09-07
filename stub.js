@@ -855,6 +855,12 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings, tas
   function withLog(t, text) {
     return { ...t, log: [...t.log || [], { at: Date.now(), text }] };
   }
+  function handleRateViewing(viewingId, n) {
+    let t = { ...ticket, history: pushHistory(ticket) };
+    t.viewings = t.viewings.map((v) => v.id === viewingId ? { ...v, rating: n } : v);
+    t = withLog(t, `Rated it ${n}/10`);
+    onUpdate(t);
+  }
   function handleSaveViewing(entry) {
     let t = { ...ticket, history: pushHistory(ticket) };
     const exists = t.viewings.find((v) => v.id === entry.id);
@@ -900,7 +906,7 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings, tas
         onSave: handleSaveViewing,
         onCancel: () => setEditingViewingId(null)
       }
-    ) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "viewing-top" }, /* @__PURE__ */ React.createElement("div", { className: "viewing-date" }, /* @__PURE__ */ React.createElement(CalendarDays, { size: 12 }), " ", v.undated || !v.date ? "Anytime" : formatDate(v.date)), /* @__PURE__ */ React.createElement(Stars, { value: v.rating, size: 14 })), v.location && /* @__PURE__ */ React.createElement("div", { className: "viewing-loc" }, /* @__PURE__ */ React.createElement(MapPin, { size: 12 }), " ", v.location), v.notes && /* @__PURE__ */ React.createElement("div", { className: "viewing-notes" }, v.notes), /* @__PURE__ */ React.createElement("div", { className: "viewing-actions" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setEditingViewingId(v.id), "aria-label": "Edit" }, /* @__PURE__ */ React.createElement(Pencil, { size: 13 })), ticket.viewings.length > 1 && /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => handleRemoveViewing(v.id), "aria-label": "Remove this entry" }, /* @__PURE__ */ React.createElement(Trash2, { size: 13 })))));
+    ) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "viewing-top" }, /* @__PURE__ */ React.createElement("div", { className: "viewing-date" }, /* @__PURE__ */ React.createElement(CalendarDays, { size: 12 }), " ", v.undated || !v.date ? "Anytime" : formatDate(v.date)), /* @__PURE__ */ React.createElement(Stars, { value: v.rating, size: 18, onChange: (n) => handleRateViewing(v.id, n) })), v.location && /* @__PURE__ */ React.createElement("div", { className: "viewing-loc" }, /* @__PURE__ */ React.createElement(MapPin, { size: 12 }), " ", v.location), v.notes && /* @__PURE__ */ React.createElement("div", { className: "viewing-notes" }, v.notes), /* @__PURE__ */ React.createElement("div", { className: "viewing-actions" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => setEditingViewingId(v.id), "aria-label": "Edit" }, /* @__PURE__ */ React.createElement(Pencil, { size: 13 })), ticket.viewings.length > 1 && /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => handleRemoveViewing(v.id), "aria-label": "Remove this entry" }, /* @__PURE__ */ React.createElement(Trash2, { size: 13 })))));
     const hasSeasons = ticket.mediaType === "tv" && ticket.viewings.some((v) => v.season != null);
     if (!hasSeasons) return sortedViewings.map(renderViewing);
     const groups = /* @__PURE__ */ new Map();
@@ -1177,7 +1183,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
       value: query,
       onChange: (e) => setQuery(e.target.value)
     }
-  )), /* @__PURE__ */ React.createElement("div", { className: "filter-row" }, /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: sort, onChange: (e) => setSort(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "recent" }, "Recently collected"), /* @__PURE__ */ React.createElement("option", { value: "oldest" }, "Oldest first"), /* @__PURE__ */ React.createElement("option", { value: "highest" }, "Highest rated"), /* @__PURE__ */ React.createElement("option", { value: "lowest" }, "Lowest rated")), /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: genreFilter, onChange: (e) => setGenreFilter(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "all" }, "All genres"), genreOptions.map((g) => /* @__PURE__ */ React.createElement("option", { key: g.id, value: g.id }, g.name))), /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: yearFilter, onChange: (e) => setYearFilter(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "all" }, "All years"), yearOptions.map((y) => /* @__PURE__ */ React.createElement("option", { key: y, value: y }, y)))), ratingOptions.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "rating-chip-row" }, /* @__PURE__ */ React.createElement("button", { className: ratingFilter === "all" ? "rating-chip active" : "rating-chip", onClick: () => setRatingFilter("all") }, "All ratings"), ratingOptions.map((r) => /* @__PURE__ */ React.createElement("button", { key: r, className: ratingFilter === String(r) ? "rating-chip active" : "rating-chip", onClick: () => setRatingFilter(String(r)) }, /* @__PURE__ */ React.createElement(Star, { size: 11, fill: "currentColor", strokeWidth: 1.5 }), " ", r % 1 ? r.toFixed(1) : r)))), visibleCollection.length === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Search, { size: 28 }), title: "No matches", body: "Nothing in your collection fits that filter." }) : /* @__PURE__ */ React.createElement("div", { className: "stub-grid stub-grid-compact" }, visibleCollection.map((t) => ratingFilter === "all" ? /* @__PURE__ */ React.createElement(TicketStub, { ticket: t, key: t.id, onOpen: openTicket }) : /* @__PURE__ */ React.createElement(RatedStub, { ticket: t, key: t.id, onRate: adjustRating }))))), loggingWl && /* @__PURE__ */ React.createElement(Modal, { onClose: () => setLoggingWl(null) }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, loggingWl.title), /* @__PURE__ */ React.createElement(LogForm, { mediaType: loggingWl.mediaType, tmdb, item: loggingWl, saveLabel: "Add to collection", onCancel: () => setLoggingWl(null), onSave: (entry) => {
+  )), /* @__PURE__ */ React.createElement("div", { className: "filter-row" }, /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: sort, onChange: (e) => setSort(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "recent" }, "Recently collected"), /* @__PURE__ */ React.createElement("option", { value: "oldest" }, "Oldest first"), /* @__PURE__ */ React.createElement("option", { value: "highest" }, "Highest rated"), /* @__PURE__ */ React.createElement("option", { value: "lowest" }, "Lowest rated")), /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: genreFilter, onChange: (e) => setGenreFilter(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "all" }, "All genres"), genreOptions.map((g) => /* @__PURE__ */ React.createElement("option", { key: g.id, value: g.id }, g.name))), /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: yearFilter, onChange: (e) => setYearFilter(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "all" }, "All years"), yearOptions.map((y) => /* @__PURE__ */ React.createElement("option", { key: y, value: y }, y))), ratingOptions.length > 0 && /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: ratingFilter, onChange: (e) => setRatingFilter(e.target.value), "aria-label": "Filter by rating" }, /* @__PURE__ */ React.createElement("option", { value: "all" }, "All ratings"), ratingOptions.map((r) => /* @__PURE__ */ React.createElement("option", { key: r, value: r }, "\u2605 ", r % 1 ? r.toFixed(1) : r))))), visibleCollection.length === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Search, { size: 28 }), title: "No matches", body: "Nothing in your collection fits that filter." }) : /* @__PURE__ */ React.createElement("div", { className: "stub-grid stub-grid-compact" }, visibleCollection.map((t) => ratingFilter === "all" ? /* @__PURE__ */ React.createElement(TicketStub, { ticket: t, key: t.id, onOpen: openTicket }) : /* @__PURE__ */ React.createElement(RatedStub, { ticket: t, key: t.id, onRate: adjustRating }))))), loggingWl && /* @__PURE__ */ React.createElement(Modal, { onClose: () => setLoggingWl(null) }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, loggingWl.title), /* @__PURE__ */ React.createElement(LogForm, { mediaType: loggingWl.mediaType, tmdb, item: loggingWl, saveLabel: "Add to collection", onCancel: () => setLoggingWl(null), onSave: (entry) => {
     onLogNew(loggingWl, entry);
     setLoggingWl(null);
   } })), showWatchlist && (watchlist.length === 0 ? /* @__PURE__ */ React.createElement(
@@ -1410,7 +1416,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
     ), /* @__PURE__ */ React.createElement("button", { className: "choice-dismiss", onClick: () => setChoice("choose") }, "back")))
   );
 }
-var APP_VERSION = "108";
+var APP_VERSION = "109";
 var posterGradCache = {};
 var DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" };
 function usePosterGradient(item) {
@@ -1517,6 +1523,15 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   const [forYouList, setForYouList] = useState([]);
   const [forYouLoading, setForYouLoading] = useState(false);
   const forYouLoadedRef = useRef(false);
+  useEffect(() => {
+    const lock = mode === "swipe";
+    document.body.classList.toggle("deck-lock", lock);
+    document.documentElement.classList.toggle("deck-lock", lock);
+    return () => {
+      document.body.classList.remove("deck-lock");
+      document.documentElement.classList.remove("deck-lock");
+    };
+  }, [mode]);
   const pageRef = useRef(1);
   const reloadAttemptsRef = useRef(0);
   const servedRef = useRef(/* @__PURE__ */ new Set());
@@ -3702,6 +3717,8 @@ input, textarea { font-family: inherit; }
 .edit-log-time { font-family: 'Space Mono', monospace; font-size: 10.5px; flex-shrink: 0; }
 
 /* discover swipe */
+html.deck-lock, body.deck-lock { overflow: hidden !important; height: 100% !important; overscroll-behavior: none !important; }
+body.deck-lock { height: 100dvh !important; }
 .view-discover { display: flex; flex-direction: column; align-items: center; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-x; overscroll-behavior: contain; }
 .view-discover * { user-select: none; -webkit-user-select: none; }
 .swipe-stack { touch-action: pan-x; width: 100%; max-width: 354px; height: calc(100vh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); height: calc(100dvh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; position: relative; z-index: 1; margin: 2px auto 0; border-radius: 19px; box-shadow: 0 20px 34px -14px rgba(0,0,0,0.25); }
@@ -3875,7 +3892,6 @@ input, textarea { font-family: inherit; }
 
 /* collection controls */
 .collection-controls { margin-bottom: 14px; }
-.rating-chip-row { display: flex; gap: 6px; overflow-x: auto; margin-top: 8px; padding-bottom: 2px; scrollbar-width: none; }
 .top-five { margin-top: 18px; border-top: 1px dashed #d8c7b2; padding-top: 14px; }
 .top-five .icon-btn { color: #8a6f57; border-color: #d8c7b2; }
 .top-five-saved { color: #8a6d1f; }
@@ -3888,9 +3904,6 @@ input, textarea { font-family: inherit; }
 .top-five-name { font-size: 13px; font-weight: 600; color: #3a2a20; }
 .top-five-meta { font-size: 11.5px; color: #8a6f57; }
 .top-five-saved { color: var(--brass-bright); display: inline-flex; padding: 6px; }
-.rating-chip-row::-webkit-scrollbar { display: none; }
-.rating-chip { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--velvet); color: var(--muted); font-size: 12px; }
-.rating-chip.active { border-color: var(--brass); color: var(--brass-bright); }
 .rated-stub-editor { background: var(--velvet); border-top: 1px dashed var(--line); padding: 8px 6px 10px; display: flex; justify-content: center; }
 .rated-stub-editor .star-bg { color: rgba(255,255,255,0.35); }
 .collection-search { margin-bottom: 10px; }

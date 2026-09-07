@@ -1235,6 +1235,13 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings, tas
     return { ...t, log: [...(t.log || []), { at: Date.now(), text }] };
   }
 
+  function handleRateViewing(viewingId, n) {
+    let t = { ...ticket, history: pushHistory(ticket) };
+    t.viewings = t.viewings.map((v) => (v.id === viewingId ? { ...v, rating: n } : v));
+    t = withLog(t, `Rated it ${n}/10`);
+    onUpdate(t);
+  }
+
   function handleSaveViewing(entry) {
     let t = { ...ticket, history: pushHistory(ticket) };
     const exists = t.viewings.find((v) => v.id === entry.id);
@@ -1379,7 +1386,7 @@ function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings, tas
                       <>
                         <div className="viewing-top">
                           <div className="viewing-date"><CalendarDays size={12} /> {v.undated || !v.date ? "Anytime" : formatDate(v.date)}</div>
-                          <Stars value={v.rating} size={14} />
+                          <Stars value={v.rating} size={18} onChange={(n) => handleRateViewing(v.id, n)} />
                         </div>
                         {v.location && (
                           <div className="viewing-loc"><MapPin size={12} /> {v.location}</div>
@@ -1826,17 +1833,15 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
                       <option key={y} value={y}>{y}</option>
                     ))}
                   </select>
+                  {ratingOptions.length > 0 && (
+                    <select className="filter-select" value={ratingFilter} onChange={(e) => setRatingFilter(e.target.value)} aria-label="Filter by rating">
+                      <option value="all">All ratings</option>
+                      {ratingOptions.map((r) => (
+                        <option key={r} value={r}>★ {r % 1 ? r.toFixed(1) : r}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
-                {ratingOptions.length > 0 && (
-                  <div className="rating-chip-row">
-                    <button className={ratingFilter === "all" ? "rating-chip active" : "rating-chip"} onClick={() => setRatingFilter("all")}>All ratings</button>
-                    {ratingOptions.map((r) => (
-                      <button key={r} className={ratingFilter === String(r) ? "rating-chip active" : "rating-chip"} onClick={() => setRatingFilter(String(r))}>
-                        <Star size={11} fill="currentColor" strokeWidth={1.5} /> {r % 1 ? r.toFixed(1) : r}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
             )}
             {visibleCollection.length === 0 ? (
@@ -2180,7 +2185,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "108";
+const APP_VERSION = "109";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -2268,6 +2273,19 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   const [forYouList, setForYouList] = useState([]);
   const [forYouLoading, setForYouLoading] = useState(false);
   const forYouLoadedRef = useRef(false);
+
+  // the swipe deck is a fixed-height screen: lock page scroll while it is
+  // showing (iOS Safari lets the body rubber-band/scroll otherwise) and
+  // release it for the For You list, which scrolls normally.
+  useEffect(() => {
+    const lock = mode === "swipe";
+    document.body.classList.toggle("deck-lock", lock);
+    document.documentElement.classList.toggle("deck-lock", lock);
+    return () => {
+      document.body.classList.remove("deck-lock");
+      document.documentElement.classList.remove("deck-lock");
+    };
+  }, [mode]);
   const pageRef = useRef(1);
   const reloadAttemptsRef = useRef(0);
   const servedRef = useRef(new Set());
@@ -5181,6 +5199,8 @@ input, textarea { font-family: inherit; }
 .edit-log-time { font-family: 'Space Mono', monospace; font-size: 10.5px; flex-shrink: 0; }
 
 /* discover swipe */
+html.deck-lock, body.deck-lock { overflow: hidden !important; height: 100% !important; overscroll-behavior: none !important; }
+body.deck-lock { height: 100dvh !important; }
 .view-discover { display: flex; flex-direction: column; align-items: center; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-x; overscroll-behavior: contain; }
 .view-discover * { user-select: none; -webkit-user-select: none; }
 .swipe-stack { touch-action: pan-x; width: 100%; max-width: 354px; height: calc(100vh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); height: calc(100dvh - 232px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; position: relative; z-index: 1; margin: 2px auto 0; border-radius: 19px; box-shadow: 0 20px 34px -14px rgba(0,0,0,0.25); }
@@ -5354,7 +5374,6 @@ input, textarea { font-family: inherit; }
 
 /* collection controls */
 .collection-controls { margin-bottom: 14px; }
-.rating-chip-row { display: flex; gap: 6px; overflow-x: auto; margin-top: 8px; padding-bottom: 2px; scrollbar-width: none; }
 .top-five { margin-top: 18px; border-top: 1px dashed #d8c7b2; padding-top: 14px; }
 .top-five .icon-btn { color: #8a6f57; border-color: #d8c7b2; }
 .top-five-saved { color: #8a6d1f; }
@@ -5367,9 +5386,6 @@ input, textarea { font-family: inherit; }
 .top-five-name { font-size: 13px; font-weight: 600; color: #3a2a20; }
 .top-five-meta { font-size: 11.5px; color: #8a6f57; }
 .top-five-saved { color: var(--brass-bright); display: inline-flex; padding: 6px; }
-.rating-chip-row::-webkit-scrollbar { display: none; }
-.rating-chip { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--velvet); color: var(--muted); font-size: 12px; }
-.rating-chip.active { border-color: var(--brass); color: var(--brass-bright); }
 .rated-stub-editor { background: var(--velvet); border-top: 1px dashed var(--line); padding: 8px 6px 10px; display: flex; justify-content: center; }
 .rated-stub-editor .star-bg { color: rgba(255,255,255,0.35); }
 .collection-search { margin-bottom: 10px; }
