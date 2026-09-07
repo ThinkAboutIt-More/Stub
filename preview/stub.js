@@ -2086,7 +2086,7 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
       return !rec || (rec.count || 1) < 3;
     });
     setPool((p) => [...replayable, ...p]);
-    setFeedback((f) => ({ ...f, skippedIds: f.skippedIds.filter((s) => (s.count || 1) >= 3) }));
+    setFeedback((f) => ({ ...f, skippedIds: f.skippedIds.map((s) => (s.count || 1) >= 3 ? s : { ...s, at: 0 }) }));
     setSkippedPool([]);
   }
   function want(item) {
