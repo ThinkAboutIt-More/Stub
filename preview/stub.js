@@ -229,7 +229,12 @@ function normalize(item) {
 function cleanProviderNames(raw) {
   const names = [];
   (raw || []).forEach((n) => {
-    const clean = String(n).replace(/\s+(with Ads|Amazon Channel|Apple TV Channel|Premium|Essential|Standard|Basic)$/i, "").trim();
+    let clean = String(n).trim();
+    let prev;
+    do {
+      prev = clean;
+      clean = clean.replace(/\s+(with Ads|Amazon Channel|Apple TV Channel|Premium|Essential|Standard|Basic)$/i, "").trim();
+    } while (clean !== prev);
     if (clean && !names.some((x) => x.toLowerCase() === clean.toLowerCase())) names.push(clean);
   });
   return names;
@@ -3011,8 +3016,19 @@ function App() {
       active = false;
     };
   }, [ready, watchlist, settings.country, tmdb]);
+  const streamSeededRef = useRef(false);
+  useEffect(() => {
+    if (streamSeededRef.current) return;
+    if (feedback.streamAlertIds !== void 0) {
+      streamSeededRef.current = true;
+      return;
+    }
+    if (!Object.keys(streamMap).length) return;
+    streamSeededRef.current = true;
+    setFeedback((f) => f.streamAlertIds !== void 0 ? f : { ...f, streamAlertIds: Object.keys(streamMap) });
+  }, [streamMap, feedback]);
   const newStreamKeys = new Set(
-    Object.keys(streamMap).filter((k) => !(feedback.streamAlertIds || []).includes(k))
+    feedback.streamAlertIds === void 0 ? [] : Object.keys(streamMap).filter((k) => !(feedback.streamAlertIds || []).includes(k))
   );
   function dismissStreamAlerts() {
     setFeedback((f) => ({ ...f, streamAlertIds: [.../* @__PURE__ */ new Set([...f.streamAlertIds || [], ...Object.keys(streamMap)])] }));
