@@ -3883,6 +3883,8 @@ input, textarea { font-family: inherit; }
 .match-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex-shrink: 0; }
 .outnow-filter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .outnow-filter-row .zip-banner { flex: 1; margin-bottom: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.outnow-filter-row .zip-banner svg { flex: 0 0 auto !important; }
+.outnow-filter-row .zip-banner span { flex: 0 1 auto !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .outnow-genre-select { flex-shrink: 0; max-width: 130px; }
 .zip-banner { display: flex; align-items: center; gap: 8px; background: var(--velvet); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
 .zip-banner-set { padding: 7px 12px; }
