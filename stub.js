@@ -203,6 +203,8 @@ function makeTmdb(apiKey) {
     discoverMovie: (params) => call("/discover/movie", params),
     discoverTv: (params) => call("/discover/tv", params),
     searchMulti: (query) => call("/search/multi", { query }),
+    searchPerson: (query) => call("/search/person", { query }),
+    personMovieCredits: (id) => call(`/person/${id}/movie_credits`),
     watchProviders: (mediaType, id) => call(`/${mediaType}/${id}/watch/providers`),
     details: (mediaType, id) => call(`/${mediaType}/${id}`),
     detailsFull: (mediaType, id) => call(`/${mediaType}/${id}`, { append_to_response: "credits,keywords" }),
@@ -1339,7 +1341,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
     ), /* @__PURE__ */ React.createElement("button", { className: "choice-dismiss", onClick: () => setChoice("choose") }, "back")))
   );
 }
-var APP_VERSION = "105";
+var APP_VERSION = "106";
 var posterGradCache = {};
 var DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" };
 function usePosterGradient(item) {
@@ -2358,6 +2360,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
   const [logging, setLogging] = useState(null);
   const [detail, setDetail] = useState(null);
   const [aiMode, setAiMode] = useState(false);
+  const [personName, setPersonName] = useState(null);
   const [quickRateKey, setQuickRateKey] = useState(null);
   const [loggedMarks, setLoggedMarks] = useState({});
   const searchRef = useRef(null);
@@ -2373,6 +2376,27 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
   useEffect(() => {
     if (searchRef.current) searchRef.current.focus();
   }, []);
+  async function personFilmography(q) {
+    const toks = q.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+    if (toks.length < 1) return null;
+    let people2;
+    try {
+      people2 = (await tmdb.searchPerson(q)).results || [];
+    } catch {
+      return null;
+    }
+    const person = people2.find((p) => {
+      const nt = (p.name || "").toLowerCase().split(/\s+/);
+      return toks.every((t) => nt.includes(t));
+    });
+    if (!person) return null;
+    const cr = await tmdb.personMovieCredits(person.id).catch(() => null);
+    if (!cr) return null;
+    const mine = [...cr.cast || [], ...(cr.crew || []).filter((c) => c.job === "Director")];
+    const dedup = Array.from(new Map(mine.map((m) => [m.id, m])).values());
+    const items = dedup.map(normalize).filter((x) => x.title && x.posterPath && x.voteCount > 0);
+    return { person, items };
+  }
   async function runSearch(e) {
     if (e && e.preventDefault) {
       e.preventDefault();
@@ -2383,6 +2407,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
     setLoading(true);
     setError(null);
     setAiMode(false);
+    setPersonName(null);
     const tmdbSearch = async () => {
       const data = await tmdb.searchMulti(q);
       return (data.results || []).filter((r) => (r.media_type === "movie" || r.media_type === "tv") && !isJunkTvRaw(r)).map(normalize);
@@ -2399,8 +2424,17 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
         setAiMode(true);
       } else {
         const hits = await tmdbSearch();
-        if (hits.length) {
+        const film = await personFilmography(q);
+        if (film && film.items.length) {
+          film.items.forEach((it) => {
+            it._pct = matchMeta(it, taste, people, crowd).pct;
+          });
+          film.items.sort((a, b) => (b.voteCount || 0) - (a.voteCount || 0));
+          setResults(film.items);
+          setPersonName(film.person.name);
+        } else if (hits.length) {
           setResults(hits);
+          setPersonName(null);
         } else {
           try {
             const ai = await smartSearch(q, tmdb);
@@ -2449,14 +2483,14 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
       value: query,
       onChange: (e) => setQuery(e.target.value)
     }
-  ), /* @__PURE__ */ React.createElement("button", { type: "submit", style: { display: "none" }, "aria-hidden": "true", tabIndex: -1 }, "Search")), loading && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(RefreshCw, { size: 32, className: "spin" }), title: "Searching", body: "One second." }), error && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Info, { size: 32 }), title: "Search failed", body: error }), !loading && !error && results.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, aiMode && /* @__PURE__ */ React.createElement("div", { className: "hint-banner", style: { marginBottom: 12 } }, /* @__PURE__ */ React.createElement(Sparkles, { size: 14 }), " AI-powered results"), /* @__PURE__ */ React.createElement("div", { className: "suggest-list" }, results.map((item) => /* @__PURE__ */ React.createElement("div", { className: "suggest-row", key: item.tmdbId + item.mediaType }, /* @__PURE__ */ React.createElement("button", { className: "suggest-thumb-btn", onClick: () => setDetail(item), "aria-label": `Details for ${item.title}` }, item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w154"), alt: "", className: "suggest-thumb" }) : /* @__PURE__ */ React.createElement("div", { className: "suggest-thumb suggest-thumb-fallback" }, item.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 18 }) : /* @__PURE__ */ React.createElement(Film, { size: 18 }))), quickRateKey === item.tmdbId + item.mediaType && !loggedMarks[item.tmdbId + item.mediaType] ? /* @__PURE__ */ React.createElement("div", { className: "quick-rate" }, /* @__PURE__ */ React.createElement("div", { className: "quick-rate-label" }, "Rate it"), /* @__PURE__ */ React.createElement(Stars, { value: 0, size: 26, onChange: (n) => {
+  ), /* @__PURE__ */ React.createElement("button", { type: "submit", style: { display: "none" }, "aria-hidden": "true", tabIndex: -1 }, "Search")), loading && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(RefreshCw, { size: 32, className: "spin" }), title: "Searching", body: "One second." }), error && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Info, { size: 32 }), title: "Search failed", body: error }), !loading && !error && results.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, personName && !aiMode && /* @__PURE__ */ React.createElement("div", { className: "hint-banner", style: { marginBottom: 12 } }, "Movies with ", personName, "."), aiMode && /* @__PURE__ */ React.createElement("div", { className: "hint-banner", style: { marginBottom: 12 } }, /* @__PURE__ */ React.createElement(Sparkles, { size: 14 }), " AI-powered results"), /* @__PURE__ */ React.createElement("div", { className: "suggest-list" }, results.map((item) => /* @__PURE__ */ React.createElement("div", { className: "suggest-row", key: item.tmdbId + item.mediaType }, /* @__PURE__ */ React.createElement("button", { className: "suggest-thumb-btn", onClick: () => setDetail(item), "aria-label": `Details for ${item.title}` }, item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w154"), alt: "", className: "suggest-thumb" }) : /* @__PURE__ */ React.createElement("div", { className: "suggest-thumb suggest-thumb-fallback" }, item.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 18 }) : /* @__PURE__ */ React.createElement(Film, { size: 18 }))), quickRateKey === item.tmdbId + item.mediaType && !loggedMarks[item.tmdbId + item.mediaType] ? /* @__PURE__ */ React.createElement("div", { className: "quick-rate" }, /* @__PURE__ */ React.createElement("div", { className: "quick-rate-label" }, "Rate it"), /* @__PURE__ */ React.createElement(Stars, { value: 0, size: 26, onChange: (n) => {
     onLogNew(item, { id: uid(), date: todayISO(), undated: false, location: "", rating: n, notes: "", loggedAt: Date.now() });
     setLoggedMarks((m) => ({ ...m, [item.tmdbId + item.mediaType]: n }));
     setQuickRateKey(null);
   } }), /* @__PURE__ */ React.createElement("button", { className: "quick-rate-more", onClick: () => {
     setQuickRateKey(null);
     setLogging(item);
-  } }, "more options")) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "suggest-info" }, /* @__PURE__ */ React.createElement("div", { className: "suggest-title-row" }, /* @__PURE__ */ React.createElement("button", { className: "suggest-title-btn", onClick: () => setDetail(item) }, item.title, " ", item.year ? `\xB7 ${item.year}` : ""), aiMode && (() => {
+  } }, "more options")) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "suggest-info" }, /* @__PURE__ */ React.createElement("div", { className: "suggest-title-row" }, /* @__PURE__ */ React.createElement("button", { className: "suggest-title-btn", onClick: () => setDetail(item) }, item.title, " ", item.year ? `\xB7 ${item.year}` : ""), (aiMode || personName) && (() => {
     const m = matchMeta(item, taste, people, crowd);
     return m.pct != null ? /* @__PURE__ */ React.createElement("span", { className: "match-pill", style: matchStyle(m.pct) }, m.pct, "%") : null;
   })())), /* @__PURE__ */ React.createElement("div", { className: "suggest-actions" }, loggedMarks[item.tmdbId + item.mediaType] ? /* @__PURE__ */ React.createElement("span", { className: "logged-mark" }, /* @__PURE__ */ React.createElement(Check, { size: 15 }), " ", loggedMarks[item.tmdbId + item.mediaType], "/10", onUndoQuick && /* @__PURE__ */ React.createElement("button", { className: "logged-undo", onClick: () => {

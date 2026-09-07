@@ -212,6 +212,8 @@ function makeTmdb(apiKey) {
     discoverMovie: (params) => call("/discover/movie", params),
     discoverTv: (params) => call("/discover/tv", params),
     searchMulti: (query) => call("/search/multi", { query }),
+    searchPerson: (query) => call("/search/person", { query }),
+    personMovieCredits: (id) => call(`/person/${id}/movie_credits`),
     watchProviders: (mediaType, id) => call(`/${mediaType}/${id}/watch/providers`),
     details: (mediaType, id) => call(`/${mediaType}/${id}`),
     detailsFull: (mediaType, id) =>
@@ -2035,7 +2037,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "105";
+const APP_VERSION = "106";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -3430,6 +3432,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
   const [logging, setLogging] = useState(null);
   const [detail, setDetail] = useState(null);
   const [aiMode, setAiMode] = useState(false);
+  const [personName, setPersonName] = useState(null);
   const [quickRateKey, setQuickRateKey] = useState(null);
   const [loggedMarks, setLoggedMarks] = useState({});
   const searchRef = useRef(null);
@@ -3443,6 +3446,27 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
   }, [query]);
   useEffect(() => { if (searchRef.current) searchRef.current.focus(); }, []);
 
+  // person search: "Idris Elba" isn't a title, it's a filmography request.
+  // Resolve the name to a TMDB person (all query tokens must appear in the
+  // name, so "Dune" never matches "Dunaway"), then pull their movie credits.
+  async function personFilmography(q) {
+    const toks = q.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+    if (toks.length < 1) return null;
+    let people;
+    try { people = (await tmdb.searchPerson(q)).results || []; } catch { return null; }
+    const person = people.find((p) => {
+      const nt = (p.name || "").toLowerCase().split(/\s+/);
+      return toks.every((t) => nt.includes(t));
+    });
+    if (!person) return null;
+    const cr = await tmdb.personMovieCredits(person.id).catch(() => null);
+    if (!cr) return null;
+    const mine = [...(cr.cast || []), ...(cr.crew || []).filter((c) => c.job === "Director")];
+    const dedup = Array.from(new Map(mine.map((m) => [m.id, m])).values());
+    const items = dedup.map(normalize).filter((x) => x.title && x.posterPath && x.voteCount > 0);
+    return { person, items };
+  }
+
   async function runSearch(e) {
     if (e && e.preventDefault) {
       e.preventDefault();
@@ -3455,6 +3479,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
     setLoading(true);
     setError(null);
     setAiMode(false);
+    setPersonName(null);
     const tmdbSearch = async () => {
       const data = await tmdb.searchMulti(q);
       return (data.results || []).filter((r) => (r.media_type === "movie" || r.media_type === "tv") && !isJunkTvRaw(r)).map(normalize);
@@ -3470,8 +3495,17 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
         setAiMode(true);
       } else {
         const hits = await tmdbSearch();
-        if (hits.length) {
+        const film = await personFilmography(q);
+        if (film && film.items.length) {
+          film.items.forEach((it) => { it._pct = matchMeta(it, taste, people, crowd).pct; });
+          // fame order, not match order: a person search is "find their movies",
+          // and sorting 100+ credits by his match buries the famous ones.
+          film.items.sort((a, b) => (b.voteCount || 0) - (a.voteCount || 0));
+          setResults(film.items);
+          setPersonName(film.person.name);
+        } else if (hits.length) {
           setResults(hits);
+          setPersonName(null);
         } else {
           // no title match — fall back to AI suggestions
           try {
@@ -3528,6 +3562,9 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
 
       {!loading && !error && results.length > 0 && (
         <>
+          {personName && !aiMode && (
+            <div className="hint-banner" style={{ marginBottom: 12 }}>Movies with {personName}.</div>
+          )}
           {aiMode && (
             <div className="hint-banner" style={{ marginBottom: 12 }}>
               <Sparkles size={14} /> AI-powered results
@@ -3558,7 +3595,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
                     <div className="suggest-info">
                       <div className="suggest-title-row">
                         <button className="suggest-title-btn" onClick={() => setDetail(item)}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
-                        {aiMode && (() => { const m = matchMeta(item, taste, people, crowd); return m.pct != null ? <span className="match-pill" style={matchStyle(m.pct)}>{m.pct}%</span> : null; })()}
+                        {(aiMode || personName) && (() => { const m = matchMeta(item, taste, people, crowd); return m.pct != null ? <span className="match-pill" style={matchStyle(m.pct)}>{m.pct}%</span> : null; })()}
                       </div>
                     </div>
                     <div className="suggest-actions">
