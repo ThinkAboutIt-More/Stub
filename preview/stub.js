@@ -763,17 +763,22 @@ function LogForm({ initial, onSave, onCancel, saveLabel, mediaType, tmdb, item }
     saveLabel || "Save"
   )));
 }
-function TicketStub({ ticket, onOpen }) {
+var TicketStub = React.memo(function TicketStub2({ ticket, onOpen }) {
   const last = ticket.viewings[ticket.viewings.length - 1];
   return /* @__PURE__ */ React.createElement("button", { className: "stub", onClick: () => onOpen(ticket) }, /* @__PURE__ */ React.createElement("div", { className: "stub-poster" }, ticket.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(ticket.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ React.createElement("div", { className: "stub-poster-fallback" }, ticket.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 28 }) : /* @__PURE__ */ React.createElement(Film, { size: 28 })), last.rating != null && last.rating > 0 && /* @__PURE__ */ React.createElement("div", { className: "stub-rate-badge", "aria-label": `Rated ${last.rating} out of 10` }, /* @__PURE__ */ React.createElement(Star, { size: 34, strokeWidth: 1, className: "stub-rate-star" }), /* @__PURE__ */ React.createElement("span", { className: "stub-rate-num" }, last.rating % 1 ? last.rating.toFixed(1) : last.rating)), /* @__PURE__ */ React.createElement("div", { className: "stub-perf" })), /* @__PURE__ */ React.createElement("div", { className: "stub-tab" }, /* @__PURE__ */ React.createElement("div", { className: "stub-tab-top" }, /* @__PURE__ */ React.createElement("div", { className: "stub-title" }, ticket.title), ticket.viewings.length > 1 && /* @__PURE__ */ React.createElement("div", { className: "stub-rewatch-inline" }, ticket.viewings.length, "\xD7"))), /* @__PURE__ */ React.createElement("span", { className: "stub-shine" }));
-}
-function WatchlistStub({ item, onClick, onLog, inTheaters }) {
+});
+var WatchlistStub = React.memo(function WatchlistStub2({ item, onClick, onLog, inTheaters }) {
   const unreleased = item.releaseDate ? item.releaseDate > todayISO() : item.year && Number(item.year) > (/* @__PURE__ */ new Date()).getFullYear();
   return /* @__PURE__ */ React.createElement("div", { className: "stub" }, /* @__PURE__ */ React.createElement("button", { className: "stub-poster-link", onClick, "aria-label": item.title }, /* @__PURE__ */ React.createElement("div", { className: "stub-poster" }, item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ React.createElement("div", { className: "stub-poster-fallback" }, item.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 28 }) : /* @__PURE__ */ React.createElement(Film, { size: 28 })), /* @__PURE__ */ React.createElement("div", { className: "stub-perf" }), !unreleased && /* @__PURE__ */ React.createElement("button", { className: "stub-corner-btn stub-corner-eye", onClick: (e) => {
     e.stopPropagation();
     onLog();
   }, "aria-label": "Mark watched" }, /* @__PURE__ */ React.createElement(Eye, { size: 14 })), inTheaters && !unreleased && /* @__PURE__ */ React.createElement("span", { className: "stub-corner-badge stub-corner-popcorn", title: "In theaters - showtimes in details" }, /* @__PURE__ */ React.createElement(Popcorn, { size: 13 })))), /* @__PURE__ */ React.createElement("div", { className: "stub-tab" }, /* @__PURE__ */ React.createElement("div", { className: "stub-tab-top" }, /* @__PURE__ */ React.createElement("div", { className: "stub-title" }, item.title)), unreleased && /* @__PURE__ */ React.createElement("div", { className: "wl-unreleased", title: "Not released yet" }, /* @__PURE__ */ React.createElement(CalendarDays, { size: 12 }), " ", item.releaseDate ? `Out ${formatDate(item.releaseDate)}` : `Out ${item.year}`)), /* @__PURE__ */ React.createElement("span", { className: "stub-shine" }));
-}
+});
+var RatedStub = React.memo(function RatedStub2({ ticket, onRate }) {
+  const [editing, setEditing] = useState(false);
+  const last = ticket.viewings[ticket.viewings.length - 1];
+  return /* @__PURE__ */ React.createElement("div", { className: "stub" }, /* @__PURE__ */ React.createElement("button", { className: "stub-poster-link", onClick: () => setEditing((e) => !e), "aria-label": `Adjust rating for ${ticket.title}` }, /* @__PURE__ */ React.createElement("div", { className: "stub-poster" }, ticket.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(ticket.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ React.createElement("div", { className: "stub-poster-fallback" }, ticket.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 28 }) : /* @__PURE__ */ React.createElement(Film, { size: 28 })), last.rating != null && last.rating > 0 && /* @__PURE__ */ React.createElement("div", { className: "stub-rate-badge", "aria-label": `Rated ${last.rating} out of 10` }, /* @__PURE__ */ React.createElement(Star, { size: 34, strokeWidth: 1, className: "stub-rate-star" }), /* @__PURE__ */ React.createElement("span", { className: "stub-rate-num" }, last.rating % 1 ? last.rating.toFixed(1) : last.rating)), /* @__PURE__ */ React.createElement("div", { className: "stub-perf" }))), /* @__PURE__ */ React.createElement("div", { className: "stub-tab" }, /* @__PURE__ */ React.createElement("div", { className: "stub-tab-top" }, /* @__PURE__ */ React.createElement("div", { className: "stub-title" }, ticket.title), ticket.viewings.length > 1 && /* @__PURE__ */ React.createElement("div", { className: "stub-rewatch-inline" }, ticket.viewings.length, "\xD7"))), editing && /* @__PURE__ */ React.createElement("div", { className: "rated-stub-editor" }, /* @__PURE__ */ React.createElement(Stars, { value: last.rating || 0, size: 22, onChange: (n) => onRate(ticket, n) })), /* @__PURE__ */ React.createElement("span", { className: "stub-shine" }));
+});
 function TicketDetail({ ticket, onClose, onUpdate, onDelete, tmdb, settings }) {
   const [showPoster, setShowPoster] = useState(false);
   const [editingViewingId, setEditingViewingId] = useState(null);
@@ -996,6 +1001,27 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
   const [wlQuery, setWlQuery] = useState("");
   const [wlGenre, setWlGenre] = useState("all");
   const [wlSort, setWlSort] = useState("added");
+  const openTicket = useCallback((t) => setOpen(t), []);
+  const openWlDetail = useCallback((w) => setDetail(w), []);
+  const [ratingFilter, setRatingFilter] = useState("all");
+  const ratingOptions = useMemo(() => {
+    const vals = /* @__PURE__ */ new Set();
+    collection.forEach((c) => {
+      const r = c.viewings.length ? c.viewings[c.viewings.length - 1].rating : 0;
+      if (r) vals.add(r);
+    });
+    return Array.from(vals).sort((a, b) => b - a);
+  }, [collection]);
+  const adjustRating = useCallback((ticket, n) => {
+    const lastV = ticket.viewings[ticket.viewings.length - 1];
+    if (!lastV) return;
+    onUpdateTicket({
+      ...ticket,
+      viewings: ticket.viewings.map((v) => v.id === lastV.id ? { ...v, rating: n } : v),
+      log: [...ticket.log || [], { at: Date.now(), text: `Rated it ${n}/10` }]
+    });
+  }, [onUpdateTicket]);
+  const logWl = useCallback((w) => setLoggingWl(w), []);
   const [nowPlayingIds, setNowPlayingIds] = useState(() => /* @__PURE__ */ new Set());
   useEffect(() => {
     let active = true;
@@ -1044,6 +1070,9 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
     if (yearFilter !== "all") {
       list = list.filter((c) => c.year === yearFilter);
     }
+    if (ratingFilter !== "all") {
+      list = list.filter((c) => (c.viewings[c.viewings.length - 1].rating || 0) === Number(ratingFilter));
+    }
     const lastDate = (t) => t.viewings[t.viewings.length - 1].date || "";
     const lastRating = (t) => t.viewings[t.viewings.length - 1].rating || 0;
     list.sort((a, b) => {
@@ -1054,7 +1083,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
       return 0;
     });
     return list;
-  }, [collection, query, genreFilter, sort, yearFilter]);
+  }, [collection, query, genreFilter, sort, yearFilter, ratingFilter]);
   if (open) {
     return /* @__PURE__ */ React.createElement(
       TicketDetail,
@@ -1108,7 +1137,7 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
       value: query,
       onChange: (e) => setQuery(e.target.value)
     }
-  )), /* @__PURE__ */ React.createElement("div", { className: "filter-row" }, /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: sort, onChange: (e) => setSort(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "recent" }, "Recently collected"), /* @__PURE__ */ React.createElement("option", { value: "oldest" }, "Oldest first"), /* @__PURE__ */ React.createElement("option", { value: "highest" }, "Highest rated"), /* @__PURE__ */ React.createElement("option", { value: "lowest" }, "Lowest rated")), /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: genreFilter, onChange: (e) => setGenreFilter(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "all" }, "All genres"), genreOptions.map((g) => /* @__PURE__ */ React.createElement("option", { key: g.id, value: g.id }, g.name))), /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: yearFilter, onChange: (e) => setYearFilter(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "all" }, "All years"), yearOptions.map((y) => /* @__PURE__ */ React.createElement("option", { key: y, value: y }, y))))), visibleCollection.length === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Search, { size: 28 }), title: "No matches", body: "Nothing in your collection fits that filter." }) : /* @__PURE__ */ React.createElement("div", { className: "stub-grid stub-grid-compact" }, visibleCollection.map((t) => /* @__PURE__ */ React.createElement(TicketStub, { ticket: t, key: t.id, onOpen: setOpen }))))), loggingWl && /* @__PURE__ */ React.createElement(Modal, { onClose: () => setLoggingWl(null) }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, loggingWl.title), /* @__PURE__ */ React.createElement(LogForm, { mediaType: loggingWl.mediaType, tmdb, item: loggingWl, saveLabel: "Add to collection", onCancel: () => setLoggingWl(null), onSave: (entry) => {
+  )), /* @__PURE__ */ React.createElement("div", { className: "filter-row" }, /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: sort, onChange: (e) => setSort(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "recent" }, "Recently collected"), /* @__PURE__ */ React.createElement("option", { value: "oldest" }, "Oldest first"), /* @__PURE__ */ React.createElement("option", { value: "highest" }, "Highest rated"), /* @__PURE__ */ React.createElement("option", { value: "lowest" }, "Lowest rated")), /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: genreFilter, onChange: (e) => setGenreFilter(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "all" }, "All genres"), genreOptions.map((g) => /* @__PURE__ */ React.createElement("option", { key: g.id, value: g.id }, g.name))), /* @__PURE__ */ React.createElement("select", { className: "filter-select", value: yearFilter, onChange: (e) => setYearFilter(e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "all" }, "All years"), yearOptions.map((y) => /* @__PURE__ */ React.createElement("option", { key: y, value: y }, y)))), ratingOptions.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "rating-chip-row" }, /* @__PURE__ */ React.createElement("button", { className: ratingFilter === "all" ? "rating-chip active" : "rating-chip", onClick: () => setRatingFilter("all") }, "All ratings"), ratingOptions.map((r) => /* @__PURE__ */ React.createElement("button", { key: r, className: ratingFilter === String(r) ? "rating-chip active" : "rating-chip", onClick: () => setRatingFilter(String(r)) }, /* @__PURE__ */ React.createElement(Star, { size: 11, fill: "currentColor", strokeWidth: 1.5 }), " ", r % 1 ? r.toFixed(1) : r)))), visibleCollection.length === 0 ? /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Search, { size: 28 }), title: "No matches", body: "Nothing in your collection fits that filter." }) : /* @__PURE__ */ React.createElement("div", { className: "stub-grid stub-grid-compact" }, visibleCollection.map((t) => ratingFilter === "all" ? /* @__PURE__ */ React.createElement(TicketStub, { ticket: t, key: t.id, onOpen: openTicket }) : /* @__PURE__ */ React.createElement(RatedStub, { ticket: t, key: t.id, onRate: adjustRating }))))), loggingWl && /* @__PURE__ */ React.createElement(Modal, { onClose: () => setLoggingWl(null) }, /* @__PURE__ */ React.createElement("h3", { className: "modal-title" }, loggingWl.title), /* @__PURE__ */ React.createElement(LogForm, { mediaType: loggingWl.mediaType, tmdb, item: loggingWl, saveLabel: "Add to collection", onCancel: () => setLoggingWl(null), onSave: (entry) => {
     onLogNew(loggingWl, entry);
     setLoggingWl(null);
   } })), showWatchlist && (watchlist.length === 0 ? /* @__PURE__ */ React.createElement(
@@ -1132,8 +1161,8 @@ function CollectionView({ collection, watchlist, tmdb, taste, settings, people, 
       key: w.tmdbId + w.mediaType,
       item: w,
       inTheaters: w.mediaType !== "tv" && nowPlayingIds.has(w.tmdbId),
-      onClick: () => setDetail(w),
-      onLog: () => setLoggingWl(w)
+      onClick: openWlDetail,
+      onLog: logWl
     }
   ))))), /* @__PURE__ */ React.createElement("div", { style: { height: "24px" } }));
 }
@@ -1341,7 +1370,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
     ), /* @__PURE__ */ React.createElement("button", { className: "choice-dismiss", onClick: () => setChoice("choose") }, "back")))
   );
 }
-var APP_VERSION = "107";
+var APP_VERSION = "108";
 var posterGradCache = {};
 var DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" };
 function usePosterGradient(item) {
@@ -3463,9 +3492,12 @@ input, textarea { font-family: inherit; }
 .stub {
   background: var(--stub-cream); border: none; border-radius: 12px; padding: 0;
   display: flex; flex-direction: column; overflow: hidden; position: relative;
-  text-align: left; box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+  text-align: left; box-shadow: 0 3px 8px rgba(0,0,0,0.3);
   transition: transform 0.15s;
+  content-visibility: auto; contain-intrinsic-size: auto 240px;
+  contain: layout paint style;
 }
+.stub:active { will-change: transform; }
 .stub:active { transform: scale(0.97); }
 .stub-poster { position: relative; aspect-ratio: 2/3; background: var(--velvet); }
 .stub-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -3803,6 +3835,12 @@ input, textarea { font-family: inherit; }
 
 /* collection controls */
 .collection-controls { margin-bottom: 14px; }
+.rating-chip-row { display: flex; gap: 6px; overflow-x: auto; margin-top: 8px; padding-bottom: 2px; scrollbar-width: none; }
+.rating-chip-row::-webkit-scrollbar { display: none; }
+.rating-chip { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--velvet); color: var(--muted); font-size: 12px; }
+.rating-chip.active { border-color: var(--brass); color: var(--brass-bright); }
+.rated-stub-editor { background: var(--velvet); border-top: 1px dashed var(--line); padding: 8px 6px 10px; display: flex; justify-content: center; }
+.rated-stub-editor .star-bg { color: rgba(255,255,255,0.35); }
 .collection-search { margin-bottom: 10px; }
 .filter-row { display: flex; gap: 8px; }
 .filter-select {
