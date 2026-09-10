@@ -1077,7 +1077,7 @@ const WatchlistStub = React.memo(function WatchlistStub({ item, onClick, onLog, 
     : (item.year && Number(item.year) > new Date().getFullYear());
   return (
     <div className="stub">
-      <button className="stub-poster-link" onClick={onClick} aria-label={item.title}>
+      <button className="stub-poster-link" onClick={() => onClick(item)} aria-label={item.title}>
         <div className="stub-poster">
           {item.posterPath ? (
             <img src={tmdbImg(item.posterPath, "w342")} alt="" loading="lazy" />
@@ -1088,7 +1088,7 @@ const WatchlistStub = React.memo(function WatchlistStub({ item, onClick, onLog, 
           )}
           <div className="stub-perf" />
           {!unreleased && (
-            <button className="stub-corner-btn stub-corner-eye" onClick={(e) => { e.stopPropagation(); onLog(); }} aria-label="Mark watched">
+            <button className="stub-corner-btn stub-corner-eye" onClick={(e) => { e.stopPropagation(); onLog(item); }} aria-label="Mark watched">
               <Eye size={14} />
             </button>
           )}
@@ -2185,7 +2185,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "109";
+const APP_VERSION = "111";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -2261,7 +2261,7 @@ function usePosterGradient(item) {
   return grad;
 }
 
-function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, collection, watchlist, onAddToWatchlist, onLogNew }) {
+function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, collection, watchlist, onAddToWatchlist, onLogNew, active }) {
   const [pool, setPool] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -2278,14 +2278,16 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
   // showing (iOS Safari lets the body rubber-band/scroll otherwise) and
   // release it for the For You list, which scrolls normally.
   useEffect(() => {
-    const lock = mode === "swipe";
+    // all tabs stay mounted (display:none), so "swipe mode" alone is not
+    // enough - only lock while the Discover tab itself is the active tab.
+    const lock = active && mode === "swipe";
     document.body.classList.toggle("deck-lock", lock);
     document.documentElement.classList.toggle("deck-lock", lock);
     return () => {
       document.body.classList.remove("deck-lock");
       document.documentElement.classList.remove("deck-lock");
     };
-  }, [mode]);
+  }, [active, mode]);
   const pageRef = useRef(1);
   const reloadAttemptsRef = useRef(0);
   const servedRef = useRef(new Set());
@@ -4765,6 +4767,7 @@ export default function App() {
         {mountedTabs.has("discover") && (
           <div style={{ display: tab === "discover" ? "" : "none" }}>
             <DiscoverView
+              active={tab === "discover"}
               tmdb={tmdb}
               feedback={feedback}
               setFeedback={setFeedback}

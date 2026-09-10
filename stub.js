@@ -769,9 +769,9 @@ var TicketStub = React.memo(function TicketStub2({ ticket, onOpen }) {
 });
 var WatchlistStub = React.memo(function WatchlistStub2({ item, onClick, onLog, inTheaters }) {
   const unreleased = item.releaseDate ? item.releaseDate > todayISO() : item.year && Number(item.year) > (/* @__PURE__ */ new Date()).getFullYear();
-  return /* @__PURE__ */ React.createElement("div", { className: "stub" }, /* @__PURE__ */ React.createElement("button", { className: "stub-poster-link", onClick, "aria-label": item.title }, /* @__PURE__ */ React.createElement("div", { className: "stub-poster" }, item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ React.createElement("div", { className: "stub-poster-fallback" }, item.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 28 }) : /* @__PURE__ */ React.createElement(Film, { size: 28 })), /* @__PURE__ */ React.createElement("div", { className: "stub-perf" }), !unreleased && /* @__PURE__ */ React.createElement("button", { className: "stub-corner-btn stub-corner-eye", onClick: (e) => {
+  return /* @__PURE__ */ React.createElement("div", { className: "stub" }, /* @__PURE__ */ React.createElement("button", { className: "stub-poster-link", onClick: () => onClick(item), "aria-label": item.title }, /* @__PURE__ */ React.createElement("div", { className: "stub-poster" }, item.posterPath ? /* @__PURE__ */ React.createElement("img", { src: tmdbImg(item.posterPath, "w342"), alt: "", loading: "lazy" }) : /* @__PURE__ */ React.createElement("div", { className: "stub-poster-fallback" }, item.mediaType === "tv" ? /* @__PURE__ */ React.createElement(Tv, { size: 28 }) : /* @__PURE__ */ React.createElement(Film, { size: 28 })), /* @__PURE__ */ React.createElement("div", { className: "stub-perf" }), !unreleased && /* @__PURE__ */ React.createElement("button", { className: "stub-corner-btn stub-corner-eye", onClick: (e) => {
     e.stopPropagation();
-    onLog();
+    onLog(item);
   }, "aria-label": "Mark watched" }, /* @__PURE__ */ React.createElement(Eye, { size: 14 })), inTheaters && !unreleased && /* @__PURE__ */ React.createElement("span", { className: "stub-corner-badge stub-corner-popcorn", title: "In theaters - showtimes in details" }, /* @__PURE__ */ React.createElement(Popcorn, { size: 13 })))), /* @__PURE__ */ React.createElement("div", { className: "stub-tab" }, /* @__PURE__ */ React.createElement("div", { className: "stub-tab-top" }, /* @__PURE__ */ React.createElement("div", { className: "stub-title" }, item.title)), unreleased && /* @__PURE__ */ React.createElement("div", { className: "wl-unreleased", title: "Not released yet" }, /* @__PURE__ */ React.createElement(CalendarDays, { size: 12 }), " ", item.releaseDate ? `Out ${formatDate(item.releaseDate)}` : `Out ${item.year}`)), /* @__PURE__ */ React.createElement("span", { className: "stub-shine" }));
 });
 var RatedStub = React.memo(function RatedStub2({ ticket, onRate }) {
@@ -1416,7 +1416,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
     ), /* @__PURE__ */ React.createElement("button", { className: "choice-dismiss", onClick: () => setChoice("choose") }, "back")))
   );
 }
-var APP_VERSION = "110";
+var APP_VERSION = "111";
 var posterGradCache = {};
 var DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" };
 function usePosterGradient(item) {
