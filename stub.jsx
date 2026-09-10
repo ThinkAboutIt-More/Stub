@@ -2188,7 +2188,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "112";
+const APP_VERSION = "113";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {
@@ -3703,7 +3703,10 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
         setAiMode(true);
       } else {
         const hits = await tmdbSearch();
-        const film = await personFilmography(q);
+        // an exact title match means a title lookup, not a person - otherwise
+        // anyone named "Zodiac" (or "Heat", "Alien"...) hijacks the search.
+        const exactTitle = hits.find((h) => (h.title || "").toLowerCase() === q.toLowerCase());
+        const film = exactTitle ? null : await personFilmography(q);
         if (film && film.items.length) {
           film.items.forEach((it) => { it._pct = matchMeta(it, taste, people, crowd).pct; });
           setResults(film.items);

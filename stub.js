@@ -1419,7 +1419,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
     ), /* @__PURE__ */ React.createElement("button", { className: "choice-dismiss", onClick: () => setChoice("choose") }, "back")))
   );
 }
-var APP_VERSION = "112";
+var APP_VERSION = "113";
 var posterGradCache = {};
 var DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" };
 function usePosterGradient(item) {
@@ -2544,7 +2544,8 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
         setAiMode(true);
       } else {
         const hits = await tmdbSearch();
-        const film = await personFilmography(q);
+        const exactTitle = hits.find((h) => (h.title || "").toLowerCase() === q.toLowerCase());
+        const film = exactTitle ? null : await personFilmography(q);
         if (film && film.items.length) {
           film.items.forEach((it) => {
             it._pct = matchMeta(it, taste, people, crowd).pct;
