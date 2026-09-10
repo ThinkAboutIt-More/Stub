@@ -229,6 +229,7 @@ function normalize(item) {
     voteCount: item.vote_count ?? 0
   };
 }
+var PROVIDER_ALIASES = { "paramount plus": "Paramount+", "disney plus": "Disney+" };
 function cleanProviderNames(raw) {
   const names = [];
   (raw || []).forEach((n) => {
@@ -236,8 +237,10 @@ function cleanProviderNames(raw) {
     let prev;
     do {
       prev = clean;
-      clean = clean.replace(/\s+(with Ads|Amazon Channel|Apple TV Channel|Premium|Essential|Standard|Basic)$/i, "").trim();
+      clean = clean.replace(/\s+(with Ads|Amazon Channel|Apple TV Channel|Roku Premium Channel|Premium Channel|Premium|Essential|Standard|Basic)$/i, "").trim();
     } while (clean !== prev);
+    const alias = PROVIDER_ALIASES[clean.toLowerCase()];
+    if (alias) clean = alias;
     if (clean && !names.some((x) => x.toLowerCase() === clean.toLowerCase())) names.push(clean);
   });
   return names;
@@ -1416,7 +1419,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
     ), /* @__PURE__ */ React.createElement("button", { className: "choice-dismiss", onClick: () => setChoice("choose") }, "back")))
   );
 }
-var APP_VERSION = "111";
+var APP_VERSION = "112";
 var posterGradCache = {};
 var DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" };
 function usePosterGradient(item) {
@@ -1818,10 +1821,10 @@ function DiscoverView({ tmdb, feedback, setFeedback, taste, people, settings, co
       onRate: rateInline,
       onTapInfo: () => setInfoItem(current)
     }
-  )), justLogged && /* @__PURE__ */ React.createElement("div", { className: "logged-toast" }, /* @__PURE__ */ React.createElement("span", null, "Logged!"), /* @__PURE__ */ React.createElement("a", { href: justLogged.url, target: "_blank", rel: "noreferrer", onClick: () => setJustLogged(null) }, /* @__PURE__ */ React.createElement(ExternalLink, { size: 12 }), " Reddit"), /* @__PURE__ */ React.createElement("button", { className: "toast-close", onClick: () => setJustLogged(null) }, /* @__PURE__ */ React.createElement(X, { size: 12 }))), /* @__PURE__ */ React.createElement("div", { className: "discover-foot discover-foot-bottom" }, lastAction && /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: undoLast }, /* @__PURE__ */ React.createElement(Undo2, { size: 14 }), " Undo skip"), skippedPool.length > 0 && /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: replaySkipped }, /* @__PURE__ */ React.createElement(Undo2, { size: 14 }), " Replay skipped (", skippedPool.length, ")"))), mode === "list" && /* @__PURE__ */ React.createElement(React.Fragment, null, !enough && /* @__PURE__ */ React.createElement("div", { className: "hint-banner" }, /* @__PURE__ */ React.createElement(Sparkles, { size: 14 }), " Rate a few films or swipe through and these match scores sharpen up."), /* @__PURE__ */ React.createElement("div", { className: "discover-foot", style: { justifyContent: "flex-end", marginTop: 0, marginBottom: 10 } }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => {
+  )), justLogged && /* @__PURE__ */ React.createElement("div", { className: "logged-toast" }, /* @__PURE__ */ React.createElement("span", null, "Logged!"), /* @__PURE__ */ React.createElement("a", { href: justLogged.url, target: "_blank", rel: "noreferrer", onClick: () => setJustLogged(null) }, /* @__PURE__ */ React.createElement(ExternalLink, { size: 12 }), " Reddit"), /* @__PURE__ */ React.createElement("button", { className: "toast-close", onClick: () => setJustLogged(null) }, /* @__PURE__ */ React.createElement(X, { size: 12 }))), /* @__PURE__ */ React.createElement("div", { className: "discover-foot discover-foot-bottom" }, lastAction && /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: undoLast }, /* @__PURE__ */ React.createElement(Undo2, { size: 14 }), " Undo skip"), skippedPool.length > 0 && /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: replaySkipped }, /* @__PURE__ */ React.createElement(Undo2, { size: 14 }), " Replay skipped (", skippedPool.length, ")"))), mode === "list" && /* @__PURE__ */ React.createElement(React.Fragment, null, !enough && /* @__PURE__ */ React.createElement("div", { className: "hint-banner" }, /* @__PURE__ */ React.createElement(Sparkles, { size: 14 }), " Rate a few movies or swipe through and these match scores sharpen up."), /* @__PURE__ */ React.createElement("div", { className: "discover-foot", style: { justifyContent: "flex-end", marginTop: 0, marginBottom: 10 } }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-ghost btn-sm", onClick: () => {
     forYouLoadedRef.current = false;
     loadForYouList();
-  } }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 14 }), " Refresh list")), forYouLoading && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(RefreshCw, { size: 32, className: "spin" }), title: "Building your list", body: "Finding titles based on what you've rated." }), !forYouLoading && forYouList.length === 0 && collection.length === 0 && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Heart, { size: 32 }), title: "Nothing yet", body: "Rate a few films in your collection and this list will fill up." }), !forYouLoading && forYouList.length === 0 && collection.length > 0 && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Sparkles, { size: 32 }), title: "No recommendations yet", body: "Rate a few films 7 stars or higher and we'll find you similar ones." }), !forYouLoading && forYouList.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "suggest-list" }, forYouList.map((item) => /* @__PURE__ */ React.createElement(
+  } }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 14 }), " Refresh list")), forYouLoading && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(RefreshCw, { size: 32, className: "spin" }), title: "Building your list", body: "Finding titles based on what you've rated." }), !forYouLoading && forYouList.length === 0 && collection.length === 0 && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Heart, { size: 32 }), title: "Nothing yet", body: "Rate a few movies in your collection and this list will fill up." }), !forYouLoading && forYouList.length === 0 && collection.length > 0 && /* @__PURE__ */ React.createElement(EmptyState, { icon: /* @__PURE__ */ React.createElement(Sparkles, { size: 32 }), title: "No recommendations yet", body: "Rate a few movies 7 stars or higher and we'll find you similar ones." }), !forYouLoading && forYouList.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "suggest-list" }, forYouList.map((item) => /* @__PURE__ */ React.createElement(
     SuggestionRow,
     {
       key: item.tmdbId + item.mediaType,
@@ -1867,7 +1870,7 @@ function useExtraInfo(item, settings, tmdb) {
       const region = (settings.country || "US").toUpperCase();
       const entry = d.results && d.results[region];
       if (entry && entry.flatrate && entry.flatrate.length) {
-        setProviders({ names: entry.flatrate.slice(0, 3).map((p) => p.provider_name), link: entry.link });
+        setProviders({ names: cleanProviderNames(entry.flatrate.map((p) => p.provider_name)).slice(0, 3), link: entry.link });
       }
     }).catch(() => {
     });
@@ -1952,7 +1955,7 @@ function FavoritesView({ collection, people, taste, crowd, tmdb, settings, onUpd
       {
         icon: /* @__PURE__ */ React.createElement(Heart, { size: 32 }),
         title: "No favorites yet",
-        body: "Once you collect and rate a few films, this tab learns your go-to directors, writers, and actors."
+        body: "Once you collect and rate a few movies, this tab learns your go-to directors, writers, and actors."
       }
     ));
   }
@@ -2072,7 +2075,7 @@ function ComingSoonView({ tmdb, settings, taste, people, collection, watchlist, 
     const pick = (arr, seed2) => arr[seed2 % arr.length];
     const seed = item.tmdbId % 13;
     if (pct >= 70) {
-      return { tone: "hot", text: pick(["Very much your kind of film", "This one was made for you", "Strong pull for you", "Built for your taste", "High confidence pick"], seed) };
+      return { tone: "hot", text: pick(["Very much your kind of movie", "This one was made for you", "Strong pull for you", "Built for your taste", "High confidence pick"], seed) };
     }
     if (overlapping.length && pct >= 45) {
       return { tone: "hot", text: pick(["Worth a look - fits your taste", "Decent fit for you", "This one works for you", "On your wavelength"], seed) };
@@ -2313,12 +2316,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
               (it) => tmdb.watchProviders(it.mediaType, it.tmdbId).then((d) => {
                 const entry = d.results && d.results[region];
                 const raw2 = entry && entry.flatrate ? entry.flatrate.map((p) => p.provider_name) : [];
-                const names = [];
-                raw2.forEach((n) => {
-                  const clean = n.replace(/\s+(with Ads|Amazon Channel|Apple TV Channel|Premium|Essential|Standard|Basic)$/i, "").trim();
-                  if (clean && !names.some((x) => x.toLowerCase() === clean.toLowerCase())) names.push(clean);
-                });
-                return { key: it.tmdbId + it.mediaType, val: names };
+                return { key: it.tmdbId + it.mediaType, val: cleanProviderNames(raw2) };
               })
             )
           );
@@ -2362,7 +2360,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
     const pick = (arr, seed2) => arr[seed2 % arr.length];
     const seed = item.tmdbId % 13;
     if (pct >= 70) {
-      return { tone: "hot", text: pick(["Very much your kind of film", "This one was made for you", "Strong pull for you", "Built for your taste", "High confidence pick"], seed) };
+      return { tone: "hot", text: pick(["Very much your kind of movie", "This one was made for you", "Strong pull for you", "Built for your taste", "High confidence pick"], seed) };
     }
     if (overlapping.length && pct >= 45) {
       return { tone: "hot", text: pick(["Worth a look - fits your taste", "Decent fit for you", "This one works for you", "On your wavelength"], seed) };
