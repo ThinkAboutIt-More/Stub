@@ -243,7 +243,7 @@ function normalize(item) {
 
 /* provider-name cleanup: collapse channel/ad-tier variants into one clean
    name per service (shared by Out Now, wishlist cards, and stream alerts) */
-const PROVIDER_ALIASES = { "paramount plus": "Paramount+", "disney plus": "Disney+" };
+const PROVIDER_ALIASES = { "paramount plus": "Paramount+", "disney plus": "Disney+", "peacock premium plus": "Peacock", "peacock premium": "Peacock", "amc plus": "AMC+" };
 function cleanProviderNames(raw) {
   const names = [];
   (raw || []).forEach((n) => {
@@ -251,7 +251,7 @@ function cleanProviderNames(raw) {
     let prev;
     do {
       prev = clean;
-      clean = clean.replace(/\s+(with Ads|Amazon Channel|Apple TV Channel|Roku Premium Channel|Premium Channel|Premium|Essential|Standard|Basic)$/i, "").trim();
+      clean = clean.replace(/\s+(with Ads|Amazon Channel|Apple TV Channel|Roku Premium Channel|Premium Channel|Premium Plus|Premium|Essential|Standard|Basic)$/i, "").trim();
     } while (clean !== prev);
     const alias = PROVIDER_ALIASES[clean.toLowerCase()];
     if (alias) clean = alias;
@@ -2188,7 +2188,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
 
 /* pull dominant colors straight from the poster pixels - works even where
    heavy CSS blurs fail; falls back to the CSS orbs when CORS blocks reads */
-const APP_VERSION = "113";
+const APP_VERSION = "114";
 const posterGradCache = {};
 const DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" }; // gold + violet, always intentional
 function usePosterGradient(item) {

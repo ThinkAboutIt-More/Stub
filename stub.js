@@ -229,7 +229,7 @@ function normalize(item) {
     voteCount: item.vote_count ?? 0
   };
 }
-var PROVIDER_ALIASES = { "paramount plus": "Paramount+", "disney plus": "Disney+" };
+var PROVIDER_ALIASES = { "paramount plus": "Paramount+", "disney plus": "Disney+", "peacock premium plus": "Peacock", "peacock premium": "Peacock", "amc plus": "AMC+" };
 function cleanProviderNames(raw) {
   const names = [];
   (raw || []).forEach((n) => {
@@ -237,7 +237,7 @@ function cleanProviderNames(raw) {
     let prev;
     do {
       prev = clean;
-      clean = clean.replace(/\s+(with Ads|Amazon Channel|Apple TV Channel|Roku Premium Channel|Premium Channel|Premium|Essential|Standard|Basic)$/i, "").trim();
+      clean = clean.replace(/\s+(with Ads|Amazon Channel|Apple TV Channel|Roku Premium Channel|Premium Channel|Premium Plus|Premium|Essential|Standard|Basic)$/i, "").trim();
     } while (clean !== prev);
     const alias = PROVIDER_ALIASES[clean.toLowerCase()];
     if (alias) clean = alias;
@@ -1419,7 +1419,7 @@ function SwipeCard({ item, matchPct, matchConf, taste, people, crowd, collection
     ), /* @__PURE__ */ React.createElement("button", { className: "choice-dismiss", onClick: () => setChoice("choose") }, "back")))
   );
 }
-var APP_VERSION = "113";
+var APP_VERSION = "114";
 var posterGradCache = {};
 var DEFAULT_GRAD = { a: "#c98f2e", b: "#503a72" };
 function usePosterGradient(item) {
