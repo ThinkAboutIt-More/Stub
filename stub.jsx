@@ -270,6 +270,15 @@ function isJunkTvRaw(r) {
   return !!r && (r.media_type === "tv" || !!r.first_air_date) && (r.genre_ids || []).some((g) => TV_JUNK_GENRES.has(g));
 }
 
+// accent/punctuation-insensitive text compare: "Eric Andre" must match
+// "Eric André", and titles compare without a leading "the".
+function foldText(s) {
+  return (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+function titleKey(s) {
+  return foldText(s).replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim().replace(/^the /, "");
+}
+
 /* ---------------------------------------------------------
    TASTE ENGINE
    weighted scoring from ratings + swipe feedback.
@@ -468,7 +477,7 @@ function matchMetaFull(item, taste, people, crowd) {
   const weights = getWeights(taste);
   const gc = taste?.genreCalibration || {};
   const keys = Object.keys(weights);
-  if (!keys.length) return { pct: null, conf: "low" };
+  if (!keys.length) return { meta: { pct: null, conf: "low" }, detail: {} };
   const crowdW = (crowd && crowd.weight) || 0.2;
 
   // genre affinity (tiebreaker term)
@@ -3452,10 +3461,13 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
     let list = activeItems
       .map((x) => { const m = matchMeta(x, taste, people, crowd); return { ...x, _pct: m.pct, _conf: m.conf }; })
       .filter((x) => !ownedKeys.has(x.tmdbId + x.mediaType));
+    // the tabs never mix: anything on a flatrate service belongs to Streaming,
+    // even while TMDB still lists it in now_playing
+    if (outTab === "theaters") list = list.filter((x) => availMap[x.tmdbId + x.mediaType] !== "streaming");
     if (genreFilter !== "all") list = list.filter((x) => (x.genreIds || []).includes(Number(genreFilter)));
     list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
     return list;
-  }, [activeItems, taste, genreFilter, ownedKeys]);
+  }, [activeItems, taste, genreFilter, ownedKeys, outTab, availMap]);
 
   const note = (item, pct) => {
     if (pct == null) return null;
@@ -3622,7 +3634,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
   // tokens must appear in the name, so "Dune" never matches "Dunaway").
   // With 2+ people, shared credits rank first: that's "their movie together".
   async function resolvePeople(q) {
-    const toks = q.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+    const toks = foldText(q).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
     if (!toks.length) return null;
     const people = [];
     let i = 0;
@@ -3633,7 +3645,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
         let res;
         try { res = (await tmdb.searchPerson(win)).results || []; } catch { res = []; }
         const p = res.find((x) => {
-          const nt = (x.name || "").toLowerCase().split(/\s+/);
+          const nt = foldText(x.name || "").split(/\s+/);
           return toks.slice(i, i + len).every((t) => nt.includes(t));
         });
         if (p) { found = p; foundLen = len; break; }
@@ -3648,20 +3660,35 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
   async function personFilmography(q) {
     const people = await resolvePeople(q);
     if (!people || !people.length) return null;
-    const creditsLists = await Promise.all(people.map((p) => tmdb.personMovieCredits(p.id).catch(() => null)));
+    // combined credits so TV work (The Rehearsal, Nathan for You) shows too
+    const creditsLists = await Promise.all(people.map((p) => tmdb.personCredits(p.id).catch(() => null)));
     const filmLists = creditsLists.map((cr) => {
       if (!cr) return [];
-      const mine = [...(cr.cast || []), ...(cr.crew || []).filter((c) => c.job === "Director")];
-      const dedup = Array.from(new Map(mine.map((m) => [m.id, m])).values());
-      return dedup.map(normalize).filter((x) => x.title && x.posterPath && x.voteCount > 0);
+      const mine = [
+        ...(cr.cast || []).map((m) => ({ m, role: "cast" })),
+        ...(cr.crew || []).filter((c) => c.job === "Director").map((m) => ({ m, role: "director" })),
+        ...(cr.crew || []).filter((c) => c.department === "Writing" || c.job === "Writer" || c.job === "Screenplay").map((m) => ({ m, role: "writer" }))
+      ];
+      const dedup = new Map();
+      mine.forEach(({ m, role }) => {
+        const key = m.id + (m.media_type === "tv" || m.first_air_date ? "tv" : "movie");
+        if (!dedup.has(key)) dedup.set(key, { m, roles: new Set() });
+        dedup.get(key).roles.add(role);
+      });
+      return [...dedup.values()].map(({ m, roles }) => {
+        const it = normalize(m);
+        it._roles = roles;
+        return it;
+      }).filter((x) => x.title && x.posterPath && x.voteCount > 0 && !isJunkTv(x));
     });
     let shared = [], rest = [];
     if (filmLists.length >= 2) {
       const counts = new Map();
       filmLists.forEach((list) => list.forEach((it) => {
-        const c = counts.get(it.tmdbId) || { item: it, n: 0 };
+        const k = it.tmdbId + it.mediaType;
+        const c = counts.get(k) || { item: it, n: 0 };
         c.n += 1;
-        counts.set(it.tmdbId, c);
+        counts.set(k, c);
       }));
       shared = [...counts.values()].filter((c) => c.n === filmLists.length).map((c) => c.item);
       rest = [...counts.values()].filter((c) => c.n < filmLists.length).map((c) => c.item);
@@ -3672,7 +3699,21 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
     const byVotes = (a, b) => (b.voteCount || 0) - (a.voteCount || 0);
     shared.sort(byVotes);
     rest.sort(byVotes);
-    return { people, items: [...shared, ...rest], sharedCount: shared.length };
+    const items = [...shared, ...rest];
+    // attach the searched people's roles as credits so the match engine's
+    // cast/director/writer affinity actually feeds these rows' scores
+    items.forEach((it) => {
+      const cast = [], directors = [], writers = [];
+      people.forEach((p, pi) => {
+        const src = (filmLists[pi] || []).find((x) => x.tmdbId === it.tmdbId && x.mediaType === it.mediaType);
+        if (!src || !src._roles) return;
+        if (src._roles.has("cast")) cast.push({ id: p.id, name: p.name });
+        if (src._roles.has("director")) directors.push({ id: p.id, name: p.name });
+        if (src._roles.has("writer")) writers.push({ id: p.id, name: p.name });
+      });
+      it.credits = { cast, directors, writers };
+    });
+    return { people, items, sharedCount: shared.length };
   }
 
   async function runSearch(e) {
@@ -3702,11 +3743,22 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
         setResults(ai);
         setAiMode(true);
       } else {
-        const hits = await tmdbSearch();
-        // an exact title match means a title lookup, not a person - otherwise
-        // anyone named "Zodiac" (or "Heat", "Alien"...) hijacks the search.
-        const exactTitle = hits.find((h) => (h.title || "").toLowerCase() === q.toLowerCase());
-        const film = exactTitle ? null : await personFilmography(q);
+        let hits = await tmdbSearch();
+        // TMDB is literal about spaces, titles aren't: "clay face" -> "clayface"
+        if (!hits.length && /\s/.test(q)) {
+          try {
+            const data = await tmdb.searchMulti(q.replace(/\s+/g, ""));
+            hits = (data.results || []).filter((r) => (r.media_type === "movie" || r.media_type === "tv") && !isJunkTvRaw(r)).map(normalize);
+          } catch {}
+        }
+        // a title hit that IS the query (ignoring "the"/accents), or a popular
+        // title contained in the query, means a title lookup, not a person -
+        // otherwise anyone named "Show" or "Brothers" hijacks "Eric Andre show"
+        // or "Brothers Grimsby".
+        const qk = titleKey(q);
+        const titleHit = hits.find((h) => titleKey(h.title) === qk) ||
+          hits.find((h) => (h.voteCount || 0) >= 200 && titleKey(h.title).length >= 4 && qk.includes(titleKey(h.title)));
+        const film = titleHit ? null : await personFilmography(q);
         if (film && film.items.length) {
           film.items.forEach((it) => { it._pct = matchMeta(it, taste, people, crowd).pct; });
           setResults(film.items);
@@ -3803,7 +3855,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
                     <div className="suggest-info">
                       <div className="suggest-title-row">
                         <button className="suggest-title-btn" onClick={() => setDetail(item)}>{item.title} {item.year ? `· ${item.year}` : ""}</button>
-                        {(aiMode || personName) && (() => { const m = matchMeta(item, taste, people, crowd); return m.pct != null ? <span className="match-pill" style={matchStyle(m.pct)}>{m.pct}%</span> : null; })()}
+                        {(() => { const m = matchMeta(item, taste, people, crowd); return m && m.pct != null ? <span className="match-pill" style={matchStyle(m.pct)}>{m.pct}%</span> : null; })()}
                       </div>
                     </div>
                     <div className="suggest-actions">
