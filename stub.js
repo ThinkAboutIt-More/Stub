@@ -252,6 +252,12 @@ function isJunkTv(x) {
 function isJunkTvRaw(r) {
   return !!r && (r.media_type === "tv" || !!r.first_air_date) && (r.genre_ids || []).some((g) => TV_JUNK_GENRES.has(g));
 }
+function foldText(s) {
+  return (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+function titleKey(s) {
+  return foldText(s).replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim().replace(/^the /, "");
+}
 function buildTasteProfile(collection, feedback) {
   const weights = {};
   const ratingDeltas = {};
@@ -417,7 +423,7 @@ function matchMetaFull(item, taste, people, crowd) {
   const weights = getWeights(taste);
   const gc = taste?.genreCalibration || {};
   const keys = Object.keys(weights);
-  if (!keys.length) return { pct: null, conf: "low" };
+  if (!keys.length) return { meta: { pct: null, conf: "low" }, detail: {} };
   const crowdW = crowd && crowd.weight || 0.2;
   let genreScore = 50;
   if (item.genreIds && item.genreIds.length) {
@@ -2347,10 +2353,11 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
       const m = matchMeta(x, taste, people, crowd);
       return { ...x, _pct: m.pct, _conf: m.conf };
     }).filter((x) => !ownedKeys.has(x.tmdbId + x.mediaType));
+    if (outTab === "theaters") list = list.filter((x) => availMap[x.tmdbId + x.mediaType] !== "streaming");
     if (genreFilter !== "all") list = list.filter((x) => (x.genreIds || []).includes(Number(genreFilter)));
     list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
     return list;
-  }, [activeItems, taste, genreFilter, ownedKeys]);
+  }, [activeItems, taste, genreFilter, ownedKeys, outTab, availMap]);
   const note = (item, pct) => {
     if (pct == null) return null;
     const _w = getWeights(taste);
@@ -2459,7 +2466,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
     if (searchRef.current) searchRef.current.focus();
   }, []);
   async function resolvePeople(q) {
-    const toks = q.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+    const toks = foldText(q).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
     if (!toks.length) return null;
     const people2 = [];
     let i = 0;
@@ -2474,7 +2481,7 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
           res = [];
         }
         const p = res.find((x) => {
-          const nt = (x.name || "").toLowerCase().split(/\s+/);
+          const nt = foldText(x.name || "").split(/\s+/);
           return toks.slice(i, i + len).every((t) => nt.includes(t));
         });
         if (p) {
@@ -2492,20 +2499,34 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
   async function personFilmography(q) {
     const people2 = await resolvePeople(q);
     if (!people2 || !people2.length) return null;
-    const creditsLists = await Promise.all(people2.map((p) => tmdb.personMovieCredits(p.id).catch(() => null)));
+    const creditsLists = await Promise.all(people2.map((p) => tmdb.personCredits(p.id).catch(() => null)));
     const filmLists = creditsLists.map((cr) => {
       if (!cr) return [];
-      const mine = [...cr.cast || [], ...(cr.crew || []).filter((c) => c.job === "Director")];
-      const dedup = Array.from(new Map(mine.map((m) => [m.id, m])).values());
-      return dedup.map(normalize).filter((x) => x.title && x.posterPath && x.voteCount > 0);
+      const mine = [
+        ...(cr.cast || []).map((m) => ({ m, role: "cast" })),
+        ...(cr.crew || []).filter((c) => c.job === "Director").map((m) => ({ m, role: "director" })),
+        ...(cr.crew || []).filter((c) => c.department === "Writing" || c.job === "Writer" || c.job === "Screenplay").map((m) => ({ m, role: "writer" }))
+      ];
+      const dedup = /* @__PURE__ */ new Map();
+      mine.forEach(({ m, role }) => {
+        const key = m.id + (m.media_type === "tv" || m.first_air_date ? "tv" : "movie");
+        if (!dedup.has(key)) dedup.set(key, { m, roles: /* @__PURE__ */ new Set() });
+        dedup.get(key).roles.add(role);
+      });
+      return [...dedup.values()].map(({ m, roles }) => {
+        const it = normalize(m);
+        it._roles = roles;
+        return it;
+      }).filter((x) => x.title && x.posterPath && x.voteCount > 0 && !isJunkTv(x));
     });
     let shared = [], rest = [];
     if (filmLists.length >= 2) {
       const counts = /* @__PURE__ */ new Map();
       filmLists.forEach((list) => list.forEach((it) => {
-        const c = counts.get(it.tmdbId) || { item: it, n: 0 };
+        const k = it.tmdbId + it.mediaType;
+        const c = counts.get(k) || { item: it, n: 0 };
         c.n += 1;
-        counts.set(it.tmdbId, c);
+        counts.set(k, c);
       }));
       shared = [...counts.values()].filter((c) => c.n === filmLists.length).map((c) => c.item);
       rest = [...counts.values()].filter((c) => c.n < filmLists.length).map((c) => c.item);
@@ -2515,7 +2536,19 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
     const byVotes = (a, b) => (b.voteCount || 0) - (a.voteCount || 0);
     shared.sort(byVotes);
     rest.sort(byVotes);
-    return { people: people2, items: [...shared, ...rest], sharedCount: shared.length };
+    const items = [...shared, ...rest];
+    items.forEach((it) => {
+      const cast = [], directors = [], writers = [];
+      people2.forEach((p, pi) => {
+        const src = (filmLists[pi] || []).find((x) => x.tmdbId === it.tmdbId && x.mediaType === it.mediaType);
+        if (!src || !src._roles) return;
+        if (src._roles.has("cast")) cast.push({ id: p.id, name: p.name });
+        if (src._roles.has("director")) directors.push({ id: p.id, name: p.name });
+        if (src._roles.has("writer")) writers.push({ id: p.id, name: p.name });
+      });
+      it.credits = { cast, directors, writers };
+    });
+    return { people: people2, items, sharedCount: shared.length };
   }
   async function runSearch(e) {
     if (e && e.preventDefault) {
@@ -2543,9 +2576,17 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
         setResults(ai);
         setAiMode(true);
       } else {
-        const hits = await tmdbSearch();
-        const exactTitle = hits.find((h) => (h.title || "").toLowerCase() === q.toLowerCase());
-        const film = exactTitle ? null : await personFilmography(q);
+        let hits = await tmdbSearch();
+        if (!hits.length && /\s/.test(q)) {
+          try {
+            const data = await tmdb.searchMulti(q.replace(/\s+/g, ""));
+            hits = (data.results || []).filter((r) => (r.media_type === "movie" || r.media_type === "tv") && !isJunkTvRaw(r)).map(normalize);
+          } catch {
+          }
+        }
+        const qk = titleKey(q);
+        const titleHit = hits.find((h) => titleKey(h.title) === qk) || hits.find((h) => (h.voteCount || 0) >= 200 && titleKey(h.title).length >= 4 && qk.includes(titleKey(h.title)));
+        const film = titleHit ? null : await personFilmography(q);
         if (film && film.items.length) {
           film.items.forEach((it) => {
             it._pct = matchMeta(it, taste, people, crowd).pct;
@@ -2610,9 +2651,9 @@ function SearchView({ tmdb, taste, people, crowd, collection, onAddToWatchlist, 
   } }), /* @__PURE__ */ React.createElement("button", { className: "quick-rate-more", onClick: () => {
     setQuickRateKey(null);
     setLogging(item);
-  } }, "more options")) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "suggest-info" }, /* @__PURE__ */ React.createElement("div", { className: "suggest-title-row" }, /* @__PURE__ */ React.createElement("button", { className: "suggest-title-btn", onClick: () => setDetail(item) }, item.title, " ", item.year ? `\xB7 ${item.year}` : ""), (aiMode || personName) && (() => {
+  } }, "more options")) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "suggest-info" }, /* @__PURE__ */ React.createElement("div", { className: "suggest-title-row" }, /* @__PURE__ */ React.createElement("button", { className: "suggest-title-btn", onClick: () => setDetail(item) }, item.title, " ", item.year ? `\xB7 ${item.year}` : ""), (() => {
     const m = matchMeta(item, taste, people, crowd);
-    return m.pct != null ? /* @__PURE__ */ React.createElement("span", { className: "match-pill", style: matchStyle(m.pct) }, m.pct, "%") : null;
+    return m && m.pct != null ? /* @__PURE__ */ React.createElement("span", { className: "match-pill", style: matchStyle(m.pct) }, m.pct, "%") : null;
   })())), /* @__PURE__ */ React.createElement("div", { className: "suggest-actions" }, loggedMarks[item.tmdbId + item.mediaType] ? /* @__PURE__ */ React.createElement("span", { className: "logged-mark" }, /* @__PURE__ */ React.createElement(Check, { size: 15 }), " ", loggedMarks[item.tmdbId + item.mediaType], "/10", onUndoQuick && /* @__PURE__ */ React.createElement("button", { className: "logged-undo", onClick: () => {
     onUndoQuick(item);
     setLoggedMarks((m) => {
