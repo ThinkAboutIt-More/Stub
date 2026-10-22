@@ -3249,7 +3249,7 @@ function OutNowHeroCard({ item, idx, enough, itemNote, itemBadges, isOwned, inCo
       </button>
       {availability && (
         <span className={"avail-tag avail-" + availability}>
-          {availability === "theaters" ? <><Ticket size={9} /> In theaters</> : <><Tv size={9} /> Streaming</>}
+          {availability === "theaters" ? <><Ticket size={9} /> In theaters</> : availability === "both" ? <><Ticket size={9} /> Theaters + streaming</> : <><Tv size={9} /> Streaming</>}
         </span>
       )}
       <div className="outnow-hero-overlay">
@@ -3461,9 +3461,11 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
     let list = activeItems
       .map((x) => { const m = matchMeta(x, taste, people, crowd); return { ...x, _pct: m.pct, _conf: m.conf }; })
       .filter((x) => !ownedKeys.has(x.tmdbId + x.mediaType));
-    // the tabs never mix: anything on a flatrate service belongs to Streaming,
-    // even while TMDB still lists it in now_playing
-    if (outTab === "theaters") list = list.filter((x) => availMap[x.tmdbId + x.mediaType] !== "streaming");
+    // v116: Theaters is whatever is actually playing in theaters (TMDB now_playing).
+    // A title that's also streaming at home - e.g. a theater re-release like North
+    // by Northwest - still belongs here; its tag reads "Theaters + streaming" so it
+    // never looks like a streaming pick in the wrong tab. Streaming-only titles
+    // never enter this list at all (they are not in now_playing).
     if (genreFilter !== "all") list = list.filter((x) => (x.genreIds || []).includes(Number(genreFilter)));
     list.sort((a, b) => (b._pct || 0) - (a._pct || 0));
     return list;
@@ -3585,7 +3587,7 @@ function OutNowView({ tmdb, settings, taste, people, collection, watchlist, feed
                 isOwned={isOwned || added[item.tmdbId]}
                 inCollection={isOwned}
                 ownedRating={ownedRatingMap[item.tmdbId + item.mediaType]}
-                availability={availMap[item.tmdbId + item.mediaType]}
+                availability={outTab === "theaters" && availMap[item.tmdbId + item.mediaType] === "streaming" ? "both" : availMap[item.tmdbId + item.mediaType]}
                 showtimesZip={outTab === "theaters" ? (settings.zip || "") : null}
                 providers={outTab === "streaming" ? provMap[item.tmdbId + item.mediaType] : null}
                 inWatchlist={inWl || added[item.tmdbId]}
@@ -5522,6 +5524,7 @@ button.suggest-row-btn:active { transform: scale(0.99); }
 .match-seen { background: rgba(196,140,40,0.92); color: #fff6e6; border: 1px solid rgba(240,200,120,0.9); display: inline-flex; align-items: center; }
 .avail-tag { position: absolute; top: 10px; left: 10px; z-index: 3; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 999px; backdrop-filter: blur(6px); }
 .avail-theaters { background: rgba(226,54,54,0.85); color: #fff; border: 1px solid rgba(255,150,150,0.55); }
+.avail-both { background: rgba(226,54,54,0.85); color: #fff; border: 1px solid rgba(255,150,150,0.55); }
 .avail-streaming { background: rgba(38,38,46,0.82); color: #cfd6e4; border: 1px solid rgba(150,160,180,0.45); }
 .match-mid { background: rgba(198,140,30,0.9); color: #fff7e6; border: 1px solid rgba(245,204,106,0.95); }
 .match-low { background: rgba(90,80,80,0.9); color: #ffffff; border: 1px solid rgba(210,200,200,0.7); }
